@@ -372,6 +372,30 @@ AVOutputFormat ff_hevc_muxer = {
 };
 #endif
 
+#if CONFIG_EVC_MUXER
+static int evc_check_bitstream(struct AVFormatContext *s, const AVPacket *pkt)
+{
+    AVStream *st = s->streams[0];
+    if (pkt->size >= 5 && AV_RB32(pkt->data) != 0x0000001 &&
+                          AV_RB24(pkt->data) != 0x000001)
+        return ff_stream_add_bitstream_filter(st, "xeve_mp4toannexb", NULL);
+    return 1;
+}
+
+AVOutputFormat ff_evc_muxer = {
+    .name              = "evc",
+    .long_name         = NULL_IF_CONFIG_SMALL("raw EVC video"),
+    .extensions        = "evc",
+    .audio_codec       = AV_CODEC_ID_NONE,
+    .video_codec       = AV_CODEC_ID_EVC,
+    .write_header      = force_one_stream,
+    .write_packet      = ff_raw_write_packet,
+    .check_bitstream   = evc_check_bitstream,
+    .flags             = AVFMT_NOTIMESTAMPS,
+};
+#endif
+
+
 #if CONFIG_M4V_MUXER
 AVOutputFormat ff_m4v_muxer = {
     .name              = "m4v",

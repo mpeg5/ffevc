@@ -254,7 +254,8 @@ version 4.3.2:
  x86/vf_blend: fix warnings about trailing empty parameters
  x86/h264_deblock: fix warning about trailing empty parameter
  avutil/x86inc: fix warnings when assembling with Nasm 2.15
-
+ avcodec/xeve: add libxeve encoder, eXtra-fast Essential Video Encoder (XEVE)
+ avcodec/xevd: add libxevd decoder, eXtra-fast Essential Video Decoder (XEVD)
 
 version 4.3.1:
  avcodec/tiff: Check input space in dng_decode_jpeg()

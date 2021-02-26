@@ -318,6 +318,34 @@ x265 is under the GNU Public License Version 2 or later
 details), you must upgrade FFmpeg's license to GPL in order to use it.
 @end float
 
+@section xeve
+
+FFmpeg can make use of the xeve library for XEVE encoding.
+
+Go to @url{https://github.com/mpeg5/xeve} and follow the instructions
+for installing the library. Then pass @code{--enable-libxeve} to configure
+to enable it.
+
+@float NOTE
+xeve is under the BSD License
+(see @url{https://github.com/mpeg5/xeve/blob/master/COPYING} for
+details).
+@end float
+
+@section xevd
+
+FFmpeg can make use of the xevd library for XEVD encoding.
+
+Go to @url{https://github.com/mpeg5/xevd} and follow the instructions
+for installing the library. Then pass @code{--enable-libxevd} to configure
+to enable it.
+
+@float NOTE
+xeve is under the BSD License
+(see @url{https://github.com/mpeg5/xevd/blob/master/COPYING} for
+details).
+@end float
+
 @section xavs
 
 FFmpeg can make use of the xavs library for AVS encoding.
@@ -588,6 +616,8 @@ library:
 @item raw H.263                 @tab X @tab X
 @item raw H.264                 @tab X @tab X
 @item raw HEVC                  @tab X @tab X
+@item raw XEVE                  @tab X @tab X
+@item raw XEVD                  @tab X @tab X
 @item raw Ingenient MJPEG       @tab   @tab X
 @item raw MJPEG                 @tab X @tab X
 @item raw MLP                   @tab   @tab X
@@ -905,6 +935,10 @@ following image formats are supported:
     @tab encoding supported through external library libx264 and OpenH264
 @item HEVC                   @tab  X  @tab  X
     @tab encoding supported through external library libx265 and libkvazaar
+@item XEVE                   @tab  X  @tab  X
+    @tab encoding supported through external library libxeve
+@item XEVD                   @tab  X  @tab  X
+    @tab decoding supported through external library libxevd
 @item HNM version 4          @tab     @tab  X
 @item HuffYUV                @tab  X  @tab  X
 @item HuffYUV FFmpeg variant @tab  X  @tab  X

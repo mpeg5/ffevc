@@ -50,29 +50,6 @@
 #define XEVD_PARAM_BAD_NAME -1
 #define XEVD_PARAM_BAD_VALUE -2
 
-///////////////////////////////////////////////////////////////////////////////
-// The structure of NAL Unit Header & Payload Header
-///////////////////////////////////////////////////////////////////////////////
-//
-// @see https://datatracker.ietf.org/doc/html/draft-ietf-avtcore-rtp-evc-01#section-1.1.4
-//
-// +---------------+---------------+
-// |0|1|2|3|4|5|6|7|0|1|2|3|4|5|6|7|
-// +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
-// |F|   Type    | TID | Reserve |E|
-// +-------------+-----------------+
-//
-// F:       1 bit   - forbidden_zero_bit.  Required to be zero in [EVC].
-// Type:    6 bits  - nal_unit_type_plus1 (This field specifies the NAL unit type as defined in Table 4 of [EVC])
-// TID:     3 bits  - nuh_temporal_id.  This field specifies the temporal identifier of the NAL unit. 
-// Reserve: 5 bits  - nuh_reserved_zero_5bits.  This field shall be equal to the version of the [EVC] specification.
-// E:       1 bit   - nuh_extension_flag.  This field shall be equal the version of the [EVC] specification. 
-//
-// @see https://datatracker.ietf.org/doc/html/draft-ietf-avtcore-rtp-evc-01#section-1.1.4
-//
-enum NalDefs {kForbiddenBitMask = 0x8000, kTypeMask = 0x7E00, kTIDMask = 0x1C0, kReservedMask = 0x003E, kExtensionFlagMask = 0x0001, kNegativeTIDMask = 0xFE3F};
-
-
 /**
  * The structure stores all the state associated with the instance of Xeve MPEG-5 EVC decoder
  * The first field is a pointer to an AVClass struct (@see https://ffmpeg.org/doxygen/trunk/structAVClass.html#details).
@@ -514,7 +491,7 @@ static int libxevd_decode(AVCodecContext *avctx, void *data, int *got_frame, AVP
         bs_read_pos = 0;
         imgb = NULL;
         while(pkt->size > (bs_read_pos + XEVD_NAL_UNIT_LENGTH_BYTE)) {
-            uint16_t nal_type = 0;
+            int nal_type = 0;
             
             memset(&stat, 0, sizeof(XEVD_STAT));
             memset(&bitb, 0, sizeof(XEVD_BITB));
@@ -529,13 +506,30 @@ static int libxevd_decode(AVCodecContext *avctx, void *data, int *got_frame, AVP
             bitb.addr = pkt->data + bs_read_pos;
             bitb.ssize = nalu_size;
 
-            // Read NAL Unit Type
+            // Read NAL Unit Type from  NAL Unit Header
+            //
+            // The structure of NAL Unit Header looks like follows
+            //
+            // +---------------+---------------+
+            // |0|1|2|3|4|5|6|7|0|1|2|3|4|5|6|7|
+            // +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+            // |F|   Type    | TID | Reserve |E|
+            // +-------------+-----------------+
+            //
+            // F:       1 bit   - forbidden_zero_bit.  Required to be zero in [EVC].
+            // Type:    6 bits  - nal_unit_type_plus1 (This field specifies the NAL unit type as defined in Table 4 of [EVC])
+            // TID:     3 bits  - nuh_temporal_id.  This field specifies the temporal identifier of the NAL unit.
+            // Reserve: 5 bits  - nuh_reserved_zero_5bits.  This field shall be equal to the version of the [EVC] specification.
+            // E:       1 bit   - nuh_extension_flag.  This field shall be equal the version of the [EVC] specification.
+            //
+            // @see https://datatracker.ietf.org/doc/html/draft-ietf-avtcore-rtp-evc-01#section-1.1.4
+            
 #ifdef USE_EXP_GOLOMB_STUFF 
             nal_type = get_nalu_type(bitb.addr, 1);
             av_log(avctx, AV_LOG_DEBUG, "NALU Type: %d\n", nal_type);
 #else
-            memcpy(&nal_type,bitb.addr,2);
-            nal_type = nal_type & 0x007E; // 0x7E;
+            memcpy(&nal_type,bitb.addr,1);
+            nal_type = nal_type & 0x7E;
             nal_type = nal_type >> 1;
             nal_type -= 1;
             av_log(avctx, AV_LOG_DEBUG, "NALU Type: %d\n", nal_type);

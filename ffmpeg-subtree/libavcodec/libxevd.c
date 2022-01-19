@@ -36,6 +36,11 @@
 #include "libavutil/pixfmt.h"
 #include "libavutil/imgutils.h"
 
+// #define USE_EXP_GOLOMB_STUFF
+#ifdef USE_EXP_GOLOMB_STUFF 
+#include "golomb.h"
+#endif
+
 #include "avcodec.h"
 #include "internal.h"
 #include "packet_internal.h"
@@ -65,6 +70,21 @@ typedef struct XevdContext {
 } XevdContext;
 
 static int  op_threads = 1; // Default value
+
+#ifdef USE_EXP_GOLOMB_STUFF 
+static int get_nalu_type(const uint8_t *bs, int bs_size)
+{
+    GetBitContext gb;
+    int fzb, nut;
+    init_get_bits(&gb, bs, bs_size * 8);
+    fzb = get_bits1(&gb);
+    if(fzb != 0) {
+        av_log(NULL, AV_LOG_DEBUG, "forbidden_zero_bit is not clear\n");
+    }
+    nut = get_bits(&gb, 6); /* nal_unit_type_plus1 */
+    return nut - 1;
+}
+#endif
 
 #ifdef PRINT_NALU_INFO
 static void print_nalu_info(XEVD_STAT * stat)
@@ -471,6 +491,8 @@ static int libxevd_decode(AVCodecContext *avctx, void *data, int *got_frame, AVP
         bs_read_pos = 0;
         imgb = NULL;
         while(pkt->size > (bs_read_pos + XEVD_NAL_UNIT_LENGTH_BYTE)) {
+            int nal_type = 0;
+            
             memset(&stat, 0, sizeof(XEVD_STAT));
             memset(&bitb, 0, sizeof(XEVD_BITB));
 
@@ -483,6 +505,50 @@ static int libxevd_decode(AVCodecContext *avctx, void *data, int *got_frame, AVP
 
             bitb.addr = pkt->data + bs_read_pos;
             bitb.ssize = nalu_size;
+
+            // Read NAL Unit Type from  NAL Unit Header
+            //
+            // The structure of NAL Unit Header looks like follows
+            //
+            // +---------------+---------------+
+            // |0|1|2|3|4|5|6|7|0|1|2|3|4|5|6|7|
+            // +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+            // |F|   Type    | TID | Reserve |E|
+            // +-------------+-----------------+
+            //
+            // F:       1 bit   - forbidden_zero_bit.  Required to be zero in [EVC].
+            // Type:    6 bits  - nal_unit_type_plus1 (This field specifies the NAL unit type as defined in Table 4 of [EVC])
+            // TID:     3 bits  - nuh_temporal_id.  This field specifies the temporal identifier of the NAL unit.
+            // Reserve: 5 bits  - nuh_reserved_zero_5bits.  This field shall be equal to the version of the [EVC] specification.
+            // E:       1 bit   - nuh_extension_flag.  This field shall be equal the version of the [EVC] specification.
+            //
+            // @see https://datatracker.ietf.org/doc/html/draft-ietf-avtcore-rtp-evc-01#section-1.1.4
+            
+#ifdef USE_EXP_GOLOMB_STUFF 
+            nal_type = get_nalu_type(bitb.addr, 1);
+            av_log(avctx, AV_LOG_DEBUG, "NALU Type: %d\n", nal_type);
+#else
+            memcpy(&nal_type,bitb.addr,1);
+            nal_type = nal_type & 0x7E;
+            nal_type = nal_type >> 1;
+            nal_type -= 1;
+            av_log(avctx, AV_LOG_DEBUG, "NALU Type: %d\n", nal_type);
+#endif
+            // Since XEVD decoder crashes when it receives a stream after changing its parameters,
+            // we need to delete the previous XEVD decoder instance and create a new one when 
+            // the stream changes.
+            if(nal_type==XEVD_NUT_SPS) {
+                if(ctx->id) {
+                    xevd_delete(ctx->id);
+                    ctx->id = NULL;
+                }
+                /* create decoder */
+                ctx->id = xevd_create(&(ctx->cdsc), NULL);
+                if(ctx->id == NULL) {
+                    av_log(NULL, AV_LOG_ERROR, "cannot create XEVD encoder\n");
+                    return -1;
+                }
+            }
 
             /* main decoding block */
             ret = xevd_decode(ctx->id, &bitb, &stat);
@@ -498,15 +564,19 @@ static int libxevd_decode(AVCodecContext *avctx, void *data, int *got_frame, AVP
 #endif
 
             if(stat.nalu_type == XEVD_NUT_SPS) {
+                av_log(avctx, AV_LOG_DEBUG, "EVC stream parameters changed\n");
+
                 if(export_stream_params(avctx, ctx)!=0) {
                     goto ERR;
                 }
+                av_log(avctx, AV_LOG_DEBUG, "width: %d\n",avctx->width);
+                av_log(avctx, AV_LOG_DEBUG, "height: %d\n",avctx->height);
+
             }
 
             if(stat.read != nalu_size) {
                 av_log(avctx, AV_LOG_INFO, "different reading of bitstream (in:%d, read:%d)\n,", nalu_size, stat.read);
             }
-
             if(stat.fnum >= 0) {
                 if (imgb) { /* already has a decoded image */
                     imgb->release(imgb);
@@ -587,7 +657,7 @@ static int libxevd_decode(AVCodecContext *avctx, void *data, int *got_frame, AVP
     } else {
         *got_frame = 0;
     }
-
+ 
     ctx->packet_count++;
     return pkt->size;
 

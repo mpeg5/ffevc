@@ -230,6 +230,7 @@ static int parse_nal_units(AVCodecParserContext *s, const uint8_t *bs,
         ev->got_sei = 1;
     }
     else if (nalu_type == EVC_NUT_IDR || nalu_type == EVC_NUT_NONIDR) {
+        av_log(ctx, AV_LOG_DEBUG, "EVC_NUT_NONIDR\n");
         ev->got_slice++;
     }
     return 0;

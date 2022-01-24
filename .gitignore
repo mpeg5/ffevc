@@ -19,8 +19,12 @@
 *.swp
 *.ver
 *.version
+*.metal.air
+*.metallib
+*.metallib.c
 *.ptx
 *.ptx.c
+*.ptx.gz
 *_g
 \#*
 .\#*

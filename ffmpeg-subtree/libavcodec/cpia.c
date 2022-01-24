@@ -231,4 +231,5 @@ AVCodec ff_cpia_decoder = {
     .close          = cpia_decode_end,
     .decode         = cpia_decode_frame,
     .capabilities   = AV_CODEC_CAP_DR1,
+    .caps_internal  = FF_CODEC_CAP_INIT_THREADSAFE,
 };

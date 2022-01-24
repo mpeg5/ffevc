@@ -20,13 +20,11 @@
  */
 
 #include "libavutil/intreadwrite.h"
-#include "libavutil/mathematics.h"
 #include "libavutil/dict.h"
 #include "avformat.h"
 #include "internal.h"
 #include "pcm.h"
 #include "aiff.h"
-#include "isom.h"
 #include "id3v2.h"
 #include "mov_chan.h"
 #include "replaygain.h"
@@ -437,5 +435,5 @@ AVInputFormat ff_aiff_demuxer = {
     .read_header    = aiff_read_header,
     .read_packet    = aiff_read_packet,
     .read_seek      = ff_pcm_read_seek,
-    .codec_tag      = (const AVCodecTag* const []){ ff_codec_aiff_tags, 0 },
+    .codec_tag      = ff_aiff_codec_tags_list,
 };

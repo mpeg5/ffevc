@@ -673,6 +673,11 @@ static int set_context_with_sequence(AVCodecContext *avctx,
         break;
     }
 
+    if (seq->film_grain_params_present)
+        avctx->properties |= FF_CODEC_PROPERTY_FILM_GRAIN;
+    else
+        avctx->properties &= ~FF_CODEC_PROPERTY_FILM_GRAIN;
+
     if (avctx->width != width || avctx->height != height) {
         int ret = ff_set_dimensions(avctx, width, height);
         if (ret < 0)
@@ -1219,7 +1224,7 @@ static const AVClass av1_class = {
     .version    = LIBAVUTIL_VERSION_INT,
 };
 
-AVCodec ff_av1_decoder = {
+const AVCodec ff_av1_decoder = {
     .name                  = "av1",
     .long_name             = NULL_IF_CONFIG_SMALL("Alliance for Open Media AV1"),
     .type                  = AVMEDIA_TYPE_VIDEO,
@@ -1235,6 +1240,7 @@ AVCodec ff_av1_decoder = {
     .flush                 = av1_decode_flush,
     .profiles              = NULL_IF_CONFIG_SMALL(ff_av1_profiles),
     .priv_class            = &av1_class,
+    .bsfs                  = "av1_frame_split",
     .hw_configs            = (const AVCodecHWConfigInternal *const []) {
 #if CONFIG_AV1_DXVA2_HWACCEL
         HWACCEL_DXVA2(av1),

@@ -1270,6 +1270,14 @@ static const AVCodecDescriptor codec_descriptors[] = {
         .profiles  = NULL_IF_CONFIG_SMALL(ff_hevc_profiles),
     },
     {
+        .id        = AV_CODEC_ID_EVC,
+        .type      = AVMEDIA_TYPE_VIDEO,
+        .name      = "evc",
+        .long_name = NULL_IF_CONFIG_SMALL("MPEG-5 EVC (Essential Video Coding)"),
+        .props     = AV_CODEC_PROP_LOSSY | AV_CODEC_PROP_REORDER,
+        .profiles  = NULL_IF_CONFIG_SMALL(ff_evc_profiles),
+    },
+    {
         .id        = AV_CODEC_ID_FIC,
         .type      = AVMEDIA_TYPE_VIDEO,
         .name      = "fic",
@@ -1405,12 +1413,6 @@ static const AVCodecDescriptor codec_descriptors[] = {
         .props     = AV_CODEC_PROP_LOSSY,
     },
     {
-        .id        = AV_CODEC_ID_EVC,
-        .type      = AVMEDIA_TYPE_VIDEO,
-        .name      = "evc",
-        .long_name = NULL_IF_CONFIG_SMALL("MPEG-5 EVC (Essential Video Coding)"),
-        .props     = AV_CODEC_PROP_LOSSY | AV_CODEC_PROP_REORDER,
-        .profiles  = NULL_IF_CONFIG_SMALL(ff_evc_profiles),
         .id        = AV_CODEC_ID_PGX,
         .type      = AVMEDIA_TYPE_VIDEO,
         .name      = "pgx",

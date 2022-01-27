@@ -55,17 +55,19 @@ static int get_nalu_type(const uint8_t *bs, int bs_size)
     return nut - 1;
 }
 
-static int read_nal_unit_size(const uint8_t *bs, int bs_size)
+static size_t read_nal_unit_size(const unsigned char *bs, int bs_size)
 {
-    int nal_unit_size = 0;
+    size_t nal_unit_size = 0;
     memcpy(&nal_unit_size, bs, EVC_NAL_UNIT_LENGTH_BYTE);
+
     return nal_unit_size;
 }
 
 static int parse_nal_units(const AVProbeData *p, EVCParserContext *ev)
 {
-    int nalu_type, nalu_size;
-    unsigned char * bits = (unsigned char *)p->buf;
+    int nalu_type;
+    size_t nalu_size;
+    unsigned char* bits = (unsigned char *)p->buf;
     int bytes_to_read = p->buf_size;
     
     av_log(NULL, AV_LOG_DEBUG, "bytes_to_read: %d \n", bytes_to_read);
@@ -73,10 +75,11 @@ static int parse_nal_units(const AVProbeData *p, EVCParserContext *ev)
     while(bytes_to_read > EVC_NAL_UNIT_LENGTH_BYTE) {
     
         nalu_size = read_nal_unit_size(bits, p->buf_size);
+
         bits += EVC_NAL_UNIT_LENGTH_BYTE;
         bytes_to_read -= EVC_NAL_UNIT_LENGTH_BYTE;
 
-        av_log(NULL, AV_LOG_DEBUG, "nalu_size: %d \n", nalu_size);
+        av_log(NULL, AV_LOG_DEBUG, "nalu_size: %ld \n", nalu_size);
 
         if(bytes_to_read < nalu_size) break;
 

@@ -1,0 +1,4 @@
+f385865d5f08245e0715fdb41dbce7c6 *tests/data/fate/evc.evc
+21310 tests/data/fate/evc.evc
+2eb3e1a88b12964b30012ec5c0ccb1bc *tests/data/fate/evc.out.rawvideo
+stddev:       nan PSNR:  nan MAXDIFF:         0 bytes: 91238400/ 87284736

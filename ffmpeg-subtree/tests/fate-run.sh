@@ -225,42 +225,6 @@ enc_dec(){
         run ffprobe${PROGSUF}${EXECSUF} $ffprobe_opts $tencfile || return
 }
 
-enc_dec_evc(){
-    src_fmt=$1
-    srcfile=$2
-    enc_fmt=$3
-    enc_opt=$4
-    dec_fmt=$5
-    dec_opt=$6
-    ffprobe_opts=$9
-    # encfile="${outdir}/${test}.${enc_fmt}"
-    encfile="${outdir}/${test}.h264"
-    # decfile="${outdir}/${test}.out.${dec_fmt}"
-    decfile="${outdir}/${test}.out.yuv"
-    cleanfiles="$cleanfiles $decfile"
-    test "$7" = -keep || cleanfiles="$cleanfiles $encfile"
-    tsrcfile=$(target_path $srcfile)
-    tencfile=$(target_path $encfile)
-    tdecfile=$(target_path $decfile)
-    
-    ffmpeg -auto_conversion_filters -f rawvideo -pix_fmt yuv420p -s:v 352x288 -r 30 -i $tsrcfile -c:v libx264 -f rawvideo -y $tencfile || return
-
-    #ffmpeg -auto_conversion_filters -f $src_fmt $DEC_OPTS -i $tsrcfile $ENC_OPTS $enc_opt $FLAGS \
-    #    -f $enc_fmt -y $tencfile || return
-
-    do_md5sum $encfile
-    echo $(wc -c $encfile)
-
-    ffmpeg -auto_conversion_filters -i $tencfile -pix_fmt yuv420p -y $tdecfile  || return
-    #ffmpeg -auto_conversion_filters $8 $DEC_OPTS -i $tencfile $ENC_OPTS $dec_opt $FLAGS \
-    #    -f $dec_fmt -y $tdecfile || return
-    do_md5sum $decfile
-    
-    tests/tiny_psnr${HOSTEXECSUF} $srcfile $decfile $cmp_unit $cmp_shift
-    test -z $ffprobe_opts || \
-        run ffprobe${PROGSUF}${EXECSUF} $ffprobe_opts $tencfile || return
-}
-
 transcode(){
     src_fmt=$1
     srcfile=$2

@@ -534,21 +534,6 @@ static int libxevd_decode(AVCodecContext *avctx, void *data, int *got_frame, AVP
             nal_type -= 1;
             av_log(avctx, AV_LOG_DEBUG, "NALU Type: %d\n", nal_type);
 #endif
-            // Since XEVD decoder crashes when it receives a stream after changing its parameters,
-            // we need to delete the previous XEVD decoder instance and create a new one when 
-            // the stream changes.
-            if(nal_type==XEVD_NUT_SPS) {
-                if(ctx->id) {
-                    xevd_delete(ctx->id);
-                    ctx->id = NULL;
-                }
-                /* create decoder */
-                ctx->id = xevd_create(&(ctx->cdsc), NULL);
-                if(ctx->id == NULL) {
-                    av_log(NULL, AV_LOG_ERROR, "cannot create XEVD encoder\n");
-                    return -1;
-                }
-            }
 
             /* main decoding block */
             ret = xevd_decode(ctx->id, &bitb, &stat);

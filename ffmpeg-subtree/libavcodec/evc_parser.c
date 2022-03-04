@@ -1,7 +1,7 @@
 /*
  * EVC AVC format parser
  *
- * Copyright (C) 2021 Dawid Kozinski
+ * Copyright (C) 2021 Dawid Kozinski <d.kozinski@samsung.com>
  *
  * This file is part of FFmpeg.
  *

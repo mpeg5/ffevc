@@ -1,7 +1,8 @@
 /*
  * libxeve encoder
+ * EVC (MPEG-5 Essential Video Coding) encoding using XEVE MPEG-5 EVC encoder library
  *
- * Copyright (c) 2021 Dawid Kozinski
+ * Copyright (C) 2021 Dawid Kozinski <d.kozinski@samsung.com>
  *
  * This file is part of FFmpeg.
  *

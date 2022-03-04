@@ -1,5 +1,6 @@
 /*
  * RAW EVC video demuxer
+ *
  * Copyright (c) 2021 Dawid Kozinski <d.kozinski@samsung.com>
  *
  * This file is part of FFmpeg.

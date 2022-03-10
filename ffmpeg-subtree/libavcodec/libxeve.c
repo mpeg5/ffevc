@@ -826,12 +826,16 @@ static int setup_bumping(XEVE id)
     return 0;
 }
 
-/// @todo provide implementation
-/* in 100-nanosec unit */
-static XEVE_MTIME timestamp(int frame_idx, int fps)
+static const char* slice_type(enum AVPictureType av_pic_type)
 {
-    // return (frame_idx*10000000/fps);
-    return frame_idx;
+    if(av_pic_type == AV_PICTURE_TYPE_I) {
+        return "Slice Type I";
+    } else if(av_pic_type == AV_PICTURE_TYPE_P) {
+        return "Slice Type P";
+    } else if(av_pic_type == AV_PICTURE_TYPE_B) {
+        return "Slice Type B";
+    } 
+    return "Slice Type UNDEFINED";
 }
 
 /**
@@ -859,7 +863,6 @@ static av_cold int libxeve_init(AVCodecContext *ctx)
     int shift_h = 0;
     int shift_v = 0;
     XEVE_IMGB * imgb = NULL;
-    XEVE_PARAM * param = NULL;
 
     XEVE_CDSC *cdsc = &(xe->cdsc);
     
@@ -956,7 +959,6 @@ static int libxeve_encode(AVCodecContext *ctx, AVPacket *pkt,
     XeveContext *xe = NULL;
     int  ret = -1;
     int xeve_cs;
-
     if(ctx == NULL || pkt == NULL || got_packet==NULL) {
         av_log(ctx, AV_LOG_ERROR, "Invalid arguments\n");
         return -1;
@@ -966,133 +968,69 @@ static int libxeve_encode(AVCodecContext *ctx, AVPacket *pkt,
         av_log(ctx, AV_LOG_ERROR, "Invalid XEVE context\n");
         return -1;
     }
-
-    if(xe->state == STATE_SKIPPING) {
+    if(xe->state == STATE_SKIPPING && frame ) {
+        av_log(ctx, AV_LOG_DEBUG, "Empty frame -> Entering encoding process...\n");
         xe->state = STATE_ENCODING;
-    } else if(xe->state == STATE_ENCODING) {
-        if(frame) {
-            const AVPixFmtDescriptor *pixel_fmt_desc = av_pix_fmt_desc_get (frame->format);
-            if(!pixel_fmt_desc) {
-                av_log(NULL, AV_LOG_ERROR, "Invalid pixel format descriptor for pixel format: %s\n", av_get_pix_fmt_name(ctx->pix_fmt));
-                return -1;
-            }
-
-            xeve_cs = xeve_color_space(ctx->pix_fmt);
-            if(xeve_cs != XEVE_CS_YCBCR420 && xeve_cs != XEVE_CS_YCBCR420_10LE) {
-                av_log(ctx, AV_LOG_ERROR, "Invalid pixel format: %s\n", av_get_pix_fmt_name(ctx->pix_fmt));
-                return -1;
-            }
-
-            {
-                int i;
-                XEVE_IMGB * imgb = NULL;
-                XEVE_MTIME ts;
-
-                int xeve_byte_depth = 0;
-
-                imgb = &xe->imgb;
-
-                xeve_byte_depth = XEVE_CS_GET_BYTE_DEPTH(xeve_cs);
-                av_log(ctx, AV_LOG_DEBUG, "byte depth: %d\n",xeve_byte_depth);
-
-                for (i=0; i<imgb->np; i++) {
-                    imgb->a[i] = frame->data[i];
-                    imgb->s[i] = frame->linesize[i];
-                }
-
-                if(xe->id == NULL) {
-                    av_log(ctx, AV_LOG_ERROR, "Invalid XEVE encoder\n");
-                    return -1;
-                }
-
-                ts = timestamp(xe->encod_frames, xe->cdsc.param.fps);
-                imgb->ts[0] = ts;
-                imgb->ts[1] = ts;
-                imgb->ts[2] = ts;
-                imgb->ts[3] = ts;
-
-                /* push image to encoder */
-                ret = xeve_push(xe->id, imgb);
-                if(XEVE_FAILED(ret)) {
-                    av_log(ctx, AV_LOG_ERROR, "xeve_push() failed\n");
-                    return -1;
-                }
-
-                /* encoding */
-                ret = xeve_encode(xe->id, &(xe->bitb), &(xe->stat));
-                if(XEVE_FAILED(ret)) {
-                    av_log(ctx, AV_LOG_ERROR, "xeve_encode() failed\n");
-                    return -1;
-                }
-
-                xe->encod_frames++;
-
-                /* store bitstream */
-                if (ret == XEVE_OK_OUT_NOT_AVAILABLE) {
-                    av_log(ctx, AV_LOG_DEBUG, "RETURN OK BUT PICTURE IS NOT AVAILABLE YET (%d) frame: %d\n", ret, xe->encod_frames);
-                    *got_packet = 0;
-                    return 0;
-                } else if(ret == XEVE_OK) {
-                    int pic_type;
-
-                    if(xe->stat.write > 0) {
-                        xe->bytes_total+=xe->stat.write;
-                        av_log(ctx, AV_LOG_DEBUG, "frame: %d | Bytes written:  %d | bytes total: %f | %lld | %lld | %lld | %lld |\n", xe->encod_frames, xe->stat.write, xe->bytes_total, xe->bitb.ts[0],xe->bitb.ts[1],xe->bitb.ts[2],xe->bitb.ts[3]);
-
-                        ret = av_grow_packet(pkt, xe->stat.write);
-                        if (ret < 0) {
-                            av_log(ctx, AV_LOG_ERROR, "Can't allocate memory for AVPacket data\n");
-                            return ret;
-                        }
-
-                        memcpy(pkt->data, xe->bitb.addr, xe->stat.write);
-
-                        // @todo consider using ctx->bitb.ts[0] instead of ctx->packet_count i.e pkt->dts = pkt->pts = ctx->packet_count ctx->bitb.ts[0];
-                        // However keep in mind that it causes ffmpeg warning: Application provided invalid, non monotonically increasing dts to muxer in stream 0
-                        //
-                        pkt->dts = pkt->pts = xe->packet_count;
-
-                        xe->bitrate += (xe->stat.write - xe->stat.sei_size);
-
-                        switch(xe->stat.stype) {
-                        case XEVE_ST_I:
-                            pic_type = AV_PICTURE_TYPE_I;
-                            pkt->flags |= AV_PKT_FLAG_KEY;
-                            break;
-                        case XEVE_ST_P:
-                            pic_type = AV_PICTURE_TYPE_P;
-                            break;
-                        case XEVE_ST_B:
-                            pic_type = AV_PICTURE_TYPE_B;
-                            break;
-                        case XEVE_ST_UNKNOWN:
-                            av_log(NULL, AV_LOG_ERROR, "unknown slice type\n");
-                            return -1;
-                        }
-                        ff_side_data_set_encoder_stats(pkt, xe->stat.qp*FF_QP2LAMBDA, NULL, 0, pic_type);
-
-                        *got_packet = 1;
-                        xe->packet_count++;
-                    }
-                } else if (ret == XEVE_OK_NO_MORE_FRM) {
-                    av_log(ctx, AV_LOG_ERROR, "Return OK but no more frames (%d)\n", ret);
-                    return 0;
-                } else {
-                    av_log(ctx, AV_LOG_DEBUG, "invalid return value (%d)\n", ret);
-                    return -1;
-                }
-            }
+    } else if(xe->state == STATE_ENCODING && frame == NULL) {
+        av_log(ctx, AV_LOG_DEBUG, "Empty frame -> Entering bumping process...\n");
+        if (setup_bumping(xe->id) == 0) {
+            xe->state = STATE_BUMPING;
         } else {
-            if(xe->state==STATE_ENCODING) {
-                av_log(ctx, AV_LOG_DEBUG, "Empty frame -> Entering bumping process...\n");
-                if (setup_bumping(xe->id)) {
-                    av_log(ctx, AV_LOG_ERROR,"failed to setup bumping\n");
-                } else {
-                    xe->state = STATE_BUMPING;
-                }
+            av_log(ctx, AV_LOG_ERROR,"Failed to setup bumping\n");
+            xe->state = STATE_SKIPPING;
+        }
+    }
+
+    if(xe->state == STATE_ENCODING) {
+        const AVPixFmtDescriptor *pixel_fmt_desc = av_pix_fmt_desc_get (frame->format);
+        if(!pixel_fmt_desc) {
+            av_log(NULL, AV_LOG_ERROR, "Invalid pixel format descriptor for pixel format: %s\n", av_get_pix_fmt_name(ctx->pix_fmt));
+            return -1;
+        }
+
+        xeve_cs = xeve_color_space(ctx->pix_fmt);
+        if(xeve_cs != XEVE_CS_YCBCR420 && xeve_cs != XEVE_CS_YCBCR420_10LE) {
+            av_log(ctx, AV_LOG_ERROR, "Invalid pixel format: %s\n", av_get_pix_fmt_name(ctx->pix_fmt));
+            return -1;
+        }
+
+        {
+            int i;
+            XEVE_IMGB * imgb = NULL;
+            int xeve_byte_depth = 0;
+
+            imgb = &xe->imgb;
+
+            xeve_byte_depth = XEVE_CS_GET_BYTE_DEPTH(xeve_cs);
+            av_log(ctx, AV_LOG_DEBUG, "byte depth: %d\n",xeve_byte_depth);
+
+            for (i=0; i<imgb->np; i++) {
+                imgb->a[i] = frame->data[i];
+                imgb->s[i] = frame->linesize[i];
+            }
+
+            if(xe->id == NULL) {
+                av_log(ctx, AV_LOG_ERROR, "Invalid XEVE encoder\n");
+                return -1;
+            }
+
+            imgb->ts[0] = frame->pts;
+            imgb->ts[1] = 0;
+            imgb->ts[2] = 0;
+            imgb->ts[3] = 0;
+
+            /* push image to encoder */
+            av_log(ctx, AV_LOG_INFO, "INPUT | RAW frame | timestamps | %lld | %lld | %lld | %lld |\n", imgb->ts[0], imgb->ts[1], imgb->ts[2], imgb->ts[3]);
+
+            ret = xeve_push(xe->id, imgb);
+            if(XEVE_FAILED(ret)) {
+                av_log(ctx, AV_LOG_ERROR, "xeve_push() failed\n");
+                return -1;
             }
         }
-    } else if(xe->state == STATE_BUMPING) {
+    } 
+    if(xe->state == STATE_ENCODING || xe->state == STATE_BUMPING) {
+        
         /* encoding */
         ret = xeve_encode(xe->id, &(xe->bitb), &(xe->stat));
         if(XEVE_FAILED(ret)) {
@@ -1100,15 +1038,20 @@ static int libxeve_encode(AVCodecContext *ctx, AVPacket *pkt,
             return -1;
         }
 
+        xe->encod_frames++;
+
         /* store bitstream */
         if (ret == XEVE_OK_OUT_NOT_AVAILABLE) {
             av_log(ctx, AV_LOG_DEBUG, "RETURN OK BUT PICTURE IS NOT AVAILABLE YET (%d) frame: %d\n", ret, xe->encod_frames);
             *got_packet = 0;
             return 0;
         } else if(ret == XEVE_OK) {
+            int av_pic_type;
+
             if(xe->stat.write > 0) {
                 xe->bytes_total+=xe->stat.write;
-                av_log(ctx, AV_LOG_DEBUG, "frame: %d | Bytes written:  %d | bytes total: %f | %lld | %lld | %lld | %lld |\n", xe->encod_frames, xe->stat.write, xe->bytes_total, xe->bitb.ts[0],xe->bitb.ts[1],xe->bitb.ts[2],xe->bitb.ts[3]);
+                // av_log(ctx, AV_LOG_DEBUG, "frame: %d | Bytes written:  %d | bytes total: %f | fnum %d | %lld | %lld | %lld | %lld |\n", xe->encod_frames, xe->stat.write, xe->bytes_total, xe->stat.fnum, xe->bitb.ts[0],xe->bitb.ts[1],xe->bitb.ts[2],xe->bitb.ts[3]);
+
                 ret = av_grow_packet(pkt, xe->stat.write);
                 if (ret < 0) {
                     av_log(ctx, AV_LOG_ERROR, "Can't allocate memory for AVPacket data\n");
@@ -1120,20 +1063,50 @@ static int libxeve_encode(AVCodecContext *ctx, AVPacket *pkt,
                 // @todo consider using ctx->bitb.ts[0] instead of ctx->packet_count i.e pkt->dts = pkt->pts = ctx->packet_count ctx->bitb.ts[0];
                 // However keep in mind that it causes ffmpeg warning: Application provided invalid, non monotonically increasing dts to muxer in stream 0
                 //
-                pkt->dts = pkt->pts = xe->packet_count;
+                pkt->pts = xe->stat.fnum; // ctx->bitb.ts[0]
+                pkt->dts = xe->stat.fnum;
+                
+                xe->bitrate += (xe->stat.write - xe->stat.sei_size);
 
+                switch(xe->stat.stype) {
+                case XEVE_ST_I:
+                    av_pic_type = AV_PICTURE_TYPE_I;
+                    pkt->flags |= AV_PKT_FLAG_KEY;
+                    break;
+                case XEVE_ST_P:
+                    av_pic_type = AV_PICTURE_TYPE_P;
+                    break;
+                case XEVE_ST_B:
+                    av_pic_type = AV_PICTURE_TYPE_B;
+                    break;
+                case XEVE_ST_UNKNOWN:
+                    av_log(NULL, AV_LOG_ERROR, "unknown slice type\n");
+                    return -1;
+                }
 
+                av_log(ctx, AV_LOG_INFO, "OUTPUT | Encoded | slice type: %s | fnum: %ld | poc: %d | Bytes written:  %d | bytes total: %f | timestamps | %lld | %lld | %lld | %lld |\n", 
+                    slice_type(av_pic_type),
+                    xe->stat.fnum,
+                    xe->stat.poc,
+                    xe->stat.write,
+                    xe->bytes_total,
+                    xe->bitb.ts[0],
+                    xe->bitb.ts[1],
+                    xe->bitb.ts[2],
+                    xe->bitb.ts[3]);
+                    
+                ff_side_data_set_encoder_stats(pkt, xe->stat.qp*FF_QP2LAMBDA, NULL, 0, av_pic_type);
+                
                 xe->bitrate += (xe->stat.write - xe->stat.sei_size);
 
                 *got_packet = 1;
                 xe->packet_count++;
-                return 0;
             }
         } else if (ret == XEVE_OK_NO_MORE_FRM) {
-            av_log(ctx, AV_LOG_DEBUG, "Return OK but no more frames (%d)\n", ret);
+            av_log(ctx, AV_LOG_INFO, "Return OK but no more frames (%d)\n", ret);
             return 0;
         } else {
-            av_log(ctx, AV_LOG_ERROR, "invalid return value (%d)\n", ret);
+            av_log(ctx, AV_LOG_DEBUG, "Invalid return value (%d)\n", ret);
             return -1;
         }
     } else {

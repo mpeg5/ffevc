@@ -130,23 +130,6 @@ ERR:
     return NULL;
 }
 
-
-#if 0
-static void print_nalu_info(int nalu_type, int stype) {
-    if(nalu_type == EVC_NUT_IDR || nalu_type == EVC_NUT_NONIDR) {
-        av_log(NULL, AV_LOG_DEBUG, "%c-slice\n", stype == EVC_ST_I ? 'I' : stype == EVC_ST_P ? 'P' : 'B');
-    } else if(nalu_type == EVC_NUT_SPS) {
-        av_log(NULL, AV_LOG_DEBUG, "EVC_NUT_SPS \n");
-    } else if (nalu_type == EVC_NUT_PPS) {
-        av_log(NULL, AV_LOG_DEBUG, "EVC_NUT_PPS \n");
-    } else if (nalu_type == EVC_NUT_SEI) {
-        av_log(NULL, AV_LOG_DEBUG, "EVC_NUT_SEI \n");
-    } else {
-        av_log(NULL, AV_LOG_DEBUG, "Unknown bitstream !!!! \n");
-    }
-}
-#endif
-
 static int read_nal_unit_size(const uint8_t *bs, int bs_size)
 {
     int nal_unit_size = 0;

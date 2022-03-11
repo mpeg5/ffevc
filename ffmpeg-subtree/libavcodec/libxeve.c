@@ -1060,11 +1060,10 @@ static int libxeve_encode(AVCodecContext *ctx, AVPacket *pkt,
 
                 memcpy(pkt->data, xe->bitb.addr, xe->stat.write);
 
-                // @todo consider using ctx->bitb.ts[0] instead of ctx->packet_count i.e pkt->dts = pkt->pts = ctx->packet_count ctx->bitb.ts[0];
-                // However keep in mind that it causes ffmpeg warning: Application provided invalid, non monotonically increasing dts to muxer in stream 0
+                /// @todo DTS should be provided by lib XEVE
                 //
-                pkt->pts = xe->stat.fnum; // ctx->bitb.ts[0]
-                pkt->dts = xe->stat.fnum;
+                pkt->pts = xe->bitb.ts[0];
+                pkt->dts = xe->stat.fnum - ctx->max_b_frames;  // Substaction has been added to meet DTS<=PTS condition
                 
                 xe->bitrate += (xe->stat.write - xe->stat.sei_size);
 

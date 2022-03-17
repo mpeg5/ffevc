@@ -1020,7 +1020,7 @@ static int libxeve_encode(AVCodecContext *ctx, AVPacket *pkt,
             imgb->ts[3] = 0;
 
             /* push image to encoder */
-            av_log(ctx, AV_LOG_INFO, "INPUT | RAW frame | timestamps | %lld | %lld | %lld | %lld |\n", imgb->ts[0], imgb->ts[1], imgb->ts[2], imgb->ts[3]);
+            av_log(ctx, AV_LOG_DEBUG, "INPUT | RAW frame | timestamps | %lld | %lld | %lld | %lld |\n", imgb->ts[0], imgb->ts[1], imgb->ts[2], imgb->ts[3]);
 
             ret = xeve_push(xe->id, imgb);
             if(XEVE_FAILED(ret)) {
@@ -1083,7 +1083,7 @@ static int libxeve_encode(AVCodecContext *ctx, AVPacket *pkt,
                     return -1;
                 }
 
-                av_log(ctx, AV_LOG_INFO, "OUTPUT | Encoded | slice type: %s | fnum: %ld | poc: %d | Bytes written:  %d | bytes total: %f | timestamps | %lld | %lld | %lld | %lld |\n", 
+                av_log(ctx, AV_LOG_DEBUG, "OUTPUT | Encoded | slice type: %s | fnum: %ld | poc: %d | Bytes written:  %d | bytes total: %f | timestamps | %lld | %lld | %lld | %lld |\n", 
                     slice_type(av_pic_type),
                     xe->stat.fnum,
                     xe->stat.poc,

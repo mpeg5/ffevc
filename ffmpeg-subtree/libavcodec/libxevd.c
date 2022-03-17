@@ -275,18 +275,30 @@ static int get_conf(const AVCodecContext* avctx, XEVD_CDSC* cdsc)
 }
 
 /**
- * Read NAL unit size
- * @param data input data
- * @return size of NAL unit on success, negative value on failure
+ * Read NAL unit length
+ * @param bs input data (bitstream)
+ * @return the lenghth of NAL unit on success, 0 value on failure
  */
-static int read_nal_unit_size(void * data)
+static uint32_t read_nal_unit_length(const uint8_t *bs, int bs_size)
 {
-    int nalu_size;
-    memcpy(&nalu_size, data, XEVD_NAL_UNIT_LENGTH_BYTE);
-    if(nalu_size <= 0) {
-        return -1;
+    uint32_t len = 0;
+    XEVD_INFO info;
+    int ret;
+
+    if(bs_size==XEVD_NAL_UNIT_LENGTH_BYTE) {
+        ret = xevd_info((void*)bs, XEVD_NAL_UNIT_LENGTH_BYTE, 1, &info);
+        if (XEVD_FAILED(ret)) {
+            av_log(NULL, AV_LOG_ERROR, "Cannot get bitstream information\n");
+            return 0;
+        }
+        len = info.nalu_len;
+        if(bs_size == 0)
+        {
+            av_log(NULL, AV_LOG_ERROR, "Invalid bitstream size![%d]\n", bs_size);
+            return 0;
+        }
     }
-    return nalu_size;
+    return len;
 }
 
 /**
@@ -497,8 +509,8 @@ static int libxevd_decode(AVCodecContext *avctx, void *data, int *got_frame, AVP
             memset(&stat, 0, sizeof(XEVD_STAT));
             memset(&bitb, 0, sizeof(XEVD_BITB));
 
-            nalu_size = read_nal_unit_size(pkt->data + bs_read_pos);
-            if(nalu_size <= 0) {
+            nalu_size = read_nal_unit_length(pkt->data + bs_read_pos, XEVD_NAL_UNIT_LENGTH_BYTE);
+            if(nalu_size == 0) {
                 av_log(avctx, AV_LOG_ERROR, "Invalid bitstream\n");
                 goto ERR;
             }

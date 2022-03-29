@@ -60,7 +60,6 @@ typedef struct XevdContext {
 
     XEVD id;        // XEVD instance identifier @see xevd.h
     XEVD_CDSC cdsc; // decoding parameters @see xevd.h
-    XEVD_OPL opl;   // @see xevd.h
 
     int decod_frames; // number of decoded frames
     int packet_count; // number of packets created by decoder
@@ -292,9 +291,9 @@ static uint32_t read_nal_unit_length(const uint8_t *bs, int bs_size)
             return 0;
         }
         len = info.nalu_len;
-        if(bs_size == 0)
+        if(len == 0)
         {
-            av_log(NULL, AV_LOG_ERROR, "Invalid bitstream size![%d]\n", bs_size);
+            av_log(NULL, AV_LOG_ERROR, "Invalid bitstream size! [%d]\n", bs_size);
             return 0;
         }
     }
@@ -580,7 +579,7 @@ static int libxevd_decode(AVCodecContext *avctx, void *data, int *got_frame, AVP
                     imgb->release(imgb);
                     imgb = NULL;
                 }
-                ret = xevd_pull(ctx->id, &imgb, &(ctx->opl));
+                ret = xevd_pull(ctx->id, &imgb);
                 if(XEVD_FAILED(ret)) {
                     av_log(avctx, AV_LOG_ERROR, "failed to pull the decoded image (err:%d, frame#=%d)\n", ret, stat.fnum);
                     goto ERR;
@@ -595,7 +594,7 @@ static int libxevd_decode(AVCodecContext *avctx, void *data, int *got_frame, AVP
         }
     } else {
         av_log(NULL, AV_LOG_DEBUG, "bumping ...\n");
-        ret = xevd_pull(ctx->id, &(imgb), &(ctx->opl));
+        ret = xevd_pull(ctx->id, &(imgb));
         if(ret == XEVD_ERR_UNEXPECTED) {
             av_log(avctx, AV_LOG_DEBUG, "Bumping process completed\n");
             *got_frame = 0;

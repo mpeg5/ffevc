@@ -1060,11 +1060,11 @@ static int libxeve_encode(AVCodecContext *ctx, AVPacket *pkt,
 
                 memcpy(pkt->data, xe->bitb.addr, xe->stat.write);
 
-                /// @todo DTS should be provided by lib XEVE
-                //
                 pkt->pts = xe->bitb.ts[0];
-                pkt->dts = xe->stat.fnum - ctx->max_b_frames;  // Substaction has been added to meet DTS<=PTS condition
+                pkt->dts = xe->bitb.ts[1];
                 
+                av_log(NULL, AV_LOG_DEBUG, "PTS: %ld | DTS: %ld\n", pkt->pts, pkt->dts);
+
                 xe->bitrate += (xe->stat.write - xe->stat.sei_size);
 
                 switch(xe->stat.stype) {

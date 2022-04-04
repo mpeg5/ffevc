@@ -58,16 +58,16 @@ static uint32_t read_nal_unit_length(const uint8_t *bs, int bs_size)
     XEVD_INFO info;
     int ret;
 
-    if(bs_size==XEVD_NAL_UNIT_LENGTH_BYTE) {
+    if(bs_size>=XEVD_NAL_UNIT_LENGTH_BYTE) {
         ret = xevd_info((void*)bs, XEVD_NAL_UNIT_LENGTH_BYTE, 1, &info);
         if (XEVD_FAILED(ret)) {
             av_log(NULL, AV_LOG_ERROR, "Cannot get bitstream information\n");
             return 0;
         }
         len = info.nalu_len;
-        if(bs_size == 0)
+        if(len == 0)
         {
-            av_log(NULL, AV_LOG_ERROR, "Invalid bitstream size![%d]\n", bs_size);
+            av_log(NULL, AV_LOG_ERROR, "Invalid bitstream size! [%d]\n", bs_size);
             return 0;
         }
     }

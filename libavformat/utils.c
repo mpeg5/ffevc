@@ -895,10 +895,11 @@ AVChapter *avpriv_new_chapter(AVFormatContext *s, int64_t id, AVRational time_ba
     if (!s->nb_chapters) {
         si->chapter_ids_monotonic = 1;
     } else if (!si->chapter_ids_monotonic || s->chapters[s->nb_chapters-1]->id >= id) {
-        si->chapter_ids_monotonic = 0;
         for (unsigned i = 0; i < s->nb_chapters; i++)
             if (s->chapters[i]->id == id)
                 chapter = s->chapters[i];
+        if (!chapter)
+            si->chapter_ids_monotonic = 0;
     }
 
     if (!chapter) {
@@ -1243,7 +1244,7 @@ void ff_parse_key_value(const char *str, ff_parse_key_val_cb callback_get_buf,
         key_len = ptr - key;
 
         callback_get_buf(context, key, key_len, &dest, &dest_len);
-        dest_end = dest + dest_len - 1;
+        dest_end = dest ? dest + dest_len - 1 : NULL;
 
         if (*ptr == '\"') {
             ptr++;

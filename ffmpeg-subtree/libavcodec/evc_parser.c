@@ -181,7 +181,6 @@ static int parse_nal_units(AVCodecParserContext *s, const uint8_t *bs,
     bits += XEVD_NAL_UNIT_LENGTH_BYTE;
     bits_size -= XEVD_NAL_UNIT_LENGTH_BYTE;
 
-    // nalu_type = get_nalu_type(bits, bits_size);
     nalu_type = get_nalu_type2(bits, bits_size);
 
     bits += EVC_NAL_HEADER_SIZE;
@@ -248,8 +247,8 @@ static int parse_nal_units(AVCodecParserContext *s, const uint8_t *bs,
         av_log(ctx, AV_LOG_DEBUG, "XEVD_NUT_NONIDR\n");
         ev->got_slice++;
     } else {
-        av_log(ctx, AV_LOG_ERROR, "<1>Invalid NAL unit type: %d\n", nalu_type);
-        // return -1;
+        av_log(ctx, AV_LOG_ERROR, "Invalid NAL unit type: %d\n", nalu_type);
+        return -1;
     }
     return 0;
 }

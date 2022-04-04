@@ -67,7 +67,7 @@ static uint32_t read_nal_unit_length(const uint8_t *bs, int bs_size)
         len = info.nalu_len;
         if(len == 0)
         {
-            av_log(NULL, AV_LOG_ERROR, "Invalid bitstream size! 3 [%d]\n", bs_size);
+            av_log(NULL, AV_LOG_ERROR, "Invalid bitstream size! [%d]\n", bs_size);
             return 0;
         }
     }

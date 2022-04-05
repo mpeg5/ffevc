@@ -70,7 +70,12 @@ static int get_nalu_type(const uint8_t *bs, int bs_size)
 {
     GetBitContext gb;
     int fzb, nut;
-    init_get_bits(&gb, bs, bs_size * 8);
+    int ret;
+    
+    if((ret=init_get_bits8(&gb, bs, bs_size)) < 0) {
+        return ret;
+    }
+
     fzb = get_bits1(&gb);
     if(fzb != 0) {
         av_log(NULL, AV_LOG_DEBUG, "forbidden_zero_bit is not clear\n");
@@ -102,8 +107,10 @@ static EVCParserSPS * parse_sps(const uint8_t *bs, int bs_size, EVCParserContext
     GetBitContext gb;
     EVCParserSPS *sps;
     int sps_id;
-
-    init_get_bits(&gb, bs, bs_size*8);
+    
+    if(init_get_bits8(&gb, bs, bs_size) < 0) {
+        return NULL;
+    }
 
     sps_id = get_ue_golomb(&gb);
     if(sps_id >= MAX_SPS_CNT) goto ERR;

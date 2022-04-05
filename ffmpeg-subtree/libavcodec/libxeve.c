@@ -100,8 +100,8 @@ typedef struct XeveContext {
     int hash;
 
     /* variables for input parameter */
-    char * op_preset;
-    char * op_tune;
+    char *op_preset;
+    char *op_tune;
     int    op_qp;
     int    op_crf;
 
@@ -116,15 +116,14 @@ typedef struct XeveContext {
  * @param profile string describing Xeve encoder profile (baseline, main)
  * @return XEVE pre-defined profile on success, negative value on failure
  */
-static int get_profile_id(const char * profile)
+static int get_profile_id(const char *profile)
 {
-    if (!strcmp(profile, "baseline")) {
+    if (!strcmp(profile, "baseline"))
         return XEVE_PROFILE_BASELINE;
-    } else if (!strcmp(profile, "main")) {
+    else if (!strcmp(profile, "main"))
         return XEVE_PROFILE_MAIN;
-    } else {
+    else
         return -1;
-    }
 }
 
 /**
@@ -133,19 +132,18 @@ static int get_profile_id(const char * profile)
  * @param preset string describing Xeve encoder preset (fast, medium, slow, placebo )
  * @return XEVE pre-defined profile on success, negative value on failure
  */
-static int get_preset_id(const char * preset)
+static int get_preset_id(const char *preset)
 {
-    if((!strcmp(preset, "fast"))) {
+    if((!strcmp(preset, "fast")))
         return XEVE_PRESET_FAST;
-    } else if (!strcmp(preset, "medium")) {
+    else if (!strcmp(preset, "medium"))
         return XEVE_PRESET_MEDIUM;
-    } else if (!strcmp(preset, "slow")) {
+    else if (!strcmp(preset, "slow"))
         return XEVE_PRESET_SLOW;
-    } else if (!strcmp(preset, "placebo")) {
+    else if (!strcmp(preset, "placebo"))
         return XEVE_PRESET_PLACEBO;
-    } else {
+    else
         return -1;
-    }
 }
 
 /**
@@ -154,15 +152,14 @@ static int get_preset_id(const char * preset)
  * @param preset string describing Xeve encoder preset (fast, medium, slow, placebo )
  * @return XEVE pre-defined profile on success, negative value on failure
  */
-static int get_tune_id(const char * tune)
+static int get_tune_id(const char *tune)
 {
-    if((!strcmp(tune, "psnr"))) {
+    if((!strcmp(tune, "psnr")))
         return XEVE_TUNE_PSNR;
-    } else if (!strcmp(tune, "zerolatency")) {
+    else if (!strcmp(tune, "zerolatency"))
         return XEVE_TUNE_ZEROLATENCY;
-    } else {
+    else
         return -1;
-    }
 }
 
 static int kbps_str_to_int(char *str)
@@ -174,9 +171,8 @@ static int kbps_str_to_int(char *str)
     } else if (strchr(str, 'M') || strchr(str, 'm')) {
         char *tmp = strtok(str, "Mm ");
         kbps = (int)(atof(tmp) * 1000);
-    } else {
+    } else
         kbps = atoi(str);
-    }
     return kbps;
 }
 
@@ -191,7 +187,7 @@ static int kbps_str_to_int(char *str)
  *
  * @return 0 on success, negative value on failure
  */
-static int parse_xeve_params(const char* key, const char* value, XeveContext* xe, XEVE_PARAM* param)
+static int parse_xeve_params(const char *key, const char *value, XeveContext *xe, XEVE_PARAM *param)
 {
     if(!key) {
         av_log(NULL, AV_LOG_ERROR, "Ivalid argument: key string is NULL\n");
@@ -206,7 +202,7 @@ static int parse_xeve_params(const char* key, const char* value, XeveContext* xe
             return XEVE_PARAM_BAD_VALUE;
         }
     } else if (strcmp(key, "vbv-bufsize") == 0 ) {
-        param->vbv_bufsize = kbps_str_to_int((char*)value);
+        param->vbv_bufsize = kbps_str_to_int((char *)value);
         av_log(NULL, AV_LOG_INFO, "VBV buffer size: %dkbits\n", param->vbv_bufsize);
     } else if (strcmp(key, "rc-type") == 0 ) {
         int rc_type = atoi(value);
@@ -225,7 +221,7 @@ static int parse_xeve_params(const char* key, const char* value, XeveContext* xe
         param->bframes = bframes;
         av_log(NULL, AV_LOG_INFO, "bframes : %d\n", bframes);
     } else if (strcmp(key, "profile") == 0 ) {
-        const char* profile = value;
+        const char *profile = value;
         int profile_id;
         av_log(NULL, AV_LOG_INFO, "profile (baseline, main): %s\n", profile);
         profile_id = get_profile_id(profile);
@@ -235,7 +231,7 @@ static int parse_xeve_params(const char* key, const char* value, XeveContext* xe
         }
         xe->profile_id = profile_id;
     } else if (strcmp(key, "preset") == 0 ) {
-        const char* preset = value;
+        const char *preset = value;
         int preset_id;
         av_log(NULL, AV_LOG_INFO, "Preset of xeve (fast, medium, slow, placebo): %s\n", preset);
         preset_id = get_preset_id(preset);
@@ -245,10 +241,10 @@ static int parse_xeve_params(const char* key, const char* value, XeveContext* xe
         }
         xe->preset_id = preset_id;
     } else if (strcmp(key, "tune") == 0 ) {
-        const char* tune = value;
+        const char *tune = value;
         int tune_id;
         av_log(NULL, AV_LOG_INFO, "Tune of xeve (psnr, zerolatency): %s\n", tune);
-        tune_id= get_tune_id(tune);
+        tune_id = get_tune_id(tune);
         if( tune_id < 0) {
             av_log(NULL, AV_LOG_ERROR, "Invalid xeve param: tune(%s)\n", tune);
             return XEVE_PARAM_BAD_VALUE;
@@ -340,7 +336,7 @@ static int get_pix_fmt(enum AVPixelFormat pix_fmt, int *color_format, int *bit_d
  */
 static int get_conf(const AVCodecContext *ctx, XEVE_CDSC *cdsc)
 {
-    XEVE_PARAM * param = NULL;
+    XEVE_PARAM *param = NULL;
     XeveContext *xe = NULL;
     int color_format;
     int cpu_count = av_cpu_count();
@@ -381,7 +377,7 @@ static int get_conf(const AVCodecContext *ctx, XEVE_CDSC *cdsc)
         av_log(NULL, AV_LOG_INFO, "GOP size (key-frame interval): %d\n", ctx->gop_size);
     }
     if (ctx->max_b_frames == 0 || ctx->max_b_frames == 1 || ctx->max_b_frames == 3 ||
-            ctx->max_b_frames == 7 || ctx->max_b_frames == 15) { /* number of b-frame */
+        ctx->max_b_frames == 7 || ctx->max_b_frames == 15) { /* number of b-frame */
         param->bframes = ctx->max_b_frames;
         av_log(NULL, AV_LOG_INFO, "Number of max b-frames: %d\n", ctx->max_b_frames);
     } else {
@@ -390,18 +386,17 @@ static int get_conf(const AVCodecContext *ctx, XEVE_CDSC *cdsc)
         goto ERR;
     }
 
-    if (ctx->level >= 0) {
+    if (ctx->level >= 0)
         param->level_idc = ctx->level;
-    }
     ret = get_pix_fmt(ctx->pix_fmt, &color_format, &xe->input_depth);
-    if (ret!=0) {
-        av_log((AVCodecContext*)ctx, AV_LOG_ERROR, "Unsupported pixel format.\n");
+    if (ret != 0) {
+        av_log((AVCodecContext *)ctx, AV_LOG_ERROR, "Unsupported pixel format.\n");
         goto ERR;
     }
     param->cs = XEVE_CS_SET(color_format, xe->input_depth, 0);
 
     if (ctx->rc_buffer_size > 0) {
-        param->vbv_bufsize = (int)(ctx->rc_buffer_size/ 1000);
+        param->vbv_bufsize = (int)(ctx->rc_buffer_size / 1000);
         av_log(NULL, AV_LOG_INFO, "VBV buf size: %d\n", ctx->rc_buffer_size);
     }
     if (ctx->bit_rate > 0) {
@@ -419,22 +414,21 @@ static int get_conf(const AVCodecContext *ctx, XEVE_CDSC *cdsc)
 
     if(ctx->thread_count <= 0) {
         av_log(NULL, AV_LOG_DEBUG, "cpu_count: %d\n", cpu_count);
-        param->threads = (cpu_count < XEVE_MAX_THREADS)? cpu_count: XEVE_MAX_THREADS;
-    } else if(ctx->thread_count > XEVE_MAX_THREADS) {
+        param->threads = (cpu_count < XEVE_MAX_THREADS) ? cpu_count : XEVE_MAX_THREADS;
+    } else if(ctx->thread_count > XEVE_MAX_THREADS)
         param->threads = XEVE_MAX_THREADS;
-    } else {
+    else
         param->threads = ctx->thread_count;
-    }
     av_log(NULL, AV_LOG_INFO, "param->threads: %d\n", param->threads);
 
     cdsc->param.cs = XEVE_CS_SET(color_format, param->codec_bit_depth, 0);
     cdsc->max_bs_buf_size = MAX_BS_BUF;
 
-    if(ctx->profile == FF_PROFILE_EVC_BASELINE) {
+    if(ctx->profile == FF_PROFILE_EVC_BASELINE)
         xe->profile_id = XEVE_PROFILE_BASELINE;
-    } else if(ctx->profile == FF_PROFILE_EVC_MAIN) {
+    else if(ctx->profile == FF_PROFILE_EVC_MAIN)
         xe->profile_id = XEVE_PROFILE_MAIN;
-    } else {
+    else {
         av_log(NULL, AV_LOG_ERROR, "Unknown encoder profile (%d)\n"
                "Acceptable values for profile option are 0 and 1 (0: baseline profile; 1: main profile)\n", ctx->profile);
         goto ERR;
@@ -447,7 +441,7 @@ static int get_conf(const AVCodecContext *ctx, XEVE_CDSC *cdsc)
         xe->tune_id = get_tune_id(xe->op_tune);
         av_log(NULL, AV_LOG_INFO, "Tune    : %s\n", xe->op_tune);
     }
-    
+
     ret = xeve_param_ppt(param, xe->profile_id, xe->preset_id, xe->tune_id);
     if (XEVE_FAILED(ret)) {
         av_log(NULL, AV_LOG_ERROR, "cannot set profile(%d), preset(%d), tune(%d)\n", xe->profile_id, xe->preset_id, xe->tune_id);
@@ -463,11 +457,11 @@ static int get_conf(const AVCodecContext *ctx, XEVE_CDSC *cdsc)
 
             switch (parse_ret) {
             case XEVE_PARAM_BAD_NAME:
-                av_log((AVCodecContext*)ctx, AV_LOG_WARNING,
+                av_log((AVCodecContext *)ctx, AV_LOG_WARNING,
                        "Unknown option: %s.\n", en->key);
                 break;
             case XEVE_PARAM_BAD_VALUE:
-                av_log((AVCodecContext*)ctx, AV_LOG_WARNING,
+                av_log((AVCodecContext *)ctx, AV_LOG_WARNING,
                        "Invalid value for %s: %s.\n", en->key, en->value);
                 break;
             default:
@@ -622,7 +616,7 @@ static int check_conf(AVCodecContext *ctx,  XEVE_CDSC *cdsc)
             ret = -1;
         }
         if ((cdsc->param.framework_cb_max || cdsc->param.framework_cb_min) &&
-                cdsc->param.framework_cb_min > cdsc->param.framework_cb_max) {
+            cdsc->param.framework_cb_min > cdsc->param.framework_cb_max) {
             av_log(NULL, AV_LOG_ERROR, "Minimum Coding Block size cannot be greater than Maximum coding Block size\n");
             ret = -1;
         }
@@ -631,7 +625,7 @@ static int check_conf(AVCodecContext *ctx,  XEVE_CDSC *cdsc)
             ret = -1;
         }
         if ((cdsc->param.framework_cb_max || cdsc->param.framework_cu14_max) &&
-                cdsc->param.framework_cu14_max > cdsc->param.framework_cb_max) {
+            cdsc->param.framework_cu14_max > cdsc->param.framework_cb_max) {
             av_log(NULL, AV_LOG_ERROR, "Maximun 1:4 Coding Block size cannot be greater than Maximum coding Block size\n");
             ret = -1;
         }
@@ -640,12 +634,12 @@ static int check_conf(AVCodecContext *ctx,  XEVE_CDSC *cdsc)
             ret = -1;
         }
         if ((cdsc->param.framework_tris_max || cdsc->param.framework_cb_max) &&
-                cdsc->param.framework_tris_max > cdsc->param.framework_cb_max) {
+            cdsc->param.framework_tris_max > cdsc->param.framework_cb_max) {
             av_log(NULL, AV_LOG_ERROR, "Maximun Tri-split Block size cannot be greater than Maximum coding Block size\n");
             ret = -1;
         }
         if ((cdsc->param.framework_tris_min || cdsc->param.framework_cb_min) &&
-                cdsc->param.framework_tris_min < cdsc->param.framework_cb_min + 2) {
+            cdsc->param.framework_tris_min < cdsc->param.framework_cb_min + 2) {
             av_log(NULL, AV_LOG_ERROR, "Maximun Tri-split Block size cannot be smaller than Minimum Coding Block size plus two\n");
             ret = -1;
         }
@@ -659,7 +653,7 @@ static int check_conf(AVCodecContext *ctx,  XEVE_CDSC *cdsc)
             ret = -1;
         }
         if (cdsc->param.framework_cb_max && cdsc->param.framework_suco_max > cdsc->param.framework_cb_max) {
-            av_log(NULL, AV_LOG_ERROR,"Maximun SUCO size cannot be greater than Maximum coding Block size\n");
+            av_log(NULL, AV_LOG_ERROR, "Maximun SUCO size cannot be greater than Maximum coding Block size\n");
             ret = -1;
         }
         if (cdsc->param.framework_suco_min < 4) {
@@ -667,7 +661,7 @@ static int check_conf(AVCodecContext *ctx,  XEVE_CDSC *cdsc)
             ret = -1;
         }
         if (cdsc->param.framework_cb_min && cdsc->param.framework_suco_min < cdsc->param.framework_cb_min) {
-            av_log(NULL, AV_LOG_ERROR,"Minimun SUCO size cannot be smaller than Minimum coding Block size\n");
+            av_log(NULL, AV_LOG_ERROR, "Minimun SUCO size cannot be smaller than Minimum coding Block size\n");
             ret = -1;
         }
         if (cdsc->param.framework_suco_min > cdsc->param.framework_suco_max) {
@@ -820,21 +814,19 @@ static int setup_bumping(XEVE id)
     int val, size;
     val  = 1;
     size = sizeof(int);
-    if(XEVE_FAILED(xeve_config(id, XEVE_CFG_SET_FORCE_OUT, (void *)(&val), &size))) {
+    if(XEVE_FAILED(xeve_config(id, XEVE_CFG_SET_FORCE_OUT, (void *)(&val), &size)))
         return -1;
-    }
     return 0;
 }
 
-static const char* slice_type(enum AVPictureType av_pic_type)
+static const char *slice_type(enum AVPictureType av_pic_type)
 {
-    if(av_pic_type == AV_PICTURE_TYPE_I) {
+    if(av_pic_type == AV_PICTURE_TYPE_I)
         return "Slice Type I";
-    } else if(av_pic_type == AV_PICTURE_TYPE_P) {
+    else if(av_pic_type == AV_PICTURE_TYPE_P)
         return "Slice Type P";
-    } else if(av_pic_type == AV_PICTURE_TYPE_B) {
+    else if(av_pic_type == AV_PICTURE_TYPE_B)
         return "Slice Type B";
-    } 
     return "Slice Type UNDEFINED";
 }
 
@@ -862,10 +854,10 @@ static av_cold int libxeve_init(AVCodecContext *ctx)
     int i, val = 0;
     int shift_h = 0;
     int shift_v = 0;
-    XEVE_IMGB * imgb = NULL;
+    XEVE_IMGB *imgb = NULL;
 
     XEVE_CDSC *cdsc = &(xe->cdsc);
-    
+
     av_log(NULL, AV_LOG_DEBUG, "eXtra-fast Essential Video Encoder\n");
 
     if(ctx->pix_fmt != AV_PIX_FMT_YUV420P && ctx->pix_fmt != AV_PIX_FMT_YUV420P10) {
@@ -874,7 +866,7 @@ static av_cold int libxeve_init(AVCodecContext *ctx)
     }
 
     /* allocate bitstream buffer */
-    bs_buf = (unsigned char*)malloc(MAX_BS_BUF);
+    bs_buf = (unsigned char *)malloc(MAX_BS_BUF);
     if(bs_buf == NULL) {
         av_log(NULL, AV_LOG_ERROR, "cannot allocate bitstream buffer, size=%d", MAX_BS_BUF);
         goto ERR;
@@ -883,12 +875,12 @@ static av_cold int libxeve_init(AVCodecContext *ctx)
     /* read configurations and set values for created descriptor (XEVE_CDSC) */
     val = get_conf(ctx, cdsc);
     if (val != XEVE_OK) {
-        av_log(NULL, AV_LOG_ERROR,"cannot get configuration\n");
+        av_log(NULL, AV_LOG_ERROR, "cannot get configuration\n");
         goto ERR;
     }
 
     if (check_conf(ctx, cdsc) != 0) {
-        av_log(NULL, AV_LOG_ERROR,"invalid configuration\n");
+        av_log(NULL, AV_LOG_ERROR, "invalid configuration\n");
         goto ERR;
     }
 
@@ -923,11 +915,10 @@ static av_cold int libxeve_init(AVCodecContext *ctx)
     imgb = &xe->imgb;
     imgb->cs = xeve_color_space(ctx->pix_fmt);
     imgb->np = 3; /* only for yuv420p, yuv420ple */
-    for (i=0; i<imgb->np; i++) {
+    for (i = 0; i < imgb->np; i++)
         imgb->x[i] = imgb->y[i] = 0;
-    }
     imgb->w[0] = imgb->aw[0] = xe->width_luma;
-    imgb->w[1] = imgb->w[2] = imgb->aw[1]= imgb->aw[2] = xe->width_chroma;
+    imgb->w[1] = imgb->w[2] = imgb->aw[1] = imgb->aw[2] = xe->width_chroma;
     imgb->h[0] = imgb->ah[0] = xe->height_luma;
     imgb->h[1] = imgb->h[2] = imgb->ah[1] = imgb->ah[2] = xe->height_chroma;
 
@@ -959,7 +950,7 @@ static int libxeve_encode(AVCodecContext *ctx, AVPacket *pkt,
     XeveContext *xe = NULL;
     int  ret = -1;
     int xeve_cs;
-    if(ctx == NULL || pkt == NULL || got_packet==NULL) {
+    if(ctx == NULL || pkt == NULL || got_packet == NULL) {
         av_log(ctx, AV_LOG_ERROR, "Invalid arguments\n");
         return -1;
     }
@@ -973,10 +964,10 @@ static int libxeve_encode(AVCodecContext *ctx, AVPacket *pkt,
         xe->state = STATE_ENCODING;
     } else if(xe->state == STATE_ENCODING && frame == NULL) {
         av_log(ctx, AV_LOG_DEBUG, "Empty frame -> Entering bumping process...\n");
-        if (setup_bumping(xe->id) == 0) {
+        if (setup_bumping(xe->id) == 0)
             xe->state = STATE_BUMPING;
-        } else {
-            av_log(ctx, AV_LOG_ERROR,"Failed to setup bumping\n");
+        else {
+            av_log(ctx, AV_LOG_ERROR, "Failed to setup bumping\n");
             xe->state = STATE_SKIPPING;
         }
     }
@@ -996,15 +987,15 @@ static int libxeve_encode(AVCodecContext *ctx, AVPacket *pkt,
 
         {
             int i;
-            XEVE_IMGB * imgb = NULL;
+            XEVE_IMGB *imgb = NULL;
             int xeve_byte_depth = 0;
 
             imgb = &xe->imgb;
 
             xeve_byte_depth = XEVE_CS_GET_BYTE_DEPTH(xeve_cs);
-            av_log(ctx, AV_LOG_DEBUG, "byte depth: %d\n",xeve_byte_depth);
+            av_log(ctx, AV_LOG_DEBUG, "byte depth: %d\n", xeve_byte_depth);
 
-            for (i=0; i<imgb->np; i++) {
+            for (i = 0; i < imgb->np; i++) {
                 imgb->a[i] = frame->data[i];
                 imgb->s[i] = frame->linesize[i];
             }
@@ -1028,9 +1019,9 @@ static int libxeve_encode(AVCodecContext *ctx, AVPacket *pkt,
                 return -1;
             }
         }
-    } 
+    }
     if(xe->state == STATE_ENCODING || xe->state == STATE_BUMPING) {
-        
+
         /* encoding */
         ret = xeve_encode(xe->id, &(xe->bitb), &(xe->stat));
         if(XEVE_FAILED(ret)) {
@@ -1049,7 +1040,7 @@ static int libxeve_encode(AVCodecContext *ctx, AVPacket *pkt,
             int av_pic_type;
 
             if(xe->stat.write > 0) {
-                xe->bytes_total+=xe->stat.write;
+                xe->bytes_total += xe->stat.write;
                 // av_log(ctx, AV_LOG_DEBUG, "frame: %d | Bytes written:  %d | bytes total: %f | fnum %d | %lld | %lld | %lld | %lld |\n", xe->encod_frames, xe->stat.write, xe->bytes_total, xe->stat.fnum, xe->bitb.ts[0],xe->bitb.ts[1],xe->bitb.ts[2],xe->bitb.ts[3]);
 
                 ret = av_grow_packet(pkt, xe->stat.write);
@@ -1062,7 +1053,7 @@ static int libxeve_encode(AVCodecContext *ctx, AVPacket *pkt,
 
                 pkt->pts = xe->bitb.ts[0];
                 pkt->dts = xe->bitb.ts[1];
-                
+
                 av_log(NULL, AV_LOG_DEBUG, "PTS: %ld | DTS: %ld\n", pkt->pts, pkt->dts);
 
                 xe->bitrate += (xe->stat.write - xe->stat.sei_size);
@@ -1083,19 +1074,19 @@ static int libxeve_encode(AVCodecContext *ctx, AVPacket *pkt,
                     return -1;
                 }
 
-                av_log(ctx, AV_LOG_DEBUG, "OUTPUT | Encoded | slice type: %s | fnum: %ld | poc: %d | Bytes written:  %d | bytes total: %f | timestamps | %lld | %lld | %lld | %lld |\n", 
-                    slice_type(av_pic_type),
-                    xe->stat.fnum,
-                    xe->stat.poc,
-                    xe->stat.write,
-                    xe->bytes_total,
-                    xe->bitb.ts[0],
-                    xe->bitb.ts[1],
-                    xe->bitb.ts[2],
-                    xe->bitb.ts[3]);
-                    
-                ff_side_data_set_encoder_stats(pkt, xe->stat.qp*FF_QP2LAMBDA, NULL, 0, av_pic_type);
-                
+                av_log(ctx, AV_LOG_DEBUG, "OUTPUT | Encoded | slice type: %s | fnum: %ld | poc: %d | Bytes written:  %d | bytes total: %f | timestamps | %lld | %lld | %lld | %lld |\n",
+                       slice_type(av_pic_type),
+                       xe->stat.fnum,
+                       xe->stat.poc,
+                       xe->stat.write,
+                       xe->bytes_total,
+                       xe->bitb.ts[0],
+                       xe->bitb.ts[1],
+                       xe->bitb.ts[2],
+                       xe->bitb.ts[3]);
+
+                ff_side_data_set_encoder_stats(pkt, xe->stat.qp * FF_QP2LAMBDA, NULL, 0, av_pic_type);
+
                 xe->bitrate += (xe->stat.write - xe->stat.sei_size);
 
                 *got_packet = 1;

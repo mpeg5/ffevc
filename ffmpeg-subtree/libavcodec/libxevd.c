@@ -38,7 +38,7 @@
 #include "libavutil/imgutils.h"
 
 // #define USE_EXP_GOLOMB_STUFF
-#ifdef USE_EXP_GOLOMB_STUFF 
+#ifdef USE_EXP_GOLOMB_STUFF
 #include "golomb.h"
 #endif
 
@@ -71,27 +71,25 @@ typedef struct XevdContext {
 
 static int  op_threads = 1; // Default value
 
-#ifdef USE_EXP_GOLOMB_STUFF 
+#ifdef USE_EXP_GOLOMB_STUFF
 static int get_nalu_type(const uint8_t *bs, int bs_size)
 {
     GetBitContext gb;
     int fzb, nut;
     int ret;
-    
-    if((ret=init_get_bits8(&gb, bs, bs_size)) < 0) {
+
+    if((ret = init_get_bits8(&gb, bs, bs_size)) < 0)
         return ret;
-    }
     fzb = get_bits1(&gb);
-    if(fzb != 0) {
+    if(fzb != 0)
         av_log(NULL, AV_LOG_DEBUG, "forbidden_zero_bit is not clear\n");
-    }
     nut = get_bits(&gb, 6); /* nal_unit_type_plus1 */
     return nut - 1;
 }
 #endif
 
 #ifdef PRINT_NALU_INFO
-static void print_nalu_info(XEVD_STAT * stat)
+static void print_nalu_info(XEVD_STAT *stat)
 {
     if(stat->nalu_type < XEVD_NUT_SPS) {
         av_log(NULL, AV_LOG_DEBUG, "XEVD_NUT_SPS \n");
@@ -103,24 +101,23 @@ static void print_nalu_info(XEVD_STAT * stat)
 
         for (int i = 0; i < 2; i++) {
             av_log(NULL, AV_LOG_DEBUG, "[L%d ", i);
-            for (int j = 0; j < stat->refpic_num[i]; j++) av_log(NULL, AV_LOG_DEBUG,"%d ", stat->refpic[i][j]);
-            av_log(NULL, AV_LOG_DEBUG,"] \n");
+            for (int j = 0; j < stat->refpic_num[i]; j++) av_log(NULL, AV_LOG_DEBUG, "%d ", stat->refpic[i][j]);
+            av_log(NULL, AV_LOG_DEBUG, "] \n");
         }
-    } else if(stat->nalu_type == XEVD_NUT_SPS) {
+    } else if(stat->nalu_type == XEVD_NUT_SPS)
         av_log(NULL, AV_LOG_DEBUG, "XEVD_NUT_SPS \n");
-    } else if (stat->nalu_type == XEVD_NUT_PPS) {
+    else if (stat->nalu_type == XEVD_NUT_PPS)
         av_log(NULL, AV_LOG_DEBUG, "XEVD_NUT_PPS \n");
-    } else if (stat->nalu_type == XEVD_NUT_SEI) {
+    else if (stat->nalu_type == XEVD_NUT_SEI)
         av_log(NULL, AV_LOG_DEBUG, "XEVD_NUT_SEI \n");
-    } else {
+    else
         av_log(NULL, AV_LOG_DEBUG, "Unknown bitstream !!!! \n");
-    }
 }
 #endif
 
 // @todo consider moving following function to separate file containing helper functions for EVC decoder
 #ifdef PRINT_FRAME_INFO
-static void print_frame_info(const AVFrame* f)
+static void print_frame_info(const AVFrame *f)
 {
     int level = AV_LOG_DEBUG;
     av_log(NULL, level, "frame->width: %d\n", f->width);
@@ -140,7 +137,7 @@ static void print_frame_info(const AVFrame* f)
 
 // @todo consider moving following function to separate file containing helper functions for EVC decoder
 #ifdef PRINT_XEVD_IMGB_INFO
-static void print_xevd_imgb_info(const XEVD_IMGB* imgb)
+static void print_xevd_imgb_info(const XEVD_IMGB *imgb)
 {
     av_log(NULL, AV_LOG_DEBUG, "imgb->np: %d\n", imgb->np);
     av_log(NULL, AV_LOG_DEBUG, "imgb->bsize[0]: %d\n", imgb->bsize[0]);
@@ -153,15 +150,14 @@ static void print_xevd_imgb_info(const XEVD_IMGB* imgb)
 #ifdef PRINT_AVCTX
 static void print_avctx(const AVCodecContext *avctx)
 {
-    if( AVMEDIA_TYPE_UNKNOWN == avctx->codec_type) {
+    if( AVMEDIA_TYPE_UNKNOWN == avctx->codec_type)
         av_log(NULL, AV_LOG_DEBUG, "avctx->codec_type: AVMEDIA_TYPE_UNKNOWN\n");
-    } else if(AVMEDIA_TYPE_VIDEO  == avctx->codec_type)
+    else if(AVMEDIA_TYPE_VIDEO  == avctx->codec_type)
         av_log(NULL, AV_LOG_DEBUG, "avctx->codec_type: AVMEDIA_TYPE_VIDEO \n");
-    else {
+    else
         av_log(NULL, AV_LOG_DEBUG, "avctx->codec_type: AVMEDIA_TYPE_UNKNOWN\n");
-    }
 
-    av_log(NULL, AV_LOG_DEBUG, "avctx->codec_id: %s\n",avcodec_get_name(avctx->codec_id));
+    av_log(NULL, AV_LOG_DEBUG, "avctx->codec_id: %s\n", avcodec_get_name(avctx->codec_id));
     av_log(NULL, AV_LOG_DEBUG, "avctx->width: %d\n", avctx->width);
     av_log(NULL, AV_LOG_DEBUG, "avctx->height: %d\n", avctx->height);
     av_log(NULL, AV_LOG_DEBUG, "avctx->pix_fmt: %d\n", avctx->pix_fmt);
@@ -174,10 +170,10 @@ static void print_avctx(const AVCodecContext *avctx)
  * @param avctx codec context
  * @return 0 on success
  */
-static int read_options(const AVCodecContext* avctx)
+static int read_options(const AVCodecContext *avctx)
 {
 
-    op_threads = (avctx->thread_count>0)?avctx->thread_count:1;
+    op_threads = (avctx->thread_count > 0) ? avctx->thread_count : 1;
 
     return 0;
 }
@@ -192,7 +188,7 @@ static int read_options(const AVCodecContext* avctx)
  *
  * @todo Consider removing the function
  */
-static int xevd_params_parse(const char* key, const char* value)
+static int xevd_params_parse(const char *key, const char *value)
 {
     if(!key) {
         av_log(NULL, AV_LOG_ERROR, "Ivalid argument: key string is NULL\n");
@@ -233,7 +229,7 @@ static int xevd_params_parse(const char* key, const char* value)
  *
  * @return 0 on success, negative error code on failure
  */
-static int get_conf(const AVCodecContext* avctx, XEVD_CDSC* cdsc)
+static int get_conf(const AVCodecContext *avctx, XEVD_CDSC *cdsc)
 {
     int cpu_count = av_cpu_count();
 
@@ -249,11 +245,11 @@ static int get_conf(const AVCodecContext* avctx, XEVD_CDSC* cdsc)
 
             switch (parse_ret) {
             case XEVD_PARAM_BAD_NAME:
-                av_log((AVCodecContext*)avctx, AV_LOG_WARNING,
+                av_log((AVCodecContext *)avctx, AV_LOG_WARNING,
                        "Unknown option: %s.\n", en->key);
                 break;
             case XEVD_PARAM_BAD_VALUE:
-                av_log((AVCodecContext*)avctx, AV_LOG_WARNING,
+                av_log((AVCodecContext *)avctx, AV_LOG_WARNING,
                        "Invalid value for %s: %s.\n", en->key, en->value);
                 break;
             default:
@@ -266,13 +262,12 @@ static int get_conf(const AVCodecContext* avctx, XEVD_CDSC* cdsc)
     memset(cdsc, 0, sizeof(XEVD_CDSC));
 
     /* init XEVD_CDSC */
-    if(avctx->thread_count <= 0) {
-        cdsc->threads = (cpu_count<XEVD_MAX_TASK_CNT)?cpu_count:XEVD_MAX_TASK_CNT;
-    } else if(avctx->thread_count > XEVD_MAX_TASK_CNT) {
+    if(avctx->thread_count <= 0)
+        cdsc->threads = (cpu_count < XEVD_MAX_TASK_CNT) ? cpu_count : XEVD_MAX_TASK_CNT;
+    else if(avctx->thread_count > XEVD_MAX_TASK_CNT)
         cdsc->threads = XEVD_MAX_TASK_CNT;
-    } else {
+    else
         cdsc->threads = avctx->thread_count;
-    }
 
     return XEVD_OK;
 }
@@ -288,15 +283,14 @@ static uint32_t read_nal_unit_length(const uint8_t *bs, int bs_size)
     XEVD_INFO info;
     int ret;
 
-    if(bs_size==XEVD_NAL_UNIT_LENGTH_BYTE) {
-        ret = xevd_info((void*)bs, XEVD_NAL_UNIT_LENGTH_BYTE, 1, &info);
+    if(bs_size == XEVD_NAL_UNIT_LENGTH_BYTE) {
+        ret = xevd_info((void *)bs, XEVD_NAL_UNIT_LENGTH_BYTE, 1, &info);
         if (XEVD_FAILED(ret)) {
             av_log(NULL, AV_LOG_ERROR, "Cannot get bitstream information\n");
             return 0;
         }
         len = info.nalu_len;
-        if(len == 0)
-        {
+        if(len == 0) {
             av_log(NULL, AV_LOG_ERROR, "Invalid bitstream size! [%d]\n", bs_size);
             return 0;
         }
@@ -412,10 +406,9 @@ static int export_stream_params(AVCodecContext *avctx, const XevdContext *ctx)
     }
 
     if (s->sei.alternative_transfer.present &&
-            av_color_transfer_name(s->sei.alternative_transfer.preferred_transfer_characteristics) &&
-            s->sei.alternative_transfer.preferred_transfer_characteristics != AVCOL_TRC_UNSPECIFIED) {
+        av_color_transfer_name(s->sei.alternative_transfer.preferred_transfer_characteristics) &&
+        s->sei.alternative_transfer.preferred_transfer_characteristics != AVCOL_TRC_UNSPECIFIED)
         avctx->color_trc = s->sei.alternative_transfer.preferred_transfer_characteristics;
-    }
 #else
     avctx->color_primaries = AVCOL_PRI_UNSPECIFIED;
     avctx->color_trc       = AVCOL_TRC_UNSPECIFIED;
@@ -456,7 +449,7 @@ static av_cold int libxevd_init(AVCodecContext *avctx)
     /* read configurations and set values for created descriptor (XEVD_CDSC) */
     val = get_conf(avctx, cdsc);
     if (val != XEVD_OK) {
-        av_log(NULL, AV_LOG_ERROR,"Cannot get configuration\n");
+        av_log(NULL, AV_LOG_ERROR, "Cannot get configuration\n");
         return -1;
     }
 
@@ -488,7 +481,7 @@ static int libxevd_decode(AVCodecContext *avctx, void *data, int *got_frame, AVP
 {
     AVFrame *frame = data;
     XevdContext *ctx = NULL;
-    XEVD_IMGB * imgb = NULL;
+    XEVD_IMGB *imgb = NULL;
     XEVD_STAT stat;
     XEVD_BITB bitb;
     int ret, nalu_size, bs_read_pos;
@@ -508,7 +501,7 @@ static int libxevd_decode(AVCodecContext *avctx, void *data, int *got_frame, AVP
         imgb = NULL;
         while(pkt->size > (bs_read_pos + XEVD_NAL_UNIT_LENGTH_BYTE)) {
             int nal_type = 0;
-            
+
             memset(&stat, 0, sizeof(XEVD_STAT));
             memset(&bitb, 0, sizeof(XEVD_BITB));
 
@@ -539,12 +532,12 @@ static int libxevd_decode(AVCodecContext *avctx, void *data, int *got_frame, AVP
             // E:       1 bit   - nuh_extension_flag.  This field shall be equal the version of the [EVC] specification.
             //
             // @see https://datatracker.ietf.org/doc/html/draft-ietf-avtcore-rtp-evc-01#section-1.1.4
-            
-#ifdef USE_EXP_GOLOMB_STUFF 
+
+#ifdef USE_EXP_GOLOMB_STUFF
             nal_type = get_nalu_type(bitb.addr, 1);
             av_log(avctx, AV_LOG_DEBUG, "NALU Type: %d\n", nal_type);
 #else
-            memcpy(&nal_type,bitb.addr,1);
+            memcpy(&nal_type, bitb.addr, 1);
             nal_type = nal_type & 0x7E;
             nal_type = nal_type >> 1;
             nal_type -= 1;
@@ -567,17 +560,15 @@ static int libxevd_decode(AVCodecContext *avctx, void *data, int *got_frame, AVP
             if(stat.nalu_type == XEVD_NUT_SPS) {
                 av_log(avctx, AV_LOG_DEBUG, "EVC stream parameters changed\n");
 
-                if(export_stream_params(avctx, ctx)!=0) {
+                if(export_stream_params(avctx, ctx) != 0)
                     goto ERR;
-                }
-                av_log(avctx, AV_LOG_DEBUG, "width: %d\n",avctx->width);
-                av_log(avctx, AV_LOG_DEBUG, "height: %d\n",avctx->height);
+                av_log(avctx, AV_LOG_DEBUG, "width: %d\n", avctx->width);
+                av_log(avctx, AV_LOG_DEBUG, "height: %d\n", avctx->height);
 
             }
 
-            if(stat.read != nalu_size) {
+            if(stat.read != nalu_size)
                 av_log(avctx, AV_LOG_INFO, "different reading of bitstream (in:%d, read:%d)\n,", nalu_size, stat.read);
-            }
             if(stat.fnum >= 0) {
                 if (imgb) { /* already has a decoded image */
                     imgb->release(imgb);
@@ -606,9 +597,8 @@ static int libxevd_decode(AVCodecContext *avctx, void *data, int *got_frame, AVP
         } else if(XEVD_FAILED(ret)) {
             av_log(avctx, AV_LOG_ERROR, "failed to pull the decoded image (err:%d)\n", ret);
             goto ERR;
-        } else {
+        } else
             av_log(avctx, AV_LOG_DEBUG, "bumping success\n");
-        }
     }
 
     if(imgb) {
@@ -655,10 +645,9 @@ static int libxevd_decode(AVCodecContext *avctx, void *data, int *got_frame, AVP
 #endif
         imgb->release(imgb);
         imgb = NULL;
-    } else {
+    } else
         *got_frame = 0;
-    }
- 
+
     ctx->packet_count++;
     return pkt->size;
 

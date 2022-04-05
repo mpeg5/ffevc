@@ -184,7 +184,6 @@ static int parse_nal_units(AVCodecParserContext *s, const uint8_t *bs,
     bits += EVC_NAL_HEADER_SIZE;
     bits_size -= EVC_NAL_HEADER_SIZE;
 
-
     if (nalu_type == XEVD_NUT_SPS) {
         EVCParserSPS *sps;
 
@@ -244,7 +243,6 @@ static int parse_nal_units(AVCodecParserContext *s, const uint8_t *bs,
     }
     return 0;
 }
-
 
 /**
  * Find the end of the current frame in the bitstream.
@@ -407,15 +405,10 @@ static int evc_parse(AVCodecParserContext *s, AVCodecContext *ctx,
     return next;
 }
 
-static av_cold void evc_parser_close(AVCodecParserContext *s)
-{
-    // EVCParserContext *ev = s->priv_data;
-}
-
 AVCodecParser ff_evc_parser = {
     .codec_ids      = { AV_CODEC_ID_EVC },
     .priv_data_size = sizeof(EVCParserContext),
     .parser_init    = evc_parser_init,
     .parser_parse   = evc_parse,
-    .parser_close   = evc_parser_close,
+    .parser_close   = ff_parse_close,
 };

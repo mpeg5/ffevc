@@ -55,8 +55,6 @@ typedef struct EVCParserContext {
     int to_read;
     int incomplete_nalu_prefix_read; // The flag is set to 1 when incomplete NAL unit prefix has been read
 
-    int parsed_extradata;
-
     int poc;
     int pocTid0;
 
@@ -131,7 +129,7 @@ static EVCParserSPS *parse_sps(const uint8_t *bs, int bs_size, EVCParserContext 
     sps->bit_depth_luma = get_ue_golomb(&gb);
     sps->bit_depth_chroma = get_ue_golomb(&gb);
 
-    // @todo we need to parse crop and vui information here
+    // @todo parse crop and vui information here
 
     return sps;
 
@@ -390,15 +388,6 @@ static int evc_parse(AVCodecParserContext *s, AVCodecContext *ctx,
     int is_dummy_buf = !buf_size;
     const uint8_t *dummy_buf = buf;
 
-    if (ctx->extradata && !ev->parsed_extradata) {
-        // @todo consider handling extradata
-        //
-        // ff_evc_decode_extradata(avctx->extradata, avctx->extradata_size, &ctx->ps, &ctx->sei,
-        //                         &ctx->is_avc, &ctx->nal_length_size, avctx->err_recognition,
-        //                         1, avctx);
-        ev->parsed_extradata = 1;
-    }
-
     if (s->flags & PARSER_FLAG_COMPLETE_FRAMES)
         next = buf_size;
     else {
@@ -410,15 +399,11 @@ static int evc_parse(AVCodecParserContext *s, AVCodecContext *ctx,
             return buf_size;
         }
     }
-#if 1
+
     is_dummy_buf &= (dummy_buf == buf);
 
     if (!is_dummy_buf)
         parse_nal_units(s, buf, buf_size, ctx);
-#else
-    if(next != END_NOT_FOUND)
-        parse_nal_units(s, buf, buf_size, avctx);
-#endif
 
     *poutbuf      = buf;
     *poutbuf_size = buf_size;

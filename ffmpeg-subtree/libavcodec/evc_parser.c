@@ -225,7 +225,7 @@ static int parse_nal_units(AVCodecParserContext *s, const uint8_t *bs,
         default:
             ctx->pix_fmt = AV_PIX_FMT_NONE;
             av_log(NULL, AV_LOG_ERROR, "Unknown supported chroma format\n");
-            return -1
+            return -1;
         }
 
         //avctx->has_b_frames = 1; // @todo FIX-ME

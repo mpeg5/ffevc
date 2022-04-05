@@ -37,17 +37,16 @@ typedef struct EVCParserContext {
 static int get_nalu_type(const uint8_t *bs, int bs_size)
 {
     GetBitContext gb;
+
     int fzb, nut;
     int ret;
 
-    if((ret=init_get_bits8(&gb, bs, bs_size)) < 0) {
+    if((ret = init_get_bits8(&gb, bs, bs_size)) < 0)
         return ret;
-    }
 
     fzb = get_bits1(&gb);
-    if(fzb != 0) {
+    if(fzb != 0)
         av_log(NULL, AV_LOG_DEBUG, "forbidden_zero_bit is not clear\n");
-    }
     nut = get_bits(&gb, 6); /* nal_unit_type_plus1 */
     return nut - 1;
 }
@@ -63,15 +62,14 @@ static uint32_t read_nal_unit_length(const uint8_t *bs, int bs_size)
     XEVD_INFO info;
     int ret;
 
-    if(bs_size>=XEVD_NAL_UNIT_LENGTH_BYTE) {
-        ret = xevd_info((void*)bs, XEVD_NAL_UNIT_LENGTH_BYTE, 1, &info);
+    if(bs_size >= XEVD_NAL_UNIT_LENGTH_BYTE) {
+        ret = xevd_info((void *)bs, XEVD_NAL_UNIT_LENGTH_BYTE, 1, &info);
         if (XEVD_FAILED(ret)) {
             av_log(NULL, AV_LOG_ERROR, "Cannot get bitstream information\n");
             return 0;
         }
         len = info.nalu_len;
-        if(len == 0)
-        {
+        if(len == 0) {
             av_log(NULL, AV_LOG_ERROR, "Invalid bitstream size! [%d]\n", bs_size);
             return 0;
         }
@@ -83,13 +81,13 @@ static int parse_nal_units(const AVProbeData *p, EVCParserContext *ev)
 {
     int nalu_type;
     size_t nalu_size;
-    unsigned char* bits = (unsigned char *)p->buf;
+    unsigned char *bits = (unsigned char *)p->buf;
     int bytes_to_read = p->buf_size;
-    
+
     av_log(NULL, AV_LOG_DEBUG, "bytes_to_read: %d \n", bytes_to_read);
 
     while(bytes_to_read > XEVD_NAL_UNIT_LENGTH_BYTE) {
-    
+
         nalu_size = read_nal_unit_length(bits, XEVD_NAL_UNIT_LENGTH_BYTE);
         if(nalu_size == 0) break;
 
@@ -108,16 +106,13 @@ static int parse_nal_units(const AVProbeData *p, EVCParserContext *ev)
         if (nalu_type == XEVD_NUT_SPS) {
             av_log(NULL, AV_LOG_DEBUG, "XEVD_NUT_SPS \n");
             ev->got_sps++;
-        }
-        else if (nalu_type == XEVD_NUT_PPS) {
+        } else if (nalu_type == XEVD_NUT_PPS) {
             av_log(NULL, AV_LOG_DEBUG, "XEVD_NUT_PPS \n");
             ev->got_pps++;
-        }
-        else if (nalu_type == XEVD_NUT_IDR ) {
+        } else if (nalu_type == XEVD_NUT_IDR ) {
             av_log(NULL, AV_LOG_DEBUG, "XEVD_NUT_IDR\n");
             ev->got_idr++;
-        }
-        else if (nalu_type == XEVD_NUT_NONIDR) {
+        } else if (nalu_type == XEVD_NUT_NONIDR) {
             av_log(NULL, AV_LOG_DEBUG, "XEVD_NUT_NONIDR\n");
             ev->got_nonidr++;
         }
@@ -131,8 +126,8 @@ static int evc_probe(const AVProbeData *p)
     int ret = parse_nal_units(p, &ev);
 
     av_log(NULL, AV_LOG_DEBUG, "sps:%d pps:%d idr:%d sli:%d\n", ev.got_sps, ev.got_pps, ev.got_idr, ev.got_nonidr);
-    
-    if (ret == 0 && ev.got_sps && ev.got_pps && (ev.got_idr || ev.got_nonidr > 3)) 
+
+    if (ret == 0 && ev.got_sps && ev.got_pps && (ev.got_idr || ev.got_nonidr > 3))
         return AVPROBE_SCORE_EXTENSION + 1;  // 1 more than .mpg
 
     return 0;

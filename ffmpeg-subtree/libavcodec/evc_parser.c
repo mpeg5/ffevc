@@ -205,29 +205,27 @@ static int parse_nal_units(AVCodecParserContext *s, const uint8_t *bs,
             return -1;
         }
 
+        // Currently XEVD decoder supports ony YCBCR420_10LE chroma format for EVC stream
         switch(sps->chroma_format_idc) {
         case 0: /* YCBCR400_10LE */
-            /* @todo support this */
+            av_log(NULL, AV_LOG_ERROR, "YCBCR400_10LE: Not supported chroma format\n");
             ctx->pix_fmt = AV_PIX_FMT_GRAY10LE;
             return -1;
-            break;
         case 1: /* YCBCR420_10LE */
             ctx->pix_fmt = AV_PIX_FMT_YUV420P10LE;
             break;
         case 2: /* YCBCR422_10LE */
-            /* @todo support this */
+            av_log(NULL, AV_LOG_ERROR, "YCBCR422_10LE: Not supported chroma format\n");
             ctx->pix_fmt = AV_PIX_FMT_YUV422P10LE;
             return -1;
-            break;
         case 3: /* YCBCR444_10LE */
-            /* @todo support this */
+            av_log(NULL, AV_LOG_ERROR, "YCBCR444_10LE: Not supported chroma format\n");
             ctx->pix_fmt = AV_PIX_FMT_YUV444P10LE;
             return -1;
-            break;
         default:
             ctx->pix_fmt = AV_PIX_FMT_NONE;
-            av_log(NULL, AV_LOG_ERROR, "unknown color space\n");
-            return -1;
+            av_log(NULL, AV_LOG_ERROR, "Unknown supported chroma format\n");
+            return -1
         }
 
         //avctx->has_b_frames = 1; // @todo FIX-ME

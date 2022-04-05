@@ -55,9 +55,6 @@ typedef struct EVCParserContext {
     int to_read;
     int incomplete_nalu_prefix_read; // The flag is set to 1 when incomplete NAL unit prefix has been read
 
-    int poc;
-    int pocTid0;
-
     int got_sps;
     int got_pps;
     int got_sei;
@@ -356,12 +353,12 @@ static int evc_find_frame_end(AVCodecParserContext *s, const uint8_t *buf,
         }
         return ev->to_read;
     }
+
     return END_NOT_FOUND;
 }
 
 static int evc_parser_init(AVCodecParserContext *s)
 {
-
     EVCParserContext *ev = s->priv_data;
 
     av_log(NULL, AV_LOG_DEBUG, "eXtra-fast Essential Video Parser\n");
@@ -406,18 +403,13 @@ static int evc_parse(AVCodecParserContext *s, AVCodecContext *ctx,
     *poutbuf      = buf;
     *poutbuf_size = buf_size;
     ev->to_read -= next;
-    return next;
-}
 
-// Split after the parameter sets at the beginning of the stream if they exist.
-static int evc_split(AVCodecContext *ctx, const uint8_t *bs, int bs_size)
-{
-    return 0;
+    return next;
 }
 
 static av_cold void evc_parser_close(AVCodecParserContext *s)
 {
-    /* EVCParserContext *ctx = s->priv_data; */
+    // EVCParserContext *ev = s->priv_data;
 }
 
 AVCodecParser ff_evc_parser = {
@@ -426,5 +418,4 @@ AVCodecParser ff_evc_parser = {
     .parser_init    = evc_parser_init,
     .parser_parse   = evc_parse,
     .parser_close   = evc_parser_close,
-    .split          = evc_split,
 };

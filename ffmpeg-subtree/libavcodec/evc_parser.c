@@ -63,7 +63,10 @@ typedef struct EVCParserContext {
     int got_slice;
 } EVCParserContext;
 
-static av_unused int get_nalu_type(const uint8_t *bs, int bs_size)
+
+#ifdef NOT_USE_XEVD_API
+
+static av_unused int get_nalu_type(const uint8_t *bs, int bs_size, AVCodecContext *avctx)
 {
     GetBitContext gb;
     int fzb, nut;
@@ -74,12 +77,14 @@ static av_unused int get_nalu_type(const uint8_t *bs, int bs_size)
 
     fzb = get_bits1(&gb);
     if(fzb != 0)
-        av_log(NULL, AV_LOG_DEBUG, "forbidden_zero_bit is not clear\n");
+        av_log(avctx, AV_LOG_DEBUG, "forbidden_zero_bit is not clear\n");
     nut = get_bits(&gb, 6); /* nal_unit_type_plus1 */
     return nut - 1;
 }
 
-static int get_nalu_type2(const uint8_t *bs, int bs_size)
+#else
+
+static int get_nalu_type(const uint8_t *bs, int bs_size, AVCodecContext *avctx)
 {
     int nalu_type = 0;
     XEVD_INFO info;
@@ -88,13 +93,36 @@ static int get_nalu_type2(const uint8_t *bs, int bs_size)
     if(bs_size >= EVC_NAL_HEADER_SIZE) {
         ret = xevd_info((void *)bs, EVC_NAL_HEADER_SIZE, 1, &info);
         if (XEVD_FAILED(ret)) {
-            av_log(NULL, AV_LOG_ERROR, "Cannot get bitstream information\n");
-            return 0;
+            av_log(avctx, AV_LOG_ERROR, "Cannot get bitstream information\n");
+            return -1;
         }
         nalu_type = info.nalu_type;
 
     }
     return nalu_type - 1;
+}
+
+#endif
+
+static uint32_t read_nal_unit_length(const uint8_t *bs, int bs_size, AVCodecContext *avctx)
+{
+    uint32_t len = 0;
+    XEVD_INFO info;
+    int ret;
+
+    if(bs_size >= XEVD_NAL_UNIT_LENGTH_BYTE) {
+        ret = xevd_info((void *)bs, XEVD_NAL_UNIT_LENGTH_BYTE, 1, &info);
+        if (XEVD_FAILED(ret)) {
+            av_log(avctx, AV_LOG_ERROR, "Cannot get bitstream information\n");
+            return 0;
+        }
+        len = info.nalu_len;
+        if(len == 0) {
+            av_log(avctx, AV_LOG_ERROR, "Invalid bitstream size! 1 [%d] [%d]\n", len, bs_size);
+            return 0;
+        }
+    }
+    return len;
 }
 
 static EVCParserSPS *parse_sps(const uint8_t *bs, int bs_size, EVCParserContext *ev)
@@ -110,10 +138,8 @@ static EVCParserSPS *parse_sps(const uint8_t *bs, int bs_size, EVCParserContext 
     if(sps_id >= MAX_SPS_CNT) goto ERR;
     sps = &ev->sps[sps_id];
     sps->sps_id = sps_id;
-    av_log(NULL, AV_LOG_DEBUG, "[EVC Parser] sps_id=%d\n", sps->sps_id);
-
+    
     sps->profile_idc = get_bits(&gb, 8);
-    av_log(NULL, AV_LOG_DEBUG, "[EVC Parser] profile=%d\n", sps->profile_idc);
     sps->level_idc = get_bits(&gb, 8);
 
     skip_bits_long(&gb, 32); /* skip toolset_idc_h */
@@ -121,10 +147,8 @@ static EVCParserSPS *parse_sps(const uint8_t *bs, int bs_size, EVCParserContext 
 
     sps->chroma_format_idc = get_ue_golomb(&gb);
     sps->pic_width_in_luma_samples = get_ue_golomb(&gb);
-    av_log(NULL, AV_LOG_DEBUG, "[EVC Parser] width=%d\n", sps->pic_width_in_luma_samples);
     sps->pic_height_in_luma_samples = get_ue_golomb(&gb);
 
-    av_log(NULL, AV_LOG_DEBUG, "[EVC Parser] height=%d\n", sps->pic_height_in_luma_samples);
     sps->bit_depth_luma = get_ue_golomb(&gb);
     sps->bit_depth_chroma = get_ue_golomb(&gb);
 
@@ -136,52 +160,26 @@ ERR:
     return NULL;
 }
 
-/**
- * Read NAL unit length
- * @param bs input data (bitstream)
- * @return the lenghth of NAL unit on success, 0 value on failure
- */
-static uint32_t read_nal_unit_length(const uint8_t *bs, int bs_size)
-{
-    uint32_t len = 0;
-    XEVD_INFO info;
-    int ret;
-
-    if(bs_size >= XEVD_NAL_UNIT_LENGTH_BYTE) {
-        ret = xevd_info((void *)bs, XEVD_NAL_UNIT_LENGTH_BYTE, 1, &info);
-        if (XEVD_FAILED(ret)) {
-            av_log(NULL, AV_LOG_ERROR, "Cannot get bitstream information\n");
-            return 0;
-        }
-        len = info.nalu_len;
-        if(len == 0) {
-            av_log(NULL, AV_LOG_ERROR, "Invalid bitstream size! 1 [%d] [%d]\n", len, bs_size);
-            return 0;
-        }
-    }
-    return len;
-}
-
 static int parse_nal_units(AVCodecParserContext *s, const uint8_t *bs,
-                           int bs_size, AVCodecContext *ctx)
+                           int bs_size, AVCodecContext *avctx)
 {
     EVCParserContext *ev = s->priv_data;
     int nalu_type, nalu_size;
     unsigned char *bits = (unsigned char *)bs;
     int bits_size = bs_size;
 
-    ctx->codec_id = AV_CODEC_ID_EVC;
+    avctx->codec_id = AV_CODEC_ID_EVC;
 
-    nalu_size = read_nal_unit_length(bits, bits_size);
+    nalu_size = read_nal_unit_length(bits, bits_size, avctx);
     if(nalu_size == 0) {
-        av_log(ctx, AV_LOG_ERROR, "Invalid NAL unit size: (%d)\n", nalu_size);
+        av_log(avctx, AV_LOG_ERROR, "Invalid NAL unit size: (%d)\n", nalu_size);
         return -1;
     }
 
     bits += XEVD_NAL_UNIT_LENGTH_BYTE;
     bits_size -= XEVD_NAL_UNIT_LENGTH_BYTE;
 
-    nalu_type = get_nalu_type2(bits, bits_size);
+    nalu_type = get_nalu_type(bits, bits_size, avctx);
 
     bits += EVC_NAL_HEADER_SIZE;
     bits_size -= EVC_NAL_HEADER_SIZE;
@@ -189,40 +187,42 @@ static int parse_nal_units(AVCodecParserContext *s, const uint8_t *bs,
     if (nalu_type == XEVD_NUT_SPS) {
         EVCParserSPS *sps;
 
+        av_log(avctx, AV_LOG_DEBUG, "NAL Unit type: SPS (Sequence Parameter Set)\n");
+
         sps = parse_sps(bits, bits_size, ev);
 
-        ctx->coded_width         = sps->pic_width_in_luma_samples;
-        ctx->coded_height        = sps->pic_height_in_luma_samples;
-        ctx->width               = sps->pic_width_in_luma_samples;
-        ctx->height              = sps->pic_height_in_luma_samples;
+        avctx->coded_width         = sps->pic_width_in_luma_samples;
+        avctx->coded_height        = sps->pic_height_in_luma_samples;
+        avctx->width               = sps->pic_width_in_luma_samples;
+        avctx->height              = sps->pic_height_in_luma_samples;
 
-        if(sps->profile_idc == 0) ctx->profile = FF_PROFILE_EVC_BASELINE;
-        else if (sps->profile_idc == 1) ctx->profile = FF_PROFILE_EVC_MAIN;
+        if(sps->profile_idc == 0) avctx->profile = FF_PROFILE_EVC_BASELINE;
+        else if (sps->profile_idc == 1) avctx->profile = FF_PROFILE_EVC_MAIN;
         else {
-            av_log(ctx, AV_LOG_ERROR, "not supported profile (%d)\n", sps->profile_idc);
+            av_log(avctx, AV_LOG_ERROR, "Not supported profile (%d)\n", sps->profile_idc);
             return -1;
         }
 
         // Currently XEVD decoder supports ony YCBCR420_10LE chroma format for EVC stream
         switch(sps->chroma_format_idc) {
         case 0: /* YCBCR400_10LE */
-            av_log(NULL, AV_LOG_ERROR, "YCBCR400_10LE: Not supported chroma format\n");
-            ctx->pix_fmt = AV_PIX_FMT_GRAY10LE;
+            av_log(avctx, AV_LOG_ERROR, "YCBCR400_10LE: Not supported chroma format\n");
+            avctx->pix_fmt = AV_PIX_FMT_GRAY10LE;
             return -1;
         case 1: /* YCBCR420_10LE */
-            ctx->pix_fmt = AV_PIX_FMT_YUV420P10LE;
+            avctx->pix_fmt = AV_PIX_FMT_YUV420P10LE;
             break;
         case 2: /* YCBCR422_10LE */
-            av_log(NULL, AV_LOG_ERROR, "YCBCR422_10LE: Not supported chroma format\n");
-            ctx->pix_fmt = AV_PIX_FMT_YUV422P10LE;
+            av_log(avctx, AV_LOG_ERROR, "YCBCR422_10LE: Not supported chroma format\n");
+            avctx->pix_fmt = AV_PIX_FMT_YUV422P10LE;
             return -1;
         case 3: /* YCBCR444_10LE */
-            av_log(NULL, AV_LOG_ERROR, "YCBCR444_10LE: Not supported chroma format\n");
-            ctx->pix_fmt = AV_PIX_FMT_YUV444P10LE;
+            av_log(avctx, AV_LOG_ERROR, "YCBCR444_10LE: Not supported chroma format\n");
+            avctx->pix_fmt = AV_PIX_FMT_YUV444P10LE;
             return -1;
         default:
-            ctx->pix_fmt = AV_PIX_FMT_NONE;
-            av_log(NULL, AV_LOG_ERROR, "Unknown supported chroma format\n");
+            avctx->pix_fmt = AV_PIX_FMT_NONE;
+            av_log(avctx, AV_LOG_ERROR, "Unknown supported chroma format\n");
             return -1;
         }
 
@@ -231,16 +231,16 @@ static int parse_nal_units(AVCodecParserContext *s, const uint8_t *bs,
         ev->got_sps = 1;
 
     } else if (nalu_type == XEVD_NUT_PPS) {
-        av_log(NULL, AV_LOG_DEBUG, "XEVD_NUT_PPS \n");
+        av_log(avctx, AV_LOG_DEBUG, "NAL Unit tpe: PPS (Video Parameter Set)\n");
         ev->got_pps = 1;
     } else if(nalu_type == XEVD_NUT_SEI) {
-        av_log(NULL, AV_LOG_DEBUG, "XEVD_NUT_SEI \n");
+        av_log(avctx, AV_LOG_DEBUG, "NAL unit type: SEI (Supplemental Enhancement Information) \n");
         ev->got_sei = 1;
     } else if (nalu_type == XEVD_NUT_IDR || nalu_type == XEVD_NUT_NONIDR) {
-        av_log(ctx, AV_LOG_DEBUG, "XEVD_NUT_NONIDR\n");
+        av_log(avctx, AV_LOG_DEBUG, "NAL Unit type: Coded slice of a IDR or non-IDR picture\n");
         ev->got_slice++;
     } else {
-        av_log(ctx, AV_LOG_ERROR, "Invalid NAL unit type: %d\n", nalu_type);
+        av_log(avctx, AV_LOG_ERROR, "Invalid NAL unit type: %d\n", nalu_type);
         return -1;
     }
     return 0;
@@ -251,7 +251,7 @@ static int parse_nal_units(AVCodecParserContext *s, const uint8_t *bs,
  * @return the position of the first byte of the next frame, or END_NOT_FOUND
  */
 static int evc_find_frame_end(AVCodecParserContext *s, const uint8_t *buf,
-                              int buf_size)
+                              int buf_size, AVCodecContext *avctx)
 {
     EVCParserContext *ev = s->priv_data;
 
@@ -268,8 +268,8 @@ static int evc_find_frame_end(AVCodecParserContext *s, const uint8_t *buf,
             return END_NOT_FOUND;
         }
 
-        nal_unit_size = read_nal_unit_length(buf, buf_size);
-        av_log(NULL, AV_LOG_DEBUG, "nal_unit_size: %d | buf_size: %d \n", nal_unit_size, buf_size);
+        nal_unit_size = read_nal_unit_length(buf, buf_size, avctx);
+        av_log(avctx, AV_LOG_DEBUG, "nal_unit_size: %d | buf_size: %d \n", nal_unit_size, buf_size);
         ev->nal_length_size = XEVD_NAL_UNIT_LENGTH_BYTE;
 
         next = nal_unit_size + XEVD_NAL_UNIT_LENGTH_BYTE;
@@ -339,8 +339,8 @@ static int evc_find_frame_end(AVCodecParserContext *s, const uint8_t *buf,
             // ---------------------------------
             // NAL Unit lenght =  60 (0x0000003C)
 
-            nal_unit_size = read_nal_unit_length(nalu_len, XEVD_NAL_UNIT_LENGTH_BYTE);
-            av_log(NULL, AV_LOG_DEBUG, "nal_unit_size: %d | buf_size: %d \n", nal_unit_size, buf_size);
+            nal_unit_size = read_nal_unit_length(nalu_len, XEVD_NAL_UNIT_LENGTH_BYTE, avctx);
+            av_log(avctx, AV_LOG_DEBUG, "nal_unit_size: %d | buf_size: %d \n", nal_unit_size, buf_size);
 
             ev->to_read = nal_unit_size + XEVD_NAL_UNIT_LENGTH_BYTE - pc->index;
 
@@ -360,9 +360,7 @@ static int evc_find_frame_end(AVCodecParserContext *s, const uint8_t *buf,
 static int evc_parser_init(AVCodecParserContext *s)
 {
     EVCParserContext *ev = s->priv_data;
-
-    av_log(NULL, AV_LOG_DEBUG, "eXtra-fast Essential Video Parser\n");
-
+    
     ev->got_sps = 0;
     ev->got_pps = 0;
     ev->got_sei = 0;
@@ -373,7 +371,7 @@ static int evc_parser_init(AVCodecParserContext *s)
     return 0;
 }
 
-static int evc_parse(AVCodecParserContext *s, AVCodecContext *ctx,
+static int evc_parse(AVCodecParserContext *s, AVCodecContext *avctx,
                      const uint8_t **poutbuf, int *poutbuf_size,
                      const uint8_t *buf, int buf_size)
 {
@@ -386,7 +384,7 @@ static int evc_parse(AVCodecParserContext *s, AVCodecContext *ctx,
     if (s->flags & PARSER_FLAG_COMPLETE_FRAMES)
         next = buf_size;
     else {
-        next = evc_find_frame_end(s, buf, buf_size);
+        next = evc_find_frame_end(s, buf, buf_size, avctx);
         if (ff_combine_frame(pc, next, &buf, &buf_size) < 0) {
             *poutbuf      = NULL;
             *poutbuf_size = 0;
@@ -398,7 +396,7 @@ static int evc_parse(AVCodecParserContext *s, AVCodecContext *ctx,
     is_dummy_buf &= (dummy_buf == buf);
 
     if (!is_dummy_buf)
-        parse_nal_units(s, buf, buf_size, ctx);
+        parse_nal_units(s, buf, buf_size, avctx);
 
     *poutbuf      = buf;
     *poutbuf_size = buf_size;

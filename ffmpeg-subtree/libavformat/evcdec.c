@@ -29,12 +29,16 @@
 #include "rawdec.h"
 #include "avformat.h"
 
+#define EVC_NAL_HEADER_SIZE   2 /* byte */
+
 typedef struct EVCParserContext {
     int got_sps;
     int got_pps;
     int got_idr;
     int got_nonidr;
 } EVCParserContext;
+
+#ifdef NOT_USE_XEVD_API
 
 static int get_nalu_type(const uint8_t *bs, int bs_size)
 {
@@ -53,11 +57,28 @@ static int get_nalu_type(const uint8_t *bs, int bs_size)
     return nut - 1;
 }
 
-/**
- * Read NAL unit length
- * @param bs input data (bitstream)
- * @return the lenghth of NAL unit on success, 0 value on failure
- */
+#else
+
+static int get_nalu_type(const uint8_t *bs, int bs_size)
+{
+    int nalu_type = 0;
+    XEVD_INFO info;
+    int ret;
+
+    if(bs_size >= EVC_NAL_HEADER_SIZE) {
+        ret = xevd_info((void *)bs, EVC_NAL_HEADER_SIZE, 1, &info);
+        if (XEVD_FAILED(ret)) {
+            av_log(NULL, AV_LOG_ERROR, "Cannot get bitstream information\n");
+            return -1;
+        }
+        nalu_type = info.nalu_type;
+
+    }
+    return nalu_type - 1;
+}
+
+#endif
+
 static uint32_t read_nal_unit_length(const uint8_t *bs, int bs_size)
 {
     uint32_t len = 0;
@@ -86,8 +107,6 @@ static int parse_nal_units(const AVProbeData *p, EVCParserContext *ev)
     unsigned char *bits = (unsigned char *)p->buf;
     int bytes_to_read = p->buf_size;
 
-    av_log(NULL, AV_LOG_DEBUG, "bytes_to_read: %d \n", bytes_to_read);
-
     while(bytes_to_read > XEVD_NAL_UNIT_LENGTH_BYTE) {
 
         nalu_size = read_nal_unit_length(bits, XEVD_NAL_UNIT_LENGTH_BYTE);
@@ -95,8 +114,6 @@ static int parse_nal_units(const AVProbeData *p, EVCParserContext *ev)
 
         bits += XEVD_NAL_UNIT_LENGTH_BYTE;
         bytes_to_read -= XEVD_NAL_UNIT_LENGTH_BYTE;
-
-        av_log(NULL, AV_LOG_DEBUG, "nalu_size: %ld \n", nalu_size);
 
         if(bytes_to_read < nalu_size) break;
 
@@ -106,19 +123,16 @@ static int parse_nal_units(const AVProbeData *p, EVCParserContext *ev)
         bytes_to_read -= nalu_size;
 
         if (nalu_type == XEVD_NUT_SPS) {
-            av_log(NULL, AV_LOG_DEBUG, "XEVD_NUT_SPS \n");
             ev->got_sps++;
         } else if (nalu_type == XEVD_NUT_PPS) {
-            av_log(NULL, AV_LOG_DEBUG, "XEVD_NUT_PPS \n");
             ev->got_pps++;
         } else if (nalu_type == XEVD_NUT_IDR ) {
-            av_log(NULL, AV_LOG_DEBUG, "XEVD_NUT_IDR\n");
             ev->got_idr++;
         } else if (nalu_type == XEVD_NUT_NONIDR) {
-            av_log(NULL, AV_LOG_DEBUG, "XEVD_NUT_NONIDR\n");
             ev->got_nonidr++;
         }
     }
+
     return 0;
 }
 
@@ -126,8 +140,6 @@ static int evc_probe(const AVProbeData *p)
 {
     EVCParserContext ev = {};
     int ret = parse_nal_units(p, &ev);
-
-    av_log(NULL, AV_LOG_DEBUG, "sps:%d pps:%d idr:%d sli:%d\n", ev.got_sps, ev.got_pps, ev.got_idr, ev.got_nonidr);
 
     if (ret == 0 && ev.got_sps && ev.got_pps && (ev.got_idr || ev.got_nonidr > 3))
         return AVPROBE_SCORE_EXTENSION + 1;  // 1 more than .mpg

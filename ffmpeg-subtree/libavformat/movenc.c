@@ -1604,12 +1604,9 @@ static int mov_get_h264_codec_tag(AVFormatContext *s, MOVTrack *track)
 static int mov_get_evc_codec_tag(AVFormatContext *s, MOVTrack *track)
 {
     int tag = track->par->codec_tag;
-    int interlaced = track->par->field_order > AV_FIELD_PROGRESSIVE;
-    AVStream *st = track->st;
-    int rate = defined_frame_rate(s, st);
 
     if (!tag)
-        tag = MKTAG('e', 'v', 'c', 'i'); //fallback tag
+        tag = MKTAG('e', 'v', 'c', 'i');
 
     return tag;
 }

@@ -25,10 +25,10 @@
 #define XEVD_API_IMPORTS 1
 #endif
 
-#include <xevd.h>
-
 #include <float.h>
 #include <stdlib.h>
+
+#include <xevd.h>
 
 #include "libavutil/internal.h"
 #include "libavutil/common.h"
@@ -37,14 +37,13 @@
 #include "libavutil/pixfmt.h"
 #include "libavutil/imgutils.h"
 
+#include "avcodec.h"
+#include "internal.h"
+#include "packet_internal.h"
 // #define USE_EXP_GOLOMB_STUFF
 #ifdef USE_EXP_GOLOMB_STUFF
 #include "golomb.h"
 #endif
-
-#include "avcodec.h"
-#include "internal.h"
-#include "packet_internal.h"
 
 #define UNUSED(x) (void)(x)
 

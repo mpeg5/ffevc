@@ -25,10 +25,10 @@
 #define XEVE_API_IMPORTS 1
 #endif
 
-#include <xeve.h>
-
 #include <float.h>
 #include <stdlib.h>
+
+#include <xeve.h>
 
 #include "libavutil/internal.h"
 #include "libavutil/common.h"

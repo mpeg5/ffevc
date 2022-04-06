@@ -20,12 +20,14 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
+#include <xevd.h>
+
 #include "libavcodec/get_bits.h"
 #include "libavcodec/golomb.h"
-#include "avformat.h"
-#include "rawdec.h"
 #include "libavcodec/internal.h"
-#include "xevd.h"
+
+#include "rawdec.h"
+#include "avformat.h"
 
 typedef struct EVCParserContext {
     int got_sps;

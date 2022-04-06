@@ -28,14 +28,14 @@
 #include <float.h>
 #include <stdlib.h>
 
+#include <xevd.h>
+
 #include "libavutil/internal.h"
 #include "libavutil/common.h"
 #include "libavutil/opt.h"
 #include "libavutil/pixdesc.h"
 #include "libavutil/pixfmt.h"
 #include "libavutil/imgutils.h"
-
-#include <xevd.h>
 
 #include "avcodec.h"
 #include "internal.h"

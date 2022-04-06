@@ -22,9 +22,9 @@
 
 #include <stdint.h>
 
-#include "libavutil/common.h"
+#include <xevd.h>
 
-#include "xevd.h"
+#include "libavutil/common.h"
 
 #include "parser.h"
 #include "golomb.h"

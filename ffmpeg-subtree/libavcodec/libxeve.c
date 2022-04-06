@@ -25,8 +25,6 @@
 #define XEVE_API_IMPORTS 1
 #endif
 
-#include <xeve.h>
-
 #include <float.h>
 #include <stdlib.h>
 
@@ -36,6 +34,8 @@
 #include "libavutil/pixdesc.h"
 #include "libavutil/pixfmt.h"
 #include "libavutil/time.h"
+
+#include <xeve.h>
 
 #include "avcodec.h"
 #include "internal.h"

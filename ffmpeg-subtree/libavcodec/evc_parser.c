@@ -20,12 +20,14 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
+#include <stdint.h>
+
 #include "libavutil/common.h"
 
-#include "golomb.h"
-#include "parser.h"
 #include "xevd.h"
-#include <stdint.h>
+
+#include "parser.h"
+#include "golomb.h"
 
 #define EVC_NAL_HEADER_SIZE   2 /* byte */
 #define MAX_SPS_CNT  16 /* defined value in EVC standard */
@@ -61,7 +63,7 @@ typedef struct EVCParserContext {
     int got_slice;
 } EVCParserContext;
 
-static int get_nalu_type(const uint8_t *bs, int bs_size)
+static av_unused int get_nalu_type(const uint8_t *bs, int bs_size)
 {
     GetBitContext gb;
     int fzb, nut;

@@ -142,82 +142,6 @@ static int get_nalu_type(const uint8_t *bs, int bs_size, AVCodecContext *avctx)
 
 #endif
 
-#ifdef PRINT_NALU_INFO
-static void print_nalu_info(XEVD_STAT *stat)
-{
-    if(stat->nalu_type < XEVD_NUT_SPS) {
-        av_log(NULL, AV_LOG_DEBUG, "XEVD_NUT_SPS \n");
-
-        av_log(NULL, AV_LOG_DEBUG, "%c-slice\n", stat->stype == XEVD_ST_I ? 'I' : stat->stype == XEVD_ST_P ? 'P' : 'B');
-
-        av_log(NULL, AV_LOG_DEBUG, " %d bytes\n", stat->read);
-        av_log(NULL, AV_LOG_DEBUG, ", poc=%d, tid=%d, ", (int)stat->poc, (int)stat->tid);
-
-        for (int i = 0; i < 2; i++) {
-            av_log(NULL, AV_LOG_DEBUG, "[L%d ", i);
-            for (int j = 0; j < stat->refpic_num[i]; j++) av_log(NULL, AV_LOG_DEBUG, "%d ", stat->refpic[i][j]);
-            av_log(NULL, AV_LOG_DEBUG, "] \n");
-        }
-    } else if(stat->nalu_type == XEVD_NUT_SPS)
-        av_log(NULL, AV_LOG_DEBUG, "XEVD_NUT_SPS \n");
-    else if (stat->nalu_type == XEVD_NUT_PPS)
-        av_log(NULL, AV_LOG_DEBUG, "XEVD_NUT_PPS \n");
-    else if (stat->nalu_type == XEVD_NUT_SEI)
-        av_log(NULL, AV_LOG_DEBUG, "XEVD_NUT_SEI \n");
-    else
-        av_log(NULL, AV_LOG_DEBUG, "Unknown bitstream !!!! \n");
-}
-#endif
-
-// @todo consider moving following function to separate file containing helper functions for EVC decoder
-#ifdef PRINT_FRAME_INFO
-static void print_frame_info(const AVFrame *f)
-{
-    int level = AV_LOG_DEBUG;
-    av_log(NULL, level, "frame->width: %d\n", f->width);
-    av_log(NULL, level, "frame->height: %d\n", f->height);
-
-    av_log(NULL, level, "frame->linesize[0]: %d\n", f->linesize[0]);
-    av_log(NULL, level, "frame->linesize[1]: %d\n", f->linesize[1]);
-    av_log(NULL, level, "frame->linesize[2]: %d\n", f->linesize[2]);
-    av_log(NULL, level, "frame->buf[0]: %p\n", f->buf[0]);
-    av_log(NULL, level, "frame->buf[1]: %p\n", f->buf[1]);
-    av_log(NULL, level, "frame->buf[2]: %p\n", f->buf[2]);
-    av_log(NULL, level, "frame->data[0]: %p\n", f->data[0]);
-    av_log(NULL, level, "frame->data[1]: %p\n", f->data[1]);
-    av_log(NULL, level, "frame->data[2]: %p\n", f->data[2]);
-}
-#endif
-
-// @todo consider moving following function to separate file containing helper functions for EVC decoder
-#ifdef PRINT_XEVD_IMGB_INFO
-static void print_xevd_imgb_info(const XEVD_IMGB *imgb)
-{
-    av_log(NULL, AV_LOG_DEBUG, "imgb->np: %d\n", imgb->np);
-    av_log(NULL, AV_LOG_DEBUG, "imgb->bsize[0]: %d\n", imgb->bsize[0]);
-    av_log(NULL, AV_LOG_DEBUG, "imgb->bsize[1]: %d\n", imgb->bsize[1]);
-    av_log(NULL, AV_LOG_DEBUG, "imgb->bsize[2]: %d\n", imgb->bsize[2]);
-}
-#endif
-
-// @todo consider moving following function to separate file containing helper functions for EVC decoder
-#ifdef PRINT_AVCTX
-static void print_avctx(const AVCodecContext *avctx)
-{
-    if( AVMEDIA_TYPE_UNKNOWN == avctx->codec_type)
-        av_log(NULL, AV_LOG_DEBUG, "avctx->codec_type: AVMEDIA_TYPE_UNKNOWN\n");
-    else if(AVMEDIA_TYPE_VIDEO  == avctx->codec_type)
-        av_log(NULL, AV_LOG_DEBUG, "avctx->codec_type: AVMEDIA_TYPE_VIDEO \n");
-    else
-        av_log(NULL, AV_LOG_DEBUG, "avctx->codec_type: AVMEDIA_TYPE_UNKNOWN\n");
-
-    av_log(NULL, AV_LOG_DEBUG, "avctx->codec_id: %s\n", avcodec_get_name(avctx->codec_id));
-    av_log(NULL, AV_LOG_DEBUG, "avctx->width: %d\n", avctx->width);
-    av_log(NULL, AV_LOG_DEBUG, "avctx->height: %d\n", avctx->height);
-    av_log(NULL, AV_LOG_DEBUG, "avctx->pix_fmt: %d\n", avctx->pix_fmt);
-}
-#endif
-
 /**
  * Read options
  *
@@ -409,19 +333,15 @@ static int export_stream_params(AVCodecContext *avctx, const XevdContext *ctx)
     }
     switch(color_space) {
     case XEVD_CS_YCBCR400_10LE:
-        av_log(avctx, AV_LOG_DEBUG, "color_space = XEVD_CS_YCBCR400_10LE\n");
         avctx->pix_fmt = AV_PIX_FMT_GRAY10LE;
         break;
     case XEVD_CS_YCBCR420_10LE:
-        av_log(avctx, AV_LOG_DEBUG, "color_space = XEVD_CS_YCBCR420_10LE\n");
         avctx->pix_fmt = AV_PIX_FMT_YUV420P10LE;
         break;
     case XEVD_CS_YCBCR422_10LE:
-        av_log(avctx, AV_LOG_DEBUG, "color_space = XEVD_CS_YCBCR422_10LE\n");
         avctx->pix_fmt = AV_PIX_FMT_YUV422P10LE;
         break;
     case XEVD_CS_YCBCR444_10LE:
-        av_log(avctx, AV_LOG_DEBUG, "color_space = XEVD_CS_YCBCR444_10LE\n");
         avctx->pix_fmt = AV_PIX_FMT_YUV444P10LE;
         break;
     default:
@@ -494,12 +414,6 @@ static av_cold int libxevd_init(AVCodecContext *avctx)
     int val = 0;
     XEVD_CDSC *cdsc = &(ctx->cdsc);
 
-    av_log(avctx, AV_LOG_DEBUG, "eXtra-fast Essential Video Decoder\n");
-
-#ifdef PRINT_AVCTX
-    print_avctx(avctx);
-#endif
-
     /* read configurations and set values for created descriptor (XEVD_CDSC) */
     val = get_conf(avctx, cdsc);
     if (val != XEVD_OK) {
@@ -516,6 +430,7 @@ static av_cold int libxevd_init(AVCodecContext *avctx)
 
     ctx->packet_count = 0;
     ctx->decod_frames = 0;
+
     return 0;
 }
 
@@ -588,7 +503,6 @@ static int libxevd_decode(AVCodecContext *avctx, void *data, int *got_frame, AVP
             // @see https://datatracker.ietf.org/doc/html/draft-ietf-avtcore-rtp-evc-01#section-1.1.4
 
             nal_type = get_nalu_type(bitb.addr, EVC_NAL_HEADER_SIZE, avctx);
-            av_log(avctx, AV_LOG_DEBUG, "NALU Type: %d\n", nal_type);
 
             /* main decoding block */
             ret = xevd_decode(ctx->id, &bitb, &stat);
@@ -599,18 +513,9 @@ static int libxevd_decode(AVCodecContext *avctx, void *data, int *got_frame, AVP
 
             bs_read_pos += nalu_size;
 
-#ifdef PRINT_NALU_INFO
-            print_nalu_info(ctx);
-#endif
-
-            if(stat.nalu_type == XEVD_NUT_SPS) {
-                av_log(avctx, AV_LOG_DEBUG, "EVC stream parameters changed\n");
-
+            if(stat.nalu_type == XEVD_NUT_SPS) { // EVC stream parameters changed
                 if(export_stream_params(avctx, ctx) != 0)
                     goto ERR;
-                av_log(avctx, AV_LOG_DEBUG, "width: %d\n", avctx->width);
-                av_log(avctx, AV_LOG_DEBUG, "height: %d\n", avctx->height);
-
             }
 
             if(stat.read != nalu_size)
@@ -622,10 +527,9 @@ static int libxevd_decode(AVCodecContext *avctx, void *data, int *got_frame, AVP
                 }
                 ret = xevd_pull(ctx->id, &imgb);
                 if(XEVD_FAILED(ret)) {
-                    av_log(avctx, AV_LOG_ERROR, "failed to pull the decoded image (err:%d, frame#=%d)\n", ret, stat.fnum);
+                    av_log(avctx, AV_LOG_ERROR, "failed to pull the decoded image (xevd error code: %d, frame#=%d)\n", ret, stat.fnum);
                     goto ERR;
                 } else if (ret == XEVD_OK_FRM_DELAYED) {
-                    av_log(avctx, AV_LOG_DEBUG, "delayed frame\n");
                     if(imgb) {
                         imgb->release(imgb);
                         imgb = NULL;
@@ -633,30 +537,25 @@ static int libxevd_decode(AVCodecContext *avctx, void *data, int *got_frame, AVP
                 }
             }
         }
-    } else {
-        av_log(avctx, AV_LOG_DEBUG, "bumping ...\n");
+    } else { // bumping
         ret = xevd_pull(ctx->id, &(imgb));
-        if(ret == XEVD_ERR_UNEXPECTED) {
-            av_log(avctx, AV_LOG_DEBUG, "Bumping process completed\n");
+        if(ret == XEVD_ERR_UNEXPECTED) { // bumping process completed
             *got_frame = 0;
             return 0;
         } else if(XEVD_FAILED(ret)) {
-            av_log(avctx, AV_LOG_ERROR, "failed to pull the decoded image (err:%d)\n", ret);
+            av_log(avctx, AV_LOG_ERROR, "failed to pull the decoded image (xevd error code: %d)\n", ret);
             goto ERR;
-        } else
-            av_log(avctx, AV_LOG_DEBUG, "bumping success\n");
+        }
     }
 
     if(imgb) {
-        /* @todo supports other color space and bit depth */
+        // @todo supports other color space and bit depth
         if(imgb->cs != XEVD_CS_YCBCR420_10LE) {
             av_log(avctx, AV_LOG_ERROR, "Not supported pixel format: %s\n", av_get_pix_fmt_name(avctx->pix_fmt));
             goto ERR;
         }
 
-        if (imgb->w[0] != avctx->width || imgb->h[0] != avctx->height) {
-            av_log(avctx, AV_LOG_DEBUG, "resolution changed %dx%d -> %dx%d\n",
-                   avctx->width, avctx->height, imgb->w[0], imgb->h[0]);
+        if (imgb->w[0] != avctx->width || imgb->h[0] != avctx->height) { // stream resolution changed
             if(ff_set_dimensions(avctx, imgb->w[0], imgb->h[0]) < 0) {
                 av_log(avctx, AV_LOG_ERROR, "cannot set new dimension\n");
                 goto ERR;
@@ -667,17 +566,12 @@ static int libxevd_decode(AVCodecContext *avctx, void *data, int *got_frame, AVP
         frame->display_picture_number++;
         frame->format = AV_PIX_FMT_YUV420P10LE;
 
-#ifdef PRINT_XEVD_IMGB_INFO
-        print_xevd_imgb_info(imgb);
-#endif
-
         if (ff_get_buffer(avctx, frame, 0) < 0) {
             av_log(avctx, AV_LOG_ERROR, "cannot get AV buffer\n");
             goto ERR;
         }
 
         frame->pts = pkt->pts;
-        av_log(avctx, AV_LOG_DEBUG, "frame->pts = %ld\n", frame->pts);
 
         av_image_copy(frame->data, frame->linesize, (const uint8_t **)imgb->a,
                       imgb->s, avctx->pix_fmt,
@@ -686,9 +580,6 @@ static int libxevd_decode(AVCodecContext *avctx, void *data, int *got_frame, AVP
         ctx->decod_frames++;
         *got_frame = 1;
 
-#ifdef PRINT_FRAME_INFO
-        print_frame_info(frame);
-#endif
         imgb->release(imgb);
         imgb = NULL;
     } else

@@ -184,10 +184,8 @@ static int parse_nal_units(AVCodecParserContext *s, const uint8_t *bs,
     bits += EVC_NAL_HEADER_SIZE;
     bits_size -= EVC_NAL_HEADER_SIZE;
 
-    if (nalu_type == XEVD_NUT_SPS) {
+    if (nalu_type == XEVD_NUT_SPS) { // NAL Unit type: SPS (Sequence Parameter Set)
         EVCParserSPS *sps;
-
-        av_log(avctx, AV_LOG_DEBUG, "NAL Unit type: SPS (Sequence Parameter Set)\n");
 
         sps = parse_sps(bits, bits_size, ev);
 
@@ -230,19 +228,17 @@ static int parse_nal_units(AVCodecParserContext *s, const uint8_t *bs,
 
         ev->got_sps = 1;
 
-    } else if (nalu_type == XEVD_NUT_PPS) {
-        av_log(avctx, AV_LOG_DEBUG, "NAL Unit tpe: PPS (Video Parameter Set)\n");
+    } else if (nalu_type == XEVD_NUT_PPS) // NAL Unit type: PPS (Video Parameter Set)
         ev->got_pps = 1;
-    } else if(nalu_type == XEVD_NUT_SEI) {
-        av_log(avctx, AV_LOG_DEBUG, "NAL unit type: SEI (Supplemental Enhancement Information) \n");
+    else if(nalu_type == XEVD_NUT_SEI) // NAL unit type: SEI (Supplemental Enhancement Information)
         ev->got_sei = 1;
-    } else if (nalu_type == XEVD_NUT_IDR || nalu_type == XEVD_NUT_NONIDR) {
-        av_log(avctx, AV_LOG_DEBUG, "NAL Unit type: Coded slice of a IDR or non-IDR picture\n");
+    else if (nalu_type == XEVD_NUT_IDR || nalu_type == XEVD_NUT_NONIDR) // NAL Unit type: Coded slice of a IDR or non-IDR picture
         ev->got_slice++;
-    } else {
+    else {
         av_log(avctx, AV_LOG_ERROR, "Invalid NAL unit type: %d\n", nalu_type);
         return -1;
     }
+
     return 0;
 }
 
@@ -269,7 +265,6 @@ static int evc_find_frame_end(AVCodecParserContext *s, const uint8_t *buf,
         }
 
         nal_unit_size = read_nal_unit_length(buf, buf_size, avctx);
-        av_log(avctx, AV_LOG_DEBUG, "nal_unit_size: %d | buf_size: %d \n", nal_unit_size, buf_size);
         ev->nal_length_size = XEVD_NAL_UNIT_LENGTH_BYTE;
 
         next = nal_unit_size + XEVD_NAL_UNIT_LENGTH_BYTE;
@@ -340,7 +335,6 @@ static int evc_find_frame_end(AVCodecParserContext *s, const uint8_t *buf,
             // NAL Unit lenght =  60 (0x0000003C)
 
             nal_unit_size = read_nal_unit_length(nalu_len, XEVD_NAL_UNIT_LENGTH_BYTE, avctx);
-            av_log(avctx, AV_LOG_DEBUG, "nal_unit_size: %d | buf_size: %d \n", nal_unit_size, buf_size);
 
             ev->to_read = nal_unit_size + XEVD_NAL_UNIT_LENGTH_BYTE - pc->index;
 

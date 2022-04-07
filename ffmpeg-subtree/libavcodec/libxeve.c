@@ -372,14 +372,13 @@ static int get_conf(AVCodecContext *avctx, XEVE_CDSC *cdsc)
         param->fps = (int)(((float)avctx->framerate.num / avctx->framerate.den) + 0.5);
     }
 
-    if(avctx->gop_size >= 0) { /* key-frame interval */
+    if(avctx->gop_size >= 0) { // GOP size (key-frame interval)
         param->keyint = avctx->gop_size; // 0: only one I-frame at the first time; 1: every frame is coded in I-frame
-        av_log(avctx, AV_LOG_DEBUG, "GOP size (key-frame interval): %d\n", avctx->gop_size);
     }
+    
     if (avctx->max_b_frames == 0 || avctx->max_b_frames == 1 || avctx->max_b_frames == 3 ||
-        avctx->max_b_frames == 7 || avctx->max_b_frames == 15) { /* number of b-frame */
+        avctx->max_b_frames == 7 || avctx->max_b_frames == 15) { // number of b-frames
         param->bframes = avctx->max_b_frames;
-        av_log(avctx, AV_LOG_DEBUG, "Number of max b-frames: %d\n", avctx->max_b_frames);
     } else {
         av_log(avctx, AV_LOG_ERROR, "Incorrect value for maximum number of B frames: (%d) \n"
                "Acceptable values for bf option (maximum number of B frames) are 0,1,3,7 or 15\n", avctx->max_b_frames);
@@ -388,17 +387,20 @@ static int get_conf(AVCodecContext *avctx, XEVE_CDSC *cdsc)
 
     if (avctx->level >= 0)
         param->level_idc = avctx->level;
+    
     ret = get_pix_fmt(avctx->pix_fmt, &color_format, &xe->input_depth);
+    
     if (ret != 0) {
         av_log((AVCodecContext *)avctx, AV_LOG_ERROR, "Unsupported pixel format.\n");
         goto ERR;
     }
     param->cs = XEVE_CS_SET(color_format, xe->input_depth, 0);
 
-    if (avctx->rc_buffer_size > 0) {
+    if (avctx->rc_buffer_size > 0) { // VBV buf size
         param->vbv_bufsize = (int)(avctx->rc_buffer_size / 1000);
-        av_log(avctx, AV_LOG_DEBUG, "VBV buf size: %d\n", avctx->rc_buffer_size);
     }
+
+    // rc_type:  Rate control type [ 0(CQP) / 1(ABR) / 2(CRF) ]
     if (avctx->bit_rate > 0) {
         if (avctx->bit_rate / 1000 > INT_MAX || avctx->rc_max_rate / 1000 > INT_MAX) {
             av_log(avctx, AV_LOG_ERROR, "not supported bitrate bit_rate and rc_max_rate > %d000\n", INT_MAX);
@@ -407,19 +409,18 @@ static int get_conf(AVCodecContext *avctx, XEVE_CDSC *cdsc)
         param->bitrate = (int)(avctx->bit_rate / 1000);
         param->rc_type = XEVE_RC_ABR;
     }
+    
     if (xe->op_crf >= 0) {
         param->crf = xe->op_crf;
         param->rc_type = XEVE_RC_CRF;
     }
 
     if(avctx->thread_count <= 0) {
-        av_log(avctx, AV_LOG_DEBUG, "cpu_count: %d\n", cpu_count);
         param->threads = (cpu_count < XEVE_MAX_THREADS) ? cpu_count : XEVE_MAX_THREADS;
     } else if(avctx->thread_count > XEVE_MAX_THREADS)
         param->threads = XEVE_MAX_THREADS;
     else
         param->threads = avctx->thread_count;
-    av_log(avctx, AV_LOG_DEBUG, "param->threads: %d\n", param->threads);
 
     cdsc->param.cs = XEVE_CS_SET(color_format, param->codec_bit_depth, 0);
     cdsc->max_bs_buf_size = MAX_BS_BUF;
@@ -433,13 +434,13 @@ static int get_conf(AVCodecContext *avctx, XEVE_CDSC *cdsc)
                "Acceptable values for profile option are 0 and 1 (0: baseline profile; 1: main profile)\n", avctx->profile);
         goto ERR;
     }
-    if (xe->op_preset) {
+    
+    if (xe->op_preset) { // preset
         xe->preset_id = get_preset_id(xe->op_preset);
-        av_log(avctx, AV_LOG_DEBUG, "Preset  : %s\n", xe->op_preset);
     }
-    if (xe->op_tune) {
+
+    if (xe->op_tune) { // tune
         xe->tune_id = get_tune_id(xe->op_tune);
-        av_log(avctx, AV_LOG_DEBUG, "Tune    : %s\n", xe->op_tune);
     }
 
     ret = xeve_param_ppt(param, xe->profile_id, xe->preset_id, xe->tune_id);
@@ -451,7 +452,8 @@ static int get_conf(AVCodecContext *avctx, XEVE_CDSC *cdsc)
     /* parse :-separated list of key=value parameters and set values for created descriptor (XEVE_CDSC) */
     {
         AVDictionaryEntry *en = NULL;
-        av_log(avctx, AV_LOG_DEBUG, "### Start to parse xeve_params ###\n");
+        
+        // Start to parse xeve_params
         while ((en = av_dict_get(xe->xeve_params, "", en, AV_DICT_IGNORE_SUFFIX))) {
             int parse_ret = parse_xeve_params(en->key, en->value, xe, param, avctx);
 
@@ -466,11 +468,7 @@ static int get_conf(AVCodecContext *avctx, XEVE_CDSC *cdsc)
                 break;
             }
         }
-        av_log(avctx, AV_LOG_DEBUG, "### End of parsing xeve_params ###\n");
     }
-
-    av_log(avctx, AV_LOG_DEBUG, "Rate control type [ 0(CQP) / 1(ABR) / 2(CRF) ] : %d\n", param->rc_type);
-    av_log(avctx, AV_LOG_DEBUG, "crf=%d, bitrate=%d, vbv_bufsize=%d, fps=%d\n", param->crf, param->bitrate, param->vbv_bufsize, param->fps);
 
     return 0;
 
@@ -834,7 +832,7 @@ static av_cold void libxeve_init_static_data(AVCodec *codec)
 }
 
 /**
- * Initialize codec
+ * @brief Initialize eXtra-fast Essential Video Encoder codec
  * Create encoder instance and allocate all the needed resources
  *
  * @param avctx codec context
@@ -850,8 +848,6 @@ static av_cold int libxeve_init(AVCodecContext *avctx)
     XEVE_IMGB *imgb = NULL;
 
     XEVE_CDSC *cdsc = &(xe->cdsc);
-
-    av_log(avctx, AV_LOG_DEBUG, "eXtra-fast Essential Video Encoder\n");
 
     if(avctx->pix_fmt != AV_PIX_FMT_YUV420P && avctx->pix_fmt != AV_PIX_FMT_YUV420P10) {
         av_log(avctx, AV_LOG_ERROR, "Invalid pixel format: %s\n", av_get_pix_fmt_name(avctx->pix_fmt));
@@ -955,12 +951,10 @@ static int libxeve_encode(AVCodecContext *avctx, AVPacket *pkt,
         return -1;
     }
     if(xe->state == STATE_SKIPPING && frame ) {
-        av_log(avctx, AV_LOG_DEBUG, "Empty frame -> Entering encoding process...\n");
-        xe->state = STATE_ENCODING;
+        xe->state = STATE_ENCODING; // Entering encoding process
     } else if(xe->state == STATE_ENCODING && frame == NULL) {
-        av_log(avctx, AV_LOG_DEBUG, "Empty frame -> Entering bumping process...\n");
         if (setup_bumping(xe->id) == 0)
-            xe->state = STATE_BUMPING;
+            xe->state = STATE_BUMPING;  // Entering bumping process
         else {
             av_log(avctx, AV_LOG_ERROR, "Failed to setup bumping\n");
             xe->state = STATE_SKIPPING;
@@ -988,7 +982,6 @@ static int libxeve_encode(AVCodecContext *avctx, AVPacket *pkt,
             imgb = &xe->imgb;
 
             xeve_byte_depth = XEVE_CS_GET_BYTE_DEPTH(xeve_cs);
-            av_log(avctx, AV_LOG_DEBUG, "byte depth: %d\n", xeve_byte_depth);
 
             for (i = 0; i < imgb->np; i++) {
                 imgb->a[i] = frame->data[i];
@@ -1006,8 +999,6 @@ static int libxeve_encode(AVCodecContext *avctx, AVPacket *pkt,
             imgb->ts[3] = 0;
 
             /* push image to encoder */
-            av_log(avctx, AV_LOG_DEBUG, "INPUT | RAW frame | timestamps | %lld | %lld | %lld | %lld |\n", imgb->ts[0], imgb->ts[1], imgb->ts[2], imgb->ts[3]);
-
             ret = xeve_push(xe->id, imgb);
             if(XEVE_FAILED(ret)) {
                 av_log(avctx, AV_LOG_ERROR, "xeve_push() failed\n");
@@ -1027,8 +1018,7 @@ static int libxeve_encode(AVCodecContext *avctx, AVPacket *pkt,
         xe->encod_frames++;
 
         /* store bitstream */
-        if (ret == XEVE_OK_OUT_NOT_AVAILABLE) {
-            av_log(avctx, AV_LOG_DEBUG, "RETURN OK BUT PICTURE IS NOT AVAILABLE YET (%d) frame: %d\n", ret, xe->encod_frames);
+        if (ret == XEVE_OK_OUT_NOT_AVAILABLE) { // Return OK but picture is not available yet
             *got_packet = 0;
             return 0;
         } else if(ret == XEVE_OK) {
@@ -1036,8 +1026,7 @@ static int libxeve_encode(AVCodecContext *avctx, AVPacket *pkt,
 
             if(xe->stat.write > 0) {
                 xe->bytes_total += xe->stat.write;
-                // av_log(avctx, AV_LOG_DEBUG, "frame: %d | Bytes written:  %d | bytes total: %f | fnum %d | %lld | %lld | %lld | %lld |\n", xe->encod_frames, xe->stat.write, xe->bytes_total, xe->stat.fnum, xe->bitb.ts[0],xe->bitb.ts[1],xe->bitb.ts[2],xe->bitb.ts[3]);
-
+            
                 ret = av_grow_packet(pkt, xe->stat.write);
                 if (ret < 0) {
                     av_log(avctx, AV_LOG_ERROR, "Can't allocate memory for AVPacket data\n");
@@ -1048,8 +1037,6 @@ static int libxeve_encode(AVCodecContext *avctx, AVPacket *pkt,
 
                 pkt->pts = xe->bitb.ts[0];
                 pkt->dts = xe->bitb.ts[1];
-
-                av_log(avctx, AV_LOG_DEBUG, "PTS: %ld | DTS: %ld\n", pkt->pts, pkt->dts);
 
                 xe->bitrate += (xe->stat.write - xe->stat.sei_size);
 
@@ -1069,17 +1056,6 @@ static int libxeve_encode(AVCodecContext *avctx, AVPacket *pkt,
                     return -1;
                 }
 
-                av_log(avctx, AV_LOG_DEBUG, "OUTPUT | Encoded | slice type: %s | fnum: %ld | poc: %d | Bytes written:  %d | bytes total: %f | timestamps | %lld | %lld | %lld | %lld |\n",
-                       slice_type(av_pic_type),
-                       xe->stat.fnum,
-                       xe->stat.poc,
-                       xe->stat.write,
-                       xe->bytes_total,
-                       xe->bitb.ts[0],
-                       xe->bitb.ts[1],
-                       xe->bitb.ts[2],
-                       xe->bitb.ts[3]);
-
                 ff_side_data_set_encoder_stats(pkt, xe->stat.qp * FF_QP2LAMBDA, NULL, 0, av_pic_type);
 
                 xe->bitrate += (xe->stat.write - xe->stat.sei_size);
@@ -1091,7 +1067,7 @@ static int libxeve_encode(AVCodecContext *avctx, AVPacket *pkt,
             av_log(avctx, AV_LOG_INFO, "Return OK but no more frames (%d)\n", ret);
             return 0;
         } else {
-            av_log(avctx, AV_LOG_DEBUG, "Invalid return value (%d)\n", ret);
+            av_log(avctx, AV_LOG_ERROR, "Invalid return value (%d)\n", ret);
             return -1;
         }
     } else {

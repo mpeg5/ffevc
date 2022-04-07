@@ -122,15 +122,14 @@ static int parse_nal_units(const AVProbeData *p, EVCParserContext *ev)
         bits += nalu_size;
         bytes_to_read -= nalu_size;
 
-        if (nalu_type == XEVD_NUT_SPS) {
+        if (nalu_type == XEVD_NUT_SPS)
             ev->got_sps++;
-        } else if (nalu_type == XEVD_NUT_PPS) {
+        else if (nalu_type == XEVD_NUT_PPS)
             ev->got_pps++;
-        } else if (nalu_type == XEVD_NUT_IDR ) {
+        else if (nalu_type == XEVD_NUT_IDR )
             ev->got_idr++;
-        } else if (nalu_type == XEVD_NUT_NONIDR) {
+        else if (nalu_type == XEVD_NUT_NONIDR)
             ev->got_nonidr++;
-        }
     }
 
     return 0;

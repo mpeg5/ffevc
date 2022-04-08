@@ -50,11 +50,6 @@
 #define XEVE_PARAM_BAD_VALUE -200
 
 /**
- * Macro for eliminating the unused variable warning
- */
-#define UNUSED(x) (void)(x)
-
-/**
  * Encoder states
  *
  * STATE_ENCODING - the encoder receives and processes input frames
@@ -68,7 +63,7 @@ typedef enum State {
 } State;
 
 /**
- * The structure stores all the state associated with the instance of Xeve MPEG-5 EVC encoder
+ * The structure stores all the states associated with the instance of Xeve MPEG-5 EVC encoder
  * The first field is a pointer to an AVClass struct (@see https://ffmpeg.org/doxygen/trunk/structAVClass.html#details).
  */
 typedef struct XeveContext {
@@ -163,7 +158,7 @@ static int get_tune_id(const char *tune)
 }
 
 /**
- * Convert ffmpeg pixel format (AVPixelFormat) to XEVE pre-defined color format
+ * Convert FFmpeg pixel format (AVPixelFormat) to XEVE pre-defined color format
  *
  * @param[in]  px_fmt pixel format (@see https://ffmpeg.org/doxygen/trunk/pixfmt_8h.html#a9a8e335cf3be472042bc9f0cf80cd4c5)
  * @param[out] color_format XEVE pre-defined color format (@see xeve.h)
@@ -318,14 +313,14 @@ static int parse_xeve_params(AVCodecContext *avctx, const char *key, const char 
 }
 
 /**
- * The function returns a pointer to the object of XEVE_CDSC type.
- * XEVE_CDSC contains all encoder parameters that should be initialized before the encoder use.
+ * The function returns a pointer to the object of the XEVE_CDSC type.
+ * XEVE_CDSC contains all encoder parameters that should be initialized before the encoder is used.
  *
  * The field values of the XEVE_CDSC structure are populated based on:
  * - the corresponding field values of the AvCodecConetxt structure,
  * - the xeve encoder specific option values,
  *   (the full list of options available for xeve encoder is displayed after executing the command ./ffmpeg --help encoder = libxeve)
- * - and the xeve encoder options specified as a list of key value pairs following xeve-params option
+ * - and the xeve encoder options specified as a list of key-value pairs following the xeve-params option
  *
  * The order of processing input data and populating the XEVE_CDSC structure
  * 1) first, the fields of the AVCodecContext structure corresponding to the provided input options are processed,
@@ -478,7 +473,7 @@ ERR:
 }
 
 /**
- * Check codec configuration
+ * Check encoder configuration
  *
  * @param[in] avctx context for logger
  * @param[in] cdsc contains all encoder parameters that should be initialized before its use
@@ -685,7 +680,7 @@ static int check_conf(AVCodecContext *avctx,  XEVE_CDSC *cdsc)
  *
  * @param[in] logger context
  * @param[in] id XEVE encodec instance identifier
- * @param[in] ctx the structure stores all the state associated with the instance of Xeve MPEG-5 EVC encoder
+ * @param[in] ctx the structure stores all the states associated with the instance of Xeve MPEG-5 EVC encoder
  * 
  * @return 0 on success, negative error code on failure
  */
@@ -707,7 +702,7 @@ static int set_extra_config(AVCodecContext* avctx, XEVE id, XeveContext *ctx)
 }
 
 /**
- * Convert ffmpeg pixel format (AVPixelFormat) into XEVE pre-defined color space
+ * Convert FFmpeg pixel format (AVPixelFormat) into XEVE pre-defined color space
  *
  * @param[in] px_fmt pixel format (@see https://ffmpeg.org/doxygen/trunk/pixfmt_8h.html#a9a8e335cf3be472042bc9f0cf80cd4c5)
  * 
@@ -827,7 +822,7 @@ static int setup_bumping(XEVE id)
 
 /**
  * @brief Initialize eXtra-fast Essential Video Encoder codec
- * Create encoder instance and allocate all the needed resources
+ * Create an encoder instance and allocate all the needed resources
  *
  * @param avctx codec context
  * @return 0 on success, negative error code on failure
@@ -924,7 +919,7 @@ ERR:
 }
 
 /**
-  * Encode data to an AVPacket.
+  * Encode raw data frame into EVC packet
   *
   * @param[in] avctx codec context
   * @param[out] pkt output AVPacket containing encoded data
@@ -1075,7 +1070,7 @@ static int libxeve_encode(AVCodecContext *avctx, AVPacket *pkt,
 }
 
 /**
- * Destroy encoder and release all the allocated resources
+ * Destroy the encoder and release all the allocated resources
  *
  * @param avctx codec context
  * @return 0 on success, negative error code on failure

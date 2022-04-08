@@ -49,7 +49,7 @@
 #define EVC_NAL_HEADER_SIZE 2 /* byte */
 
 /**
- * The structure stores all the state associated with the instance of Xeve MPEG-5 EVC decoder
+ * The structure stores all the states associated with the instance of Xeve MPEG-5 EVC decoder
  * The first field is a pointer to an AVClass struct (@see https://ffmpeg.org/doxygen/trunk/structAVClass.html#details).
  */
 typedef struct XevdContext {
@@ -67,25 +67,25 @@ typedef struct XevdContext {
 } XevdContext;
 
 /**
- * The function returns a pointer to variable of type XEVD_CDSC.
+ * The function returns a pointer to a variable of type XEVD_CDSC.
  * XEVD_CDSC contains all decoder parameters that should be initialized before its use.
  *
  * The field values of the XEVD_CDSC structure are populated based on:
  * - the corresponding field values of the AvCodecConetxt structure,
  * - the xevd decoder specific option values,
- *   (the full list of options available for xevd encoder is displayed after executing the command ./ffmpeg --help decoder = libxevd)
- * - and the xevd encoder options specified as a list of key value pairs following xevd-params option
- *
+ *   (the full list of options available for the xevd encoder is displayed after executing the command ./ffmpeg --help decoder = libxevd)
+ * - and the xevd encoder options specified as a list of key-value pairs following the xevd-params option
+ * 
  * Order of input processing and populating the XEVD_CDSC structure
  * 1. first, the corresponding fields of the AVCodecContext structure are processed, (i.e -threads 4)
- * 2. then xevd-specific options added as AVOption to the xevd AVCodec implementation (i.e -threads 3)
+ * 2. then xevd-specific options are added as AVOption to the xevd AVCodec implementation (i.e -threads 3)
  * 3. finally, the options specified after the xevd-params option as the parameter list of type key value are processed (i.e -xevd-params "m=2")
  *
- * There are options that can be set in different ways. In this case, please follow the above-mentioned order of processing.
+ * Some options can be set in different ways. In this case, please follow the above-mentioned order of processing.
  * The most recent assignments overwrite the previous values.
  *
  * @param[in] avctx codec context
- * @param[out] cdsc contains all encoder parameters that should be initialized before its use.
+ * @param[out] cdsc contains all encoder parameters that should be initialized before its use
  *
  * @return 0 on success, negative error code on failure
  */
@@ -110,7 +110,7 @@ static int get_conf(AVCodecContext *avctx, XEVD_CDSC *cdsc)
 /**
  * Read NAL unit length
  * @param bs input data (bitstream)
- * @return the lenghth of NAL unit on success, 0 value on failure
+ * @return the length of NAL unit on success, 0 value on failure
  */
 static uint32_t read_nal_unit_length(const uint8_t *bs, int bs_size, AVCodecContext *avctx)
 {
@@ -150,14 +150,14 @@ static int export_stream_params(AVCodecContext *avctx, const XevdContext *xectx)
 
     avctx->pix_fmt = AV_PIX_FMT_YUV420P10;
 
-    // @todo The AVCodecContext should be initialized here using data from the object of XEVD_SPS type.
+    // @todo The AVCodecContext should be initialized here using data from the object of the XEVD_SPS type.
     //
-    // It seems to be impossible right now since XEVD API limitation.
+    // It seems to be impossible right now since the XEVD API limitation.
     // The extension for the XEVD API is needed.
-    // To be more precise, what we need is access to the object of XEVD_SPS type being a part of XEVD_CTX object.
+    // To be more precise, what we need is access to the object of the XEVD_SPS type being a part of the XEVD_CTX object.
     // The object of XEVD_CTX type is created while the function xevd_create() being a part of public API is called.
     //
-    // @todo remove the following hardoced has_b_frames; consider using sps->num_reorder_pics value instead
+    // @todo remove the following hard-coced has_b_frames; consider using sps->num_reorder_pics value instead
     //
     // avctx->has_b_frames        = 1; // (sps->num_reorder_pics)?1:0;
     size = 4;
@@ -252,7 +252,7 @@ static int export_stream_params(AVCodecContext *avctx, const XevdContext *xectx)
 
 /**
  * Initialize decoder
- * Create decoder instance and allocate all the needed resources
+ * Create a decoder instance and allocate all the needed resources
  *
  * @param avctx codec context
  * @return 0 on success, negative error code on failure

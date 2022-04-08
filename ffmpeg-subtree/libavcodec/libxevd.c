@@ -40,9 +40,6 @@
 #include "avcodec.h"
 #include "internal.h"
 #include "packet_internal.h"
-#ifdef USE_BITSTREAM_READER_API
-#include "golomb.h"
-#endif
 
 #define UNUSED(x) (void)(x)
 
@@ -58,130 +55,16 @@
 typedef struct XevdContext {
     const AVClass *class;
 
-    XEVD id;        // XEVD instance identifier @see xevd.h
-    XEVD_CDSC cdsc; // decoding parameters @see xevd.h
+    XEVD id;            // XEVD instance identifier @see xevd.h
+    XEVD_CDSC cdsc;     // decoding parameters @see xevd.h
 
-    int decod_frames; // number of decoded frames
-    int packet_count; // number of packets created by decoder
+    int decod_frames;   // number of decoded frames
+    int packet_count;   // number of packets created by decoder
 
     // configuration parameters
     AVDictionary *xevd_opts; // xevd configuration read from a :-separated list of key=value parameters
 
 } XevdContext;
-
-static int  op_threads = 1; // Default value
-
-// Read NAL Unit Type from  NAL Unit Header
-//
-// The structure of NAL Unit Header looks like follows
-//
-// +---------------+---------------+
-// |0|1|2|3|4|5|6|7|0|1|2|3|4|5|6|7|
-// +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
-// |F|   Type    | TID | Reserve |E|
-// +-------------+-----------------+
-//
-// F:       1 bit   - forbidden_zero_bit.  Required to be zero in [EVC].
-// Type:    6 bits  - nal_unit_type_plus1 (This field specifies the NAL unit type as defined in Table 4 of [EVC])
-// TID:     3 bits  - nuh_temporal_id.  This field specifies the temporal identifier of the NAL unit.
-// Reserve: 5 bits  - nuh_reserved_zero_5bits.  This field shall be equal to the version of the [EVC] specification.
-// E:       1 bit   - nuh_extension_flag.  This field shall be equal the version of the [EVC] specification.
-//
-// @see https://datatracker.ietf.org/doc/html/draft-ietf-avtcore-rtp-evc-01#section-1.1.4
-
-#if defined(USE_BITSTREAM_READER_API)
-
-static int get_nalu_type(const uint8_t *bs, int bs_size, AVCodecContext *avctx)
-{
-    GetBitContext gb;
-    int fzb, nut;
-    int ret;
-
-    if((ret = init_get_bits8(&gb, bs, bs_size)) < 0)
-        return ret;
-    fzb = get_bits1(&gb);
-    if(fzb != 0)
-        av_log(avctx, AV_LOG_DEBUG, "forbidden_zero_bit is not clear\n");
-    nut = get_bits(&gb, 6); /* nal_unit_type_plus1 */
-    return nut - 1;
-}
-
-#elif defined(USE_XEVD_API)
-
-static int get_nalu_type(const uint8_t *bs, int bs_size, AVCodecContext *avctx)
-{
-    int nalu_type = 0;
-    XEVD_INFO info;
-    int ret;
-
-    if(bs_size >= EVC_NAL_HEADER_SIZE) {
-        ret = xevd_info((void *)bs, EVC_NAL_HEADER_SIZE, 1, &info);
-        if (XEVD_FAILED(ret)) {
-            av_log(avctx, AV_LOG_ERROR, "Cannot get bitstream information\n");
-            return -1;
-        }
-        nalu_type = info.nalu_type;
-
-    }
-    return nalu_type - 1;
-}
-#else 
-
-static int get_nalu_type(const uint8_t *bs, int bs_size, AVCodecContext *avctx)
-{
-    int nalu_type = 0;
-
-    if(bs_size >= 1) {
-        memcpy(&nalu_type, bs, 1);
-        nalu_type = nalu_type & 0x7E;
-        nalu_type = nalu_type >> 1;
-    }
-
-    return nalu_type -1;
-}
-
-#endif
-
-/**
- * Read options
- *
- * @param avctx codec context
- * @return 0 on success
- */
-static int read_options(const AVCodecContext *avctx)
-{
-    op_threads = (avctx->thread_count > 0) ? avctx->thread_count : 1;
-
-    return 0;
-}
-
-/**
- * Parse :-separated list of key=value parameters
- *
- * @param key
- * @param value
- *
- * @return 0 on success, negative value on failure
- *
- * @todo Consider removing the function
- */
-static int xevd_params_parse(const char *key, const char *value)
-{
-    if(!key) {
-        av_log(NULL, AV_LOG_ERROR, "Ivalid argument: key string is NULL\n");
-        return XEVD_ERR_INVALID_ARGUMENT;
-    }
-    if(!value) {
-        av_log(NULL, AV_LOG_ERROR, "Ivalid argument: value string is NULL\n");
-        return XEVD_ERR_INVALID_ARGUMENT;
-    }
-
-    else {
-        av_log(NULL, AV_LOG_ERROR, "Unknown xevd codec option: %s\n", key);
-        return XEVD_PARAM_BAD_NAME;
-    }
-    return 0;
-}
 
 /**
  * The function returns a pointer to variable of type XEVD_CDSC.
@@ -201,39 +84,14 @@ static int xevd_params_parse(const char *key, const char *value)
  * There are options that can be set in different ways. In this case, please follow the above-mentioned order of processing.
  * The most recent assignments overwrite the previous values.
  *
- * @param avctx codec context
- * @param cdsc contains all encoder parameters that should be initialized before its use.
+ * @param[in] avctx codec context
+ * @param[out] cdsc contains all encoder parameters that should be initialized before its use.
  *
  * @return 0 on success, negative error code on failure
  */
-static int get_conf(const AVCodecContext *avctx, XEVD_CDSC *cdsc)
+static int get_conf(AVCodecContext *avctx, XEVD_CDSC *cdsc)
 {
     int cpu_count = av_cpu_count();
-
-    /* read options from AVCodecContext & from XEVD_CDSC */
-    read_options(avctx);
-
-    /* parse :-separated list of key=value parameters and set values for created descriptor (XEVD_CDSC) */
-    {
-        XevdContext *ctx = avctx->priv_data;
-        AVDictionaryEntry *en = NULL;
-        while ((en = av_dict_get(ctx->xevd_opts, "", en, AV_DICT_IGNORE_SUFFIX))) {
-            int parse_ret = xevd_params_parse(en->key, en->value);
-
-            switch (parse_ret) {
-            case XEVD_PARAM_BAD_NAME:
-                av_log((AVCodecContext *)avctx, AV_LOG_WARNING,
-                       "Unknown option: %s.\n", en->key);
-                break;
-            case XEVD_PARAM_BAD_VALUE:
-                av_log((AVCodecContext *)avctx, AV_LOG_WARNING,
-                       "Invalid value for %s: %s.\n", en->key, en->value);
-                break;
-            default:
-                break;
-            }
-        }
-    }
 
     /* clear XEVS_CDSC structure */
     memset(cdsc, 0, sizeof(XEVD_CDSC));
@@ -272,15 +130,16 @@ static uint32_t read_nal_unit_length(const uint8_t *bs, int bs_size, AVCodecCont
             return 0;
         }
     }
+
     return len;
 }
 
 /**
  * @param avctx codec context
- * @param ctx the structure that stores all the state associated with the instance of Xeve MPEG-5 EVC decoder
+ * @param xectx the structure that stores all the state associated with the instance of Xeve MPEG-5 EVC decoder
  * @return 0 on success, negative value on failure
  */
-static int export_stream_params(AVCodecContext *avctx, const XevdContext *ctx)
+static int export_stream_params(AVCodecContext *avctx, const XevdContext *xectx)
 {
     // unsigned int num = 0, den = 0;
     // @todo support other formats
@@ -302,31 +161,31 @@ static int export_stream_params(AVCodecContext *avctx, const XevdContext *ctx)
     //
     // avctx->has_b_frames        = 1; // (sps->num_reorder_pics)?1:0;
     size = 4;
-    ret = xevd_config(ctx->id, XEVD_CFG_GET_CODED_WIDTH, &avctx->coded_width, &size);
+    ret = xevd_config(xectx->id, XEVD_CFG_GET_CODED_WIDTH, &avctx->coded_width, &size);
     if (XEVD_FAILED(ret)) {
         av_log(avctx, AV_LOG_ERROR, "failed to get coded_width\n");
         return -1;
     }
 
-    ret = xevd_config(ctx->id, XEVD_CFG_GET_CODED_HEIGHT, &avctx->coded_height, &size);
+    ret = xevd_config(xectx->id, XEVD_CFG_GET_CODED_HEIGHT, &avctx->coded_height, &size);
     if (XEVD_FAILED(ret)) {
         av_log(avctx, AV_LOG_ERROR, "failed to get coded_height\n");
         return -1;
     }
 
-    ret = xevd_config(ctx->id, XEVD_CFG_GET_WIDTH, &avctx->width, &size);
+    ret = xevd_config(xectx->id, XEVD_CFG_GET_WIDTH, &avctx->width, &size);
     if (XEVD_FAILED(ret)) {
         av_log(avctx, AV_LOG_ERROR, "failed to get width\n");
         return -1;
     }
 
-    ret = xevd_config(ctx->id, XEVD_CFG_GET_HEIGHT, &avctx->height, &size);
+    ret = xevd_config(xectx->id, XEVD_CFG_GET_HEIGHT, &avctx->height, &size);
     if (XEVD_FAILED(ret)) {
         av_log(avctx, AV_LOG_ERROR, "failed to get height\n");
         return -1;
     }
 
-    ret = xevd_config(ctx->id, XEVD_CFG_GET_COLOR_SPACE, &color_space, &size);
+    ret = xevd_config(xectx->id, XEVD_CFG_GET_COLOR_SPACE, &color_space, &size);
     if (XEVD_FAILED(ret)) {
         av_log(avctx, AV_LOG_ERROR, "failed to get color_space\n");
         return -1;
@@ -386,8 +245,8 @@ static int export_stream_params(AVCodecContext *avctx, const XevdContext *ctx)
     avctx->color_primaries = AVCOL_PRI_UNSPECIFIED;
     avctx->color_trc       = AVCOL_TRC_UNSPECIFIED;
     avctx->colorspace      = AVCOL_SPC_UNSPECIFIED;
-
 #endif
+
     return 0;
 }
 
@@ -410,9 +269,9 @@ static av_cold void libxevd_init_static_data(AVCodec *codec)
  */
 static av_cold int libxevd_init(AVCodecContext *avctx)
 {
-    XevdContext *ctx = avctx->priv_data;
+    XevdContext *xectx = avctx->priv_data;
     int val = 0;
-    XEVD_CDSC *cdsc = &(ctx->cdsc);
+    XEVD_CDSC *cdsc = &(xectx->cdsc);
 
     /* read configurations and set values for created descriptor (XEVD_CDSC) */
     val = get_conf(avctx, cdsc);
@@ -422,34 +281,35 @@ static av_cold int libxevd_init(AVCodecContext *avctx)
     }
 
     /* create decoder */
-    ctx->id = xevd_create(&(ctx->cdsc), NULL);
-    if(ctx->id == NULL) {
+    xectx->id = xevd_create(&(xectx->cdsc), NULL);
+    if(xectx->id == NULL) {
         av_log(avctx, AV_LOG_ERROR, "cannot create XEVD encoder\n");
         return -1;
     }
 
-    ctx->packet_count = 0;
-    ctx->decod_frames = 0;
+    xectx->packet_count = 0;
+    xectx->decod_frames = 0;
 
     return 0;
 }
 
 /**
-  * Dncode picture
+  * Decode picture
   *
-  * @param      avctx          codec context
-  * @param      data           codec type dependent output struct
-  * @param[out] got_frame      decoder sets to 0 or 1 to indicate that a
-  *                            non-empty frame or subtitle was returned in
-  *                            outdata.
-  * @param[in]  pkt            AVPacket containing the data to be decoded
+  * @param avctx codec context
+  * @param[out] data decoded frame
+  * @param[out] got_frame decoder sets to 0 or 1 to indicate that a
+  *                       non-empty frame or subtitle was returned in
+  *                       outdata.
+  * @param[in] pkt AVPacket containing encoded data to be decoded
+  * 
   * @return amount of bytes read from the packet on success, negative error
   *         code on failure
   */
 static int libxevd_decode(AVCodecContext *avctx, void *data, int *got_frame, AVPacket *pkt)
 {
     AVFrame *frame = data;
-    XevdContext *ctx = NULL;
+    XevdContext *xectx = NULL;
     XEVD_IMGB *imgb = NULL;
     XEVD_STAT stat;
     XEVD_BITB bitb;
@@ -459,8 +319,8 @@ static int libxevd_decode(AVCodecContext *avctx, void *data, int *got_frame, AVP
         av_log(avctx, AV_LOG_ERROR, "Invalid input parameter: AVCodecContext\n");
         return -1;
     }
-    ctx = avctx->priv_data;
-    if(ctx == NULL) {
+    xectx = avctx->priv_data;
+    if(xectx == NULL) {
         av_log(avctx, AV_LOG_ERROR, "Invalid XEVD context\n");
         return -1;
     }
@@ -469,7 +329,6 @@ static int libxevd_decode(AVCodecContext *avctx, void *data, int *got_frame, AVP
         bs_read_pos = 0;
         imgb = NULL;
         while(pkt->size > (bs_read_pos + XEVD_NAL_UNIT_LENGTH_BYTE)) {
-            int nal_type = 0;
 
             memset(&stat, 0, sizeof(XEVD_STAT));
             memset(&bitb, 0, sizeof(XEVD_BITB));
@@ -484,28 +343,8 @@ static int libxevd_decode(AVCodecContext *avctx, void *data, int *got_frame, AVP
             bitb.addr = pkt->data + bs_read_pos;
             bitb.ssize = nalu_size;
 
-            // Read NAL Unit Type from  NAL Unit Header
-            //
-            // The structure of NAL Unit Header looks like follows
-            //
-            // +---------------+---------------+
-            // |0|1|2|3|4|5|6|7|0|1|2|3|4|5|6|7|
-            // +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
-            // |F|   Type    | TID | Reserve |E|
-            // +-------------+-----------------+
-            //
-            // F:       1 bit   - forbidden_zero_bit.  Required to be zero in [EVC].
-            // Type:    6 bits  - nal_unit_type_plus1 (This field specifies the NAL unit type as defined in Table 4 of [EVC])
-            // TID:     3 bits  - nuh_temporal_id.  This field specifies the temporal identifier of the NAL unit.
-            // Reserve: 5 bits  - nuh_reserved_zero_5bits.  This field shall be equal to the version of the [EVC] specification.
-            // E:       1 bit   - nuh_extension_flag.  This field shall be equal the version of the [EVC] specification.
-            //
-            // @see https://datatracker.ietf.org/doc/html/draft-ietf-avtcore-rtp-evc-01#section-1.1.4
-
-            nal_type = get_nalu_type(bitb.addr, EVC_NAL_HEADER_SIZE, avctx);
-
             /* main decoding block */
-            ret = xevd_decode(ctx->id, &bitb, &stat);
+            ret = xevd_decode(xectx->id, &bitb, &stat);
             if(XEVD_FAILED(ret)) {
                 av_log(avctx, AV_LOG_ERROR, "failed to decode bitstream\n");
                 goto ERR;
@@ -514,7 +353,7 @@ static int libxevd_decode(AVCodecContext *avctx, void *data, int *got_frame, AVP
             bs_read_pos += nalu_size;
 
             if(stat.nalu_type == XEVD_NUT_SPS) { // EVC stream parameters changed
-                if(export_stream_params(avctx, ctx) != 0)
+                if(export_stream_params(avctx, xectx) != 0)
                     goto ERR;
             }
 
@@ -525,7 +364,7 @@ static int libxevd_decode(AVCodecContext *avctx, void *data, int *got_frame, AVP
                     imgb->release(imgb);
                     imgb = NULL;
                 }
-                ret = xevd_pull(ctx->id, &imgb);
+                ret = xevd_pull(xectx->id, &imgb);
                 if(XEVD_FAILED(ret)) {
                     av_log(avctx, AV_LOG_ERROR, "failed to pull the decoded image (xevd error code: %d, frame#=%d)\n", ret, stat.fnum);
                     goto ERR;
@@ -538,7 +377,7 @@ static int libxevd_decode(AVCodecContext *avctx, void *data, int *got_frame, AVP
             }
         }
     } else { // bumping
-        ret = xevd_pull(ctx->id, &(imgb));
+        ret = xevd_pull(xectx->id, &(imgb));
         if(ret == XEVD_ERR_UNEXPECTED) { // bumping process completed
             *got_frame = 0;
             return 0;
@@ -577,7 +416,7 @@ static int libxevd_decode(AVCodecContext *avctx, void *data, int *got_frame, AVP
                       imgb->s, avctx->pix_fmt,
                       imgb->w[0], imgb->h[0]);
 
-        ctx->decod_frames++;
+        xectx->decod_frames++;
         *got_frame = 1;
 
         imgb->release(imgb);
@@ -585,7 +424,8 @@ static int libxevd_decode(AVCodecContext *avctx, void *data, int *got_frame, AVP
     } else
         *got_frame = 0;
 
-    ctx->packet_count++;
+    xectx->packet_count++;
+    
     return pkt->size;
 
 ERR:
@@ -594,6 +434,7 @@ ERR:
         imgb = NULL;
     }
     *got_frame = 0;
+
     return -1;
 }
 
@@ -605,10 +446,10 @@ ERR:
  */
 static av_cold int libxevd_close(AVCodecContext *avctx)
 {
-    XevdContext *ctx = avctx->priv_data;
-    if(ctx->id) {
-        xevd_delete(ctx->id);
-        ctx->id = NULL;
+    XevdContext *xectx = avctx->priv_data;
+    if(xectx->id) {
+        xevd_delete(xectx->id);
+        xectx->id = NULL;
     }
 
     return 0;
@@ -631,7 +472,6 @@ static const AVClass xevd_class = {
     .version    = LIBAVUTIL_VERSION_INT,
 };
 
-/// @todo provide implementation
 static const AVCodecDefault xevd_defaults[] = {
     { "b", "0" },
     { NULL },

@@ -69,7 +69,7 @@ typedef struct EVCParserContext {
 static av_unused int get_nalu_type(const uint8_t *bs, int bs_size, AVCodecContext *avctx)
 {
     GetBitContext gb;
-    int fzb, nut;
+    int fzb, unit_type_plus1;
     int ret;
 
     if((ret = init_get_bits8(&gb, bs, bs_size)) < 0)
@@ -78,15 +78,15 @@ static av_unused int get_nalu_type(const uint8_t *bs, int bs_size, AVCodecContex
     fzb = get_bits1(&gb);
     if(fzb != 0)
         av_log(avctx, AV_LOG_DEBUG, "forbidden_zero_bit is not clear\n");
-    nut = get_bits(&gb, 6); /* nal_unit_type_plus1 */
-    return nut - 1;
+    unit_type_plus1 = get_bits(&gb, 6); /* nal_unit_type_plus1 */
+    return unit_type_plus1 - 1;
 }
 
 #else
 
 static int get_nalu_type(const uint8_t *bs, int bs_size, AVCodecContext *avctx)
 {
-    int nalu_type = 0;
+    int unit_type_plus1 = 0;
     XEVD_INFO info;
     int ret;
 
@@ -96,10 +96,10 @@ static int get_nalu_type(const uint8_t *bs, int bs_size, AVCodecContext *avctx)
             av_log(avctx, AV_LOG_ERROR, "Cannot get bitstream information\n");
             return -1;
         }
-        nalu_type = info.nalu_type;
+        unit_type_plus1 = info.nalu_type;
 
     }
-    return nalu_type - 1;
+    return unit_type_plus1 - 1;
 }
 
 #endif
@@ -118,10 +118,11 @@ static uint32_t read_nal_unit_length(const uint8_t *bs, int bs_size, AVCodecCont
         }
         len = info.nalu_len;
         if(len == 0) {
-            av_log(avctx, AV_LOG_ERROR, "Invalid bitstream size! 1 [%d] [%d]\n", len, bs_size);
+            av_log(avctx, AV_LOG_ERROR, "Invalid bitstream size!\n");
             return 0;
         }
     }
+    
     return len;
 }
 

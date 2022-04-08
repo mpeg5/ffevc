@@ -55,7 +55,7 @@ typedef struct EVCParserContext {
     int is_avc;
     int nal_length_size;
     int to_read;
-    int incomplete_nalu_prefix_read; // The flag is set to 1 when incomplete NAL unit prefix has been read
+    int incomplete_nalu_prefix_read; // The flag is set to 1 when an incomplete NAL unit prefix has been read
 
     int got_sps;
     int got_pps;

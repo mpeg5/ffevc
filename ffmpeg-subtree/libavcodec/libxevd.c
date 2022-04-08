@@ -41,8 +41,6 @@
 #include "internal.h"
 #include "packet_internal.h"
 
-#define UNUSED(x) (void)(x)
-
 #define XEVD_PARAM_BAD_NAME -1
 #define XEVD_PARAM_BAD_VALUE -2
 
@@ -157,7 +155,7 @@ static int export_stream_params(AVCodecContext *avctx, const XevdContext *xectx)
     // To be more precise, what we need is access to the object of the XEVD_SPS type being a part of the XEVD_CTX object.
     // The object of XEVD_CTX type is created while the function xevd_create() being a part of public API is called.
     //
-    // @todo remove the following hard-coced has_b_frames; consider using sps->num_reorder_pics value instead
+    // @todo remove the following hard-coded has_b_frames; consider using sps->num_reorder_pics value instead
     //
     // avctx->has_b_frames        = 1; // (sps->num_reorder_pics)?1:0;
     size = 4;

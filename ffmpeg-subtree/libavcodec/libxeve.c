@@ -202,6 +202,7 @@ static int get_pix_fmt(enum AVPixelFormat pix_fmt, int *color_format, int *bit_d
         *color_format = XEVE_CF_UNKNOWN;
         return -1;
     }
+
     return 0;
 }
 
@@ -803,11 +804,12 @@ static int xeve_color_space(enum AVPixelFormat pix_fmt)
         cs = XEVE_CF_UNKNOWN;
         break;
     }
+
     return cs;
 }
 
 /**
- * @brief Switch encodet to bumping mode
+ * @brief Switch encoder to bumping mode
  * 
  * @param id XEVE encodec instance identifier
  * @return 0 on success, negative error code on failure
@@ -819,6 +821,7 @@ static int setup_bumping(XEVE id)
     size = sizeof(int);
     if(XEVE_FAILED(xeve_config(id, XEVE_CFG_SET_FORCE_OUT, (void *)(&val), &size)))
         return -1;
+
     return 0;
 }
 
@@ -888,6 +891,7 @@ static av_cold int libxeve_init(AVCodecContext *avctx)
         av_log(avctx, AV_LOG_ERROR, "failed to get  chroma shift\n");
         goto ERR;
     }
+
     // YUV format explanation
     // shift_h == 1 && shift_v == 1 : YUV420
     // shift_h == 1 && shift_v == 0 : YUV422
@@ -895,12 +899,12 @@ static av_cold int libxeve_init(AVCodecContext *avctx)
     //
     xectx->width_chroma = AV_CEIL_RSHIFT(xectx->width_luma, shift_h);
     xectx->height_chroma = AV_CEIL_RSHIFT(xectx->height_luma, shift_v);
-    
+
     /* set default values for input image buffer */
     imgb = &xectx->imgb;
     imgb->cs = xeve_color_space(avctx->pix_fmt);
     imgb->np = 3; /* only for yuv420p, yuv420ple */
-    
+
     for (i = 0; i < imgb->np; i++)
         imgb->x[i] = imgb->y[i] = 0;
 
@@ -914,10 +918,13 @@ static av_cold int libxeve_init(AVCodecContext *avctx)
     xectx->state = STATE_ENCODING;
     xectx->packet_count = 0;
     xectx->bitrate = 0;
+
     return 0;
 
 ERR:
-    if(bs_buf) free(bs_buf);
+    if(bs_buf)
+        free(bs_buf);
+
     return -1;
 }
 
@@ -1068,6 +1075,7 @@ static int libxeve_encode(AVCodecContext *avctx, AVPacket *pkt,
         av_log(avctx, AV_LOG_ERROR, "Udefined state: %d\n", xectx->state);
         return -1;
     }
+
     return 0;
 }
 

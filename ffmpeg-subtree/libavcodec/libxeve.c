@@ -825,11 +825,6 @@ static int setup_bumping(XEVE id)
     return 0;
 }
 
-static av_cold void libxeve_init_static_data(AVCodec *codec)
-{
-    UNUSED(codec);
-}
-
 /**
  * @brief Initialize eXtra-fast Essential Video Encoder codec
  * Create encoder instance and allocate all the needed resources
@@ -1137,7 +1132,6 @@ AVCodec ff_libxeve_encoder = {
     .type             = AVMEDIA_TYPE_VIDEO,
     .id               = AV_CODEC_ID_EVC,
     .init             = libxeve_init,
-    .init_static_data = libxeve_init_static_data,
     .encode2          = libxeve_encode,
     .close            = libxeve_close,
     .priv_data_size   = sizeof(XeveContext),

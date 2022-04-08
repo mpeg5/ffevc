@@ -251,16 +251,6 @@ static int export_stream_params(AVCodecContext *avctx, const XevdContext *xectx)
 }
 
 /**
- * Initialize decoder static data
- *
- * @todo Consider removing unused function
- */
-static av_cold void libxevd_init_static_data(AVCodec *codec)
-{
-    UNUSED(codec);
-}
-
-/**
  * Initialize decoder
  * Create decoder instance and allocate all the needed resources
  *
@@ -483,7 +473,6 @@ AVCodec ff_libxevd_decoder = {
     .type             = AVMEDIA_TYPE_VIDEO,
     .id               = AV_CODEC_ID_EVC,
     .init             = libxevd_init,
-    .init_static_data = libxevd_init_static_data,
     .decode           = libxevd_decode,
     .close            = libxevd_close,
     .priv_data_size   = sizeof(XevdContext),

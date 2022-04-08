@@ -38,28 +38,6 @@ typedef struct EVCParserContext {
     int got_nonidr;
 } EVCParserContext;
 
-#ifdef NOT_USE_XEVD_API
-
-static int get_nalu_type(const uint8_t *bs, int bs_size)
-{
-    GetBitContext gb;
-
-    int fzb, nal_unit_type_plus1;
-    int ret;
-
-    if((ret = init_get_bits8(&gb, bs, bs_size)) < 0)
-        return ret;
-
-    fzb = get_bits1(&gb);
-    if(fzb != 0)
-        av_log(NULL, AV_LOG_DEBUG, "forbidden_zero_bit is not clear\n");
-    nal_unit_type_plus1 = get_bits(&gb, 6); /* nal_unit_type_plus1 */
-
-    return nal_unit_type_plus1 - 1;
-}
-
-#else
-
 static int get_nalu_type(const uint8_t *bs, int bs_size)
 {
     int nal_unit_type_plus1 = 0;
@@ -73,13 +51,10 @@ static int get_nalu_type(const uint8_t *bs, int bs_size)
             return -1;
         }
         nal_unit_type_plus1 = info.nalu_type;
-
     }
 
     return nal_unit_type_plus1 - 1;
 }
-
-#endif
 
 static uint32_t read_nal_unit_length(const uint8_t *bs, int bs_size)
 {

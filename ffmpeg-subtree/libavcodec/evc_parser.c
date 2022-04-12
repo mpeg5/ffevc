@@ -381,7 +381,7 @@ static int evc_find_frame_end(AVCodecParserContext *s, const uint8_t *buf,
             return END_NOT_FOUND;
     } else if(ev->to_read > buf_size) {
         return END_NOT_FOUND;
-    } else  {
+    } else {
         if(ev->incomplete_nalu_prefix_read  == 1) {
             EVCParserContext *ev = s->priv_data;
             ParseContext *pc = &ev->pc;

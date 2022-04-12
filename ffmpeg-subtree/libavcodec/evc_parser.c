@@ -319,8 +319,17 @@ static int parse_nal_units(AVCodecParserContext *s, const uint8_t *bs,
             return -1;
         }
 
-        // if (sps && sps->bitstream_restriction_flag && avctx->has_b_frames < sps->num_reorder_frames) {
-        //     avctx->has_b_frames = sps->num_reorder_frames;
+        // The current implementation of parse_sps function doesn't handle VUI parameters parsing,
+        // so at the moment it's impossible to initialize has_b_frames and max_b_frames AVCodecContex fields here.
+        // Currently, initialization of has_b_frames and max_b_frames AVCodecContex fields have been moved to
+        // libxevd_decode function where we can use xevd_config function being a part of xevd library API 
+        // to get the needed information.
+        // However, if it will be needed, parse_sps function should be extended to handle VUI parameters parsing 
+        // and the following lines should be used to initialize has_b_frames and max_b_frames fields of the AVCodecContex .
+        //
+        // sps->vui_parameters.num_reorder_pics
+        // if (sps->bitstream_restriction_flag && sps->vui_parameters.num_reorder_pics) {
+        //     avctx->has_b_frames = sps->vui_parameters.num_reorder_pics;
         // }
 
         ev->got_sps = 1;

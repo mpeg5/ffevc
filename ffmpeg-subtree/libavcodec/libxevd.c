@@ -60,7 +60,7 @@ typedef struct XevdContext {
     int packet_count;   // number of packets created by decoder
 
     // configuration parameters
-    AVDictionary *xevd_opts; // xevd configuration read from a :-separated list of key=value parameters
+    AVDictionary *xevd_opts; // xevd configuration read from a : separated list of key=value parameters
 
 } XevdContext;
 
@@ -133,31 +133,18 @@ static uint32_t read_nal_unit_length(const uint8_t *bs, int bs_size, AVCodecCont
 }
 
 /**
- * @param avctx codec context
- * @param xectx the structure that stores all the state associated with the instance of Xeve MPEG-5 EVC decoder
+ * @param[in] xectx the structure that stores all the state associated with the instance of Xeve MPEG-5 EVC decoder
+ * @param[out] avctx codec context
  * @return 0 on success, negative value on failure
  */
-static int export_stream_params(AVCodecContext *avctx, const XevdContext *xectx)
+static int export_stream_params(const XevdContext *xectx, AVCodecContext *avctx)
 {
-    // unsigned int num = 0, den = 0;
-    // @todo support other formats
-
     int ret;
     int size;
     int color_space;
 
     avctx->pix_fmt = AV_PIX_FMT_YUV420P10;
 
-    // @todo The AVCodecContext should be initialized here using data from the object of the XEVD_SPS type.
-    //
-    // It seems to be impossible right now since the XEVD API limitation.
-    // The extension for the XEVD API is needed.
-    // To be more precise, what we need is access to the object of the XEVD_SPS type being a part of the XEVD_CTX object.
-    // The object of XEVD_CTX type is created while the function xevd_create() being a part of public API is called.
-    //
-    // @todo remove the following hard-coded has_b_frames; consider using sps->num_reorder_pics value instead
-    //
-    // avctx->has_b_frames        = 1; // (sps->num_reorder_pics)?1:0;
     size = 4;
     ret = xevd_config(xectx->id, XEVD_CFG_GET_CODED_WIDTH, &avctx->coded_width, &size);
     if (XEVD_FAILED(ret)) {
@@ -206,6 +193,15 @@ static int export_stream_params(AVCodecContext *avctx, const XevdContext *xectx)
         avctx->pix_fmt = AV_PIX_FMT_NONE;
         return -1;
     }
+
+    // the function returns sps->num_reorder_pics
+    ret = xevd_config(xectx->id, XEVD_CFG_GET_MAX_CODING_DELAY, &avctx->max_b_frames, &size);
+    if (XEVD_FAILED(ret)) {
+        av_log(avctx, AV_LOG_ERROR, "failed to get max_coding_delay\n");
+        return -1;
+    }
+
+    avctx->has_b_frames = (avctx->max_b_frames) ? 1 : 0;
 
 // @todo Use _XEVD_SPS fields to initialize AVCodecContext when it is possible
 #ifdef USE_XEVD_SPS_FIELDS
@@ -341,7 +337,7 @@ static int libxevd_decode(AVCodecContext *avctx, void *data, int *got_frame, AVP
             bs_read_pos += nalu_size;
 
             if(stat.nalu_type == XEVD_NUT_SPS) { // EVC stream parameters changed
-                if(export_stream_params(avctx, xectx) != 0)
+                if(export_stream_params(xectx, avctx) != 0)
                     goto ERR;
             }
 
@@ -449,7 +445,7 @@ static av_cold int libxevd_close(AVCodecContext *avctx)
 // @todo consider using following options (./ffmpeg --help decoder=libxevd)
 //
 static const AVOption options[] = {
-    { "xevd-params",                "override the xevd configuration using a :-separated list of key=value parameters", OFFSET(xevd_opts), AV_OPT_TYPE_DICT,   { 0 }, 0, 0, VD },
+    { "xevd-params",                "override the xevd configuration using a : separated list of key=value parameters", OFFSET(xevd_opts), AV_OPT_TYPE_DICT,   { 0 }, 0, 0, VD },
     { NULL }
 };
 

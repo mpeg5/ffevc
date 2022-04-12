@@ -92,7 +92,7 @@ typedef struct XeveContext {
     int preset_id;      // preset of xeve ( fast, medium, slow, placebo)
     int tune_id;        // tune of xeve (psnr, zerolatency)
     int input_depth;    // input bit-depth: 8bit, 10bit
-    int hash;
+    int hash;           // embed picture signature (HASH) for conformance checking in decoding
 
     /* variables for input parameter */
     char *op_preset;
@@ -101,7 +101,7 @@ typedef struct XeveContext {
     int op_crf;
 
     // configuration parameters
-    // xeve configuration read from a :-separated list of key=value parameters
+    // xeve configuration read from a : separated list of key=value parameters
     AVDictionary *xeve_params;
 } XeveContext;
 
@@ -124,7 +124,7 @@ static int get_profile_id(const char *profile)
 /**
  * Gets Xeve pre-defined preset
  *
- * @param preset string describing Xeve encoder preset (fast, medium, slow, placebo )
+ * @param preset string describing Xeve encoder preset (fast, medium, slow, placebo)
  * @return XEVE pre-defined profile on success, negative value on failure
  */
 static int get_preset_id(const char *preset)
@@ -144,7 +144,7 @@ static int get_preset_id(const char *preset)
 /**
  * Gets Xeve pre-defined tune id
  *
- * @param[in] tune string describing Xeve encoder tune (psnr, zerolatency )
+ * @param[in] tune string describing Xeve encoder tune (psnr, zerolatency)
  * @return XEVE pre-defined profile on success, negative value on failure
  */
 static int get_tune_id(const char *tune)
@@ -217,7 +217,7 @@ static int kbps_str_to_int(char *str)
 }
 
 /**
- * Parse :-separated list of key=value parameters
+ * Parse : separated list of key=value parameters
  *
  * @param[in] avctx context for logger
  * @param[in] key
@@ -364,14 +364,14 @@ static int get_conf(AVCodecContext *avctx, XEVE_CDSC *cdsc)
         cdsc->param.h = xectx->height_luma = avctx->height;
 
     if(avctx->framerate.num > 0) {
-        /* @todo: fps can be float number, but xeve API doesn't support it */
+        // fps can be float number, but xeve API doesn't support it
         cdsc->param.fps = (int)(((float)avctx->framerate.num / avctx->framerate.den) + 0.5);
     }
 
     if(avctx->gop_size >= 0) { // GOP size (key-frame interval)
         cdsc->param.keyint = avctx->gop_size; // 0: only one I-frame at the first time; 1: every frame is coded in I-frame
     }
-    
+
     if (avctx->max_b_frames == 0 || avctx->max_b_frames == 1 || avctx->max_b_frames == 3 ||
         avctx->max_b_frames == 7 || avctx->max_b_frames == 15) { // number of b-frames
         cdsc->param.bframes = avctx->max_b_frames;
@@ -445,7 +445,7 @@ static int get_conf(AVCodecContext *avctx, XEVE_CDSC *cdsc)
         goto ERR;
     }
 
-    /* parse :-separated list of key=value parameters and set values for created descriptor (XEVE_CDSC) */
+    /* parse : separated list of key=value parameters and set values for created descriptor (XEVE_CDSC) */
     {
         AVDictionaryEntry *en = NULL;
         
@@ -1081,7 +1081,8 @@ static av_cold int libxeve_close(AVCodecContext *avctx)
 
     xeve_delete(xectx->id);
 
-    if(xectx->bitb.addr) free(xectx->bitb.addr); /* release bitstream buffer */
+    if(xectx->bitb.addr)
+        free(xectx->bitb.addr); /* release bitstream buffer */
 
     return 0;
 }
@@ -1097,7 +1098,7 @@ static const AVOption xeve_options[] = {
     { "tune", "Tuneing parameter for special purpose operation [psnr, zerolatency]", OFFSET(op_tune), AV_OPT_TYPE_STRING, { 0 }, 0, 0, VE},
     { "qp", "quantization parameter qp <0..51> [default: 32]", OFFSET(op_qp), AV_OPT_TYPE_INT, { .i64 = 32 }, 0, 51, VE },
     { "crf", "constant rate factor <-1..51> [default: 32]", OFFSET(op_crf), AV_OPT_TYPE_INT, { .i64 = -1 }, -1, 51, VE },
-    { "xeve-params", "override the xeve configuration using a :-separated list of key=value parameters", OFFSET(xeve_params), AV_OPT_TYPE_DICT,   { 0 }, 0, 0, VE },
+    { "xeve-params", "override the xeve configuration using a : separated list of key=value parameters", OFFSET(xeve_params), AV_OPT_TYPE_DICT,   { 0 }, 0, 0, VE },
     { NULL }
 };
 

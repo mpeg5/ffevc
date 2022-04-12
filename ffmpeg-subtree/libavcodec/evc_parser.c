@@ -32,21 +32,74 @@
 #define EVC_NAL_HEADER_SIZE   2 /* byte */
 #define MAX_SPS_CNT  16 /* defined value in EVC standard */
 
-typedef struct _EVCParserSPS {
-    int sps_id;
-    int profile_idc;
-    int level_idc;
-    int chroma_format_idc;
-    int pic_width_in_luma_samples;
-    int pic_height_in_luma_samples;
-    int bit_depth_luma;
-    int bit_depth_chroma;
+// The following descriptors specify the parsing process of each element
+// u(n) - unsigned integer using n bits
+// ue(v) - unsigned integer 0-th order Exp_Golomb-coded syntax element with the left bit first
+typedef struct EVCParserSPS {
+    int sps_seq_parameter_set_id; // ue(v)
+    int profile_idc; // u(8)
+    int level_idc; // u(8)
+    // toolset_idc_h u(32)
+    // toolset_idc_l u(32)
+    int chroma_format_idc;  // ue(v)
+    int pic_width_in_luma_samples; // ue(v)
+    int pic_height_in_luma_samples; // ue(v)
+    int bit_depth_luma_minus8;
+    int bit_depth_chroma_minus8;
+    
+    int sps_btt_flag; // u(1)
+    int log2_ctu_size_minus5; // ue(v)
+    int log2_min_cb_size_minus2; // ue(v)
+    int log2_diff_ctu_max_14_cb_size; // ue(v)
+    int log2_diff_ctu_max_tt_cb_size; // ue(v)
+    int log2_diff_min_cb_min_tt_cb_size_minus2; // ue(v)
 
-    int picture_cropping_flag;
-    int picture_crop_left_offset;
-    int picture_crop_right_offset;
-    int picture_crop_top_offset;
-    int picture_crop_bottom_offset;
+    int sps_suco_flag; // u(1)
+    int log2_diff_ctu_size_max_suco_cb_size; // ue(v)
+    int log2_diff_max_suco_min_suco_cb_size; // ue(v)
+
+    int sps_admvp_flag; // u(1)
+    int sps_affine_flag; // u(1)
+    int sps_amvr_flag; // u(1)
+    int sps_dmvr_flag; // u(1)
+    int sps_mmvd_flag; // u(1)
+    int sps_hmvp_flag; // u(1)
+
+    int sps_eipd_flag; // u(1)
+    int sps_ibc_flag; // u(1)
+    int log2_max_ibc_cand_size_minus2; // ue(v)
+
+    int sps_cm_init_flag; // u(1)
+    int sps_adcc_flag; // u(1)
+
+    int sps_iqt_flag; // u(1)
+    int sps_ats_flag; // u(1)
+
+    int sps_addb_flag; // u(1)
+    int sps_alf_flag; // u(1)
+    int sps_htdf_flag; // u(1)
+    int sps_rpl_flag; // u(1)
+    int sps_pocs_flag; // u(1)
+    int sps_dquant_flag; // u(1)
+    int sps_dra_flag; // u(1)
+
+    int log2_max_pic_order_cnt_lsb_minus4; // ue(v)
+    int log2_sub_gop_length; // ue(v)
+    int log2_ref_pic_gap_length; // ue(v)
+
+    int max_num_tid0_ref_pics; // ue(v)
+
+    int sps_max_dec_pic_buffering_minus1; // ue(v)
+    int long_term_ref_pic_flag; // u(1)
+    int rpl1_same_as_rpl0_flag; // u(1)
+    int num_ref_pic_list_in_sps[2]; // ue(v)
+
+    int picture_cropping_flag; // u(1)
+    int picture_crop_left_offset; // ue(v)
+    int picture_crop_right_offset; // ue(v)
+    int picture_crop_top_offset; // ue(v)
+    int picture_crop_bottom_offset; // ue(v)
+
 } EVCParserSPS;
 
 typedef struct EVCParserContext {
@@ -78,6 +131,7 @@ static int get_nalu_type(const uint8_t *bs, int bs_size, AVCodecContext *avctx)
         unit_type_plus1 = info.nalu_type;
 
     }
+
     return unit_type_plus1 - 1;
 }
 
@@ -103,39 +157,102 @@ static uint32_t read_nal_unit_length(const uint8_t *bs, int bs_size, AVCodecCont
     return len;
 }
 
+// @see ISO_IEC_23094-1 (7.3.2.1 SPS RBSP syntax)
 static EVCParserSPS *parse_sps(const uint8_t *bs, int bs_size, EVCParserContext *ev)
 {
     GetBitContext gb;
     EVCParserSPS *sps;
-    int sps_id;
+    int sps_seq_parameter_set_id;
 
     if(init_get_bits8(&gb, bs, bs_size) < 0)
         return NULL;
 
-    sps_id = get_ue_golomb(&gb);
-    if(sps_id >= MAX_SPS_CNT) goto ERR;
-    sps = &ev->sps[sps_id];
-    sps->sps_id = sps_id;
+    sps_seq_parameter_set_id = get_ue_golomb(&gb);
+
+    if(sps_seq_parameter_set_id >= MAX_SPS_CNT)
+        return NULL;
+
+    sps = &ev->sps[sps_seq_parameter_set_id];
+    sps->sps_seq_parameter_set_id = sps_seq_parameter_set_id;
     
+    // the Baseline profile is indicated by profile_idc eqal to 0
+    // the Main profile is indicated by profile_idc eqal to 1
     sps->profile_idc = get_bits(&gb, 8);
+    
     sps->level_idc = get_bits(&gb, 8);
 
     skip_bits_long(&gb, 32); /* skip toolset_idc_h */
     skip_bits_long(&gb, 32); /* skip toolset_idc_l */
 
+    // 0 - monochrome
+    // 1 - 4:2:0
+    // 2 - 4:2:2
+    // 3 - 4:4:4
     sps->chroma_format_idc = get_ue_golomb(&gb);
+
     sps->pic_width_in_luma_samples = get_ue_golomb(&gb);
     sps->pic_height_in_luma_samples = get_ue_golomb(&gb);
 
-    sps->bit_depth_luma = get_ue_golomb(&gb);
-    sps->bit_depth_chroma = get_ue_golomb(&gb);
+    sps->bit_depth_luma_minus8 = get_ue_golomb(&gb);
+    sps->bit_depth_chroma_minus8 = get_ue_golomb(&gb);
 
-    // @todo parse crop and vui information here
+    sps->sps_btt_flag = get_bits(&gb, 1);
+    if(sps->sps_btt_flag) {
+        sps->log2_ctu_size_minus5 = get_ue_golomb(&gb);
+        sps->log2_min_cb_size_minus2 = get_ue_golomb(&gb);
+        sps->log2_diff_ctu_max_14_cb_size = get_ue_golomb(&gb);
+        sps->log2_diff_ctu_max_tt_cb_size = get_ue_golomb(&gb);
+        sps->log2_diff_min_cb_min_tt_cb_size_minus2 = get_ue_golomb(&gb);
+    }
+
+    sps->sps_suco_flag = get_bits(&gb, 1);
+    if(sps->sps_suco_flag) {
+        sps->log2_diff_ctu_size_max_suco_cb_size = get_ue_golomb(&gb);
+        sps->log2_diff_max_suco_min_suco_cb_size = get_ue_golomb(&gb);
+    }
+
+    sps->sps_admvp_flag = get_bits(&gb, 1);
+    if(sps->sps_admvp_flag) {
+        sps->sps_affine_flag = get_bits(&gb, 1);
+        sps->sps_amvr_flag = get_bits(&gb, 1);
+        sps->sps_dmvr_flag = get_bits(&gb, 1);
+        sps->sps_mmvd_flag = get_bits(&gb, 1);
+        sps->sps_hmvp_flag = get_bits(&gb, 1);
+    }
+
+    sps->sps_eipd_flag =  get_bits(&gb, 1);
+    if(sps->sps_eipd_flag) {
+        sps->sps_ibc_flag = get_bits(&gb, 1);
+        if(sps->sps_ibc_flag)
+            sps->log2_max_ibc_cand_size_minus2 = get_ue_golomb(&gb); 
+    }
+
+    sps->sps_cm_init_flag = get_bits(&gb, 1);
+    if(sps->sps_cm_init_flag)
+        sps->sps_adcc_flag = get_bits(&gb, 1);
+    
+    sps->sps_iqt_flag = get_bits(&gb, 1);
+    if(sps->sps_iqt_flag)
+        sps->sps_ats_flag = get_bits(&gb, 1);
+
+    sps->sps_addb_flag = get_bits(&gb, 1);
+    sps->sps_alf_flag = get_bits(&gb, 1);
+    sps->sps_htdf_flag = get_bits(&gb, 1);
+    sps->sps_rpl_flag = get_bits(&gb, 1);
+    sps->sps_pocs_flag = get_bits(&gb, 1);
+    sps->sps_dquant_flag = get_bits(&gb, 1);
+    sps->sps_dra_flag = get_bits(&gb, 1);
+
+    if(sps->sps_pocs_flag)
+        sps->log2_max_pic_order_cnt_lsb_minus4 = get_ue_golomb(&gb);
+
+    if(!sps->sps_pocs_flag || !sps->sps_rpl_flag) {
+        sps->log2_sub_gop_length = get_ue_golomb(&gb);
+        if(sps->log2_sub_gop_length == 0)
+            sps->log2_ref_pic_gap_length = get_ue_golomb(&gb);
+    }
 
     return sps;
-
-ERR:
-    return NULL;
 }
 
 static int parse_nal_units(AVCodecParserContext *s, const uint8_t *bs,
@@ -202,7 +319,18 @@ static int parse_nal_units(AVCodecParserContext *s, const uint8_t *bs,
             return -1;
         }
 
-        //avctx->has_b_frames = 1; // @todo FIX-ME
+        // The current implementation of parse_sps function doesn't handle VUI parameters parsing,
+        // so at the moment it's impossible to initialize has_b_frames and max_b_frames AVCodecContex fields here.
+        // Currently, initialization of has_b_frames and max_b_frames AVCodecContex fields have been moved to
+        // libxevd_decode function where we can use xevd_config function being a part of xevd library API 
+        // to get the needed information.
+        // However, if it will be needed, parse_sps function should be extended to handle VUI parameters parsing 
+        // and the following lines should be used to initialize has_b_frames and max_b_frames fields of the AVCodecContex .
+        //
+        // sps->vui_parameters.num_reorder_pics
+        // if (sps->bitstream_restriction_flag && sps->vui_parameters.num_reorder_pics) {
+        //     avctx->has_b_frames = sps->vui_parameters.num_reorder_pics;
+        // }
 
         ev->got_sps = 1;
 
@@ -252,9 +380,6 @@ static int evc_find_frame_end(AVCodecParserContext *s, const uint8_t *buf,
         else
             return END_NOT_FOUND;
     } else if(ev->to_read > buf_size) {
-        /// @todo Consider handling the following case
-        // if(ev->incomplete_nalu_prefix_read  == 1) {
-        // }
         return END_NOT_FOUND;
     } else  {
         if(ev->incomplete_nalu_prefix_read  == 1) {

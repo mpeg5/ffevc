@@ -325,7 +325,7 @@ static int parse_nal_units(AVCodecParserContext *s, const uint8_t *bs,
         // libxevd_decode function where we can use xevd_config function being a part of xevd library API 
         // to get the needed information.
         // However, if it will be needed, parse_sps function should be extended to handle VUI parameters parsing 
-        // and the following lines should be used to initialize has_b_frames and max_b_frames fields of the AVCodecContex .
+        // and the following lines should be used to initialize has_b_frames and max_b_frames fields of the AVCodecContex.
         //
         // sps->vui_parameters.num_reorder_pics
         // if (sps->bitstream_restriction_flag && sps->vui_parameters.num_reorder_pics) {

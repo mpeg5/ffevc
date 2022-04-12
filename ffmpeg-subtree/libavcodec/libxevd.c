@@ -203,43 +203,9 @@ static int export_stream_params(const XevdContext *xectx, AVCodecContext *avctx)
 
     avctx->has_b_frames = (avctx->max_b_frames) ? 1 : 0;
 
-// @todo Use _XEVD_SPS fields to initialize AVCodecContext when it is possible
-#ifdef USE_XEVD_SPS_FIELDS
-    avctx->profile = sps->profile_idc;
-    avctx->level = sps->level_idc;
-
-    ff_set_sar(avctx, sps->vui_parameters.sar);
-
-    if (sps->vui_parametersvui.video_signal_type_present_flag)
-        avctx->color_range = sps->vui_parameters.video_full_range_flag ? AVCOL_RANGE_JPEG
-                             : AVCOL_RANGE_MPEG;
-    else
-        avctx->color_range = AVCOL_RANGE_MPEG;
-
-    if (sps->vui_parameters.colour_description_present_flag) {
-        avctx->color_primaries = sps->vui_parameters.colour_primaries;
-        avctx->color_trc       = sps->vui_parameters.transfer_characteristic;
-        avctx->colorspace      = sps->vui_parameters.matrix_coeffs;
-    } else {
-        avctx->color_primaries = AVCOL_PRI_UNSPECIFIED;
-        avctx->color_trc       = AVCOL_TRC_UNSPECIFIED;
-        avctx->colorspace      = AVCOL_SPC_UNSPECIFIED;
-    }
-
-    if (sps->vui_parameters.timing_info_present_flag) {
-        num = sps->vui_parameters.num_units_in_tick;
-        den = sps->vui_parameters.time_scale;
-    }
-
-    if (s->sei.alternative_transfer.present &&
-        av_color_transfer_name(s->sei.alternative_transfer.preferred_transfer_characteristics) &&
-        s->sei.alternative_transfer.preferred_transfer_characteristics != AVCOL_TRC_UNSPECIFIED)
-        avctx->color_trc = s->sei.alternative_transfer.preferred_transfer_characteristics;
-#else
     avctx->color_primaries = AVCOL_PRI_UNSPECIFIED;
     avctx->color_trc       = AVCOL_TRC_UNSPECIFIED;
     avctx->colorspace      = AVCOL_SPC_UNSPECIFIED;
-#endif
 
     return 0;
 }

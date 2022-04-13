@@ -399,7 +399,6 @@ AVOutputFormat ff_evc_muxer = {
 };
 #endif
 
-
 #if CONFIG_M4V_MUXER
 const AVOutputFormat ff_m4v_muxer = {
     .name              = "m4v",

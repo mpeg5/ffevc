@@ -222,7 +222,7 @@ static int kbps_str_to_int(char *str)
  * @param[in] avctx context for logger
  * @param[in] key
  * @param[in] value
- * @param[out] cdsc contains all Xeve MPEG-5 EVC encoder encoder parameters that 
+ * @param[out] cdsc contains all Xeve MPEG-5 EVC encoder encoder parameters that
  *                  should be initialized before the encoder is use
  *
  * @return 0 on success, negative value on failure
@@ -345,7 +345,7 @@ static int get_conf(AVCodecContext *avctx, XEVE_CDSC *cdsc)
     int color_format;
     int cpu_count = av_cpu_count();
     int ret;
-    
+
     xectx = avctx->priv_data;
     xectx->hash = 0;
 
@@ -383,9 +383,9 @@ static int get_conf(AVCodecContext *avctx, XEVE_CDSC *cdsc)
 
     if (avctx->level >= 0)
         cdsc->param.level_idc = avctx->level;
-    
+
     ret = get_pix_fmt(avctx->pix_fmt, &color_format, &xectx->input_depth);
-    
+
     if (ret != 0) {
         av_log(avctx, AV_LOG_ERROR, "Unsupported pixel format.\n");
         goto ERR;
@@ -405,7 +405,7 @@ static int get_conf(AVCodecContext *avctx, XEVE_CDSC *cdsc)
         cdsc->param.bitrate = (int)(avctx->bit_rate / 1000);
         cdsc->param.rc_type = XEVE_RC_ABR;
     }
-    
+
     if (xectx->op_crf >= 0) {
         cdsc->param.crf = xectx->op_crf;
         cdsc->param.rc_type = XEVE_RC_CRF;
@@ -430,7 +430,7 @@ static int get_conf(AVCodecContext *avctx, XEVE_CDSC *cdsc)
                "Acceptable values for profile option are 0 and 1 (0: baseline profile; 1: main profile)\n", avctx->profile);
         goto ERR;
     }
-    
+
     if (xectx->op_preset) { // preset
         xectx->preset_id = get_preset_id(xectx->op_preset);
     }
@@ -448,7 +448,7 @@ static int get_conf(AVCodecContext *avctx, XEVE_CDSC *cdsc)
     /* parse : separated list of key=value parameters and set values for created descriptor (XEVE_CDSC) */
     {
         AVDictionaryEntry *en = NULL;
-        
+
         // Start to parse xeve_params
         while ((en = av_dict_get(xectx->xeve_params, "", en, AV_DICT_IGNORE_SUFFIX))) {
             int parse_ret = parse_xeve_params(avctx, en->key, en->value, cdsc);
@@ -681,7 +681,7 @@ static int check_conf(AVCodecContext *avctx,  XEVE_CDSC *cdsc)
  * @param[in] logger context
  * @param[in] id XEVE encodec instance identifier
  * @param[in] ctx the structure stores all the states associated with the instance of Xeve MPEG-5 EVC encoder
- * 
+ *
  * @return 0 on success, negative error code on failure
  */
 static int set_extra_config(AVCodecContext* avctx, XEVE id, XeveContext *ctx)
@@ -705,7 +705,7 @@ static int set_extra_config(AVCodecContext* avctx, XEVE id, XeveContext *ctx)
  * Convert FFmpeg pixel format (AVPixelFormat) into XEVE pre-defined color space
  *
  * @param[in] px_fmt pixel format (@see https://ffmpeg.org/doxygen/trunk/pixfmt_8h.html#a9a8e335cf3be472042bc9f0cf80cd4c5)
- * 
+ *
  * @return XEVE pre-defined color space (@see xeve.h) on success, XEVE_CF_UNKNOWN on failure
  */
 static int xeve_color_space(enum AVPixelFormat pix_fmt)
@@ -805,7 +805,7 @@ static int xeve_color_space(enum AVPixelFormat pix_fmt)
 
 /**
  * @brief Switch encoder to bumping mode
- * 
+ *
  * @param id XEVE encodec instance identifier
  * @return 0 on success, negative error code on failure
  */
@@ -926,7 +926,7 @@ ERR:
   * @param[in] frame AVFrame containing the raw data to be encoded
   * @param[out] got_packet encoder sets to 0 or 1 to indicate that a
   *                         non-empty packet was returned in pkt
-  * 
+  *
   * @return 0 on success, negative error code on failure
   */
 static int libxeve_encode(AVCodecContext *avctx, AVPacket *pkt,
@@ -971,7 +971,7 @@ static int libxeve_encode(AVCodecContext *avctx, AVPacket *pkt,
         {
             int i;
             XEVE_IMGB *imgb = NULL;
-            
+
             imgb = &xectx->imgb;
 
             for (i = 0; i < imgb->np; i++) {
@@ -1017,7 +1017,7 @@ static int libxeve_encode(AVCodecContext *avctx, AVPacket *pkt,
 
             if(xectx->stat.write > 0) {
                 xectx->bytes_total += xectx->stat.write;
-            
+
                 ret = av_grow_packet(pkt, xectx->stat.write);
                 if (ret < 0) {
                     av_log(avctx, AV_LOG_ERROR, "Can't allocate memory for AVPacket data\n");

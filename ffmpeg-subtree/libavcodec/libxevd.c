@@ -73,7 +73,7 @@ typedef struct XevdContext {
  * - the xevd decoder specific option values,
  *   (the full list of options available for the xevd encoder is displayed after executing the command ./ffmpeg --help decoder = libxevd)
  * - and the xevd encoder options specified as a list of key-value pairs following the xevd-params option
- * 
+ *
  * Order of input processing and populating the XEVD_CDSC structure
  * 1. first, the corresponding fields of the AVCodecContext structure are processed, (i.e -threads 4)
  * 2. then xevd-specific options are added as AVOption to the xevd AVCodec implementation (i.e -threads 3)
@@ -252,7 +252,7 @@ static av_cold int libxevd_init(AVCodecContext *avctx)
   *                       non-empty frame or subtitle was returned in
   *                       outdata.
   * @param[in] pkt AVPacket containing encoded data to be decoded
-  * 
+  *
   * @return amount of bytes read from the packet on success, negative error
   *         code on failure
   */
@@ -375,7 +375,7 @@ static int libxevd_decode(AVCodecContext *avctx, void *data, int *got_frame, AVP
         *got_frame = 0;
 
     xectx->packet_count++;
-    
+
     return pkt->size;
 
 ERR:

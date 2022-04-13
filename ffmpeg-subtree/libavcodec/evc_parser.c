@@ -46,7 +46,7 @@ typedef struct EVCParserSPS {
     int pic_height_in_luma_samples; // ue(v)
     int bit_depth_luma_minus8;
     int bit_depth_chroma_minus8;
-    
+
     int sps_btt_flag; // u(1)
     int log2_ctu_size_minus5; // ue(v)
     int log2_min_cb_size_minus2; // ue(v)
@@ -153,7 +153,7 @@ static uint32_t read_nal_unit_length(const uint8_t *bs, int bs_size, AVCodecCont
             return 0;
         }
     }
-    
+
     return len;
 }
 
@@ -174,11 +174,11 @@ static EVCParserSPS *parse_sps(const uint8_t *bs, int bs_size, EVCParserContext 
 
     sps = &ev->sps[sps_seq_parameter_set_id];
     sps->sps_seq_parameter_set_id = sps_seq_parameter_set_id;
-    
+
     // the Baseline profile is indicated by profile_idc eqal to 0
     // the Main profile is indicated by profile_idc eqal to 1
     sps->profile_idc = get_bits(&gb, 8);
-    
+
     sps->level_idc = get_bits(&gb, 8);
 
     skip_bits_long(&gb, 32); /* skip toolset_idc_h */
@@ -224,7 +224,7 @@ static EVCParserSPS *parse_sps(const uint8_t *bs, int bs_size, EVCParserContext 
     if(sps->sps_eipd_flag) {
         sps->sps_ibc_flag = get_bits(&gb, 1);
         if(sps->sps_ibc_flag)
-            sps->log2_max_ibc_cand_size_minus2 = get_ue_golomb(&gb); 
+            sps->log2_max_ibc_cand_size_minus2 = get_ue_golomb(&gb);
     }
 
     sps->sps_cm_init_flag = get_bits(&gb, 1);

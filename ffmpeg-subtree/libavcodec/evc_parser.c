@@ -33,6 +33,7 @@
 #define MAX_SPS_CNT  16 /* defined value in EVC standard */
 
 // The sturcture reflects SPS RBSP(raw byte sequence payload) layout
+// @see ISO_IEC_23094-1 section 7.3.2.1
 //
 // The following descriptors specify the parsing process of each element
 // u(n) - unsigned integer using n bits

@@ -74,7 +74,7 @@ static uint32_t read_nal_unit_length(const uint8_t *bs, int bs_size)
             return 0;
         }
     }
-    
+
     return len;
 }
 

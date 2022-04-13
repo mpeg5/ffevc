@@ -230,7 +230,7 @@ static EVCParserSPS *parse_sps(const uint8_t *bs, int bs_size, EVCParserContext 
     sps->sps_cm_init_flag = get_bits(&gb, 1);
     if(sps->sps_cm_init_flag)
         sps->sps_adcc_flag = get_bits(&gb, 1);
-    
+
     sps->sps_iqt_flag = get_bits(&gb, 1);
     if(sps->sps_iqt_flag)
         sps->sps_ats_flag = get_bits(&gb, 1);
@@ -322,9 +322,9 @@ static int parse_nal_units(AVCodecParserContext *s, const uint8_t *bs,
         // The current implementation of parse_sps function doesn't handle VUI parameters parsing,
         // so at the moment it's impossible to initialize has_b_frames and max_b_frames AVCodecContex fields here.
         // Currently, initialization of has_b_frames and max_b_frames AVCodecContex fields have been moved to
-        // libxevd_decode function where we can use xevd_config function being a part of xevd library API 
+        // libxevd_decode function where we can use xevd_config function being a part of xevd library API
         // to get the needed information.
-        // However, if it will be needed, parse_sps function should be extended to handle VUI parameters parsing 
+        // However, if it will be needed, parse_sps function should be extended to handle VUI parameters parsing
         // and the following lines should be used to initialize has_b_frames and max_b_frames fields of the AVCodecContex.
         //
         // sps->vui_parameters.num_reorder_pics
@@ -457,7 +457,7 @@ static int evc_find_frame_end(AVCodecParserContext *s, const uint8_t *buf,
 static int evc_parser_init(AVCodecParserContext *s)
 {
     EVCParserContext *ev = s->priv_data;
-    
+
     ev->got_sps = 0;
     ev->got_pps = 0;
     ev->got_sei = 0;

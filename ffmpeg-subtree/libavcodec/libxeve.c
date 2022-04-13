@@ -352,7 +352,7 @@ static int get_conf(AVCodecContext *avctx, XEVE_CDSC *cdsc)
     /* initialize xeve_param struct with default values */
     ret = xeve_param_default(&cdsc->param);
     if (XEVE_FAILED(ret)) {
-        av_log(avctx, AV_LOG_ERROR, "cannot set_default parameter\n");
+        av_log(avctx, AV_LOG_ERROR, "Cannot set_default parameter\n");
         goto ERR;
     }
 
@@ -399,7 +399,7 @@ static int get_conf(AVCodecContext *avctx, XEVE_CDSC *cdsc)
     // rc_type:  Rate control type [ 0(CQP) / 1(ABR) / 2(CRF) ]
     if (avctx->bit_rate > 0) {
         if (avctx->bit_rate / 1000 > INT_MAX || avctx->rc_max_rate / 1000 > INT_MAX) {
-            av_log(avctx, AV_LOG_ERROR, "not supported bitrate bit_rate and rc_max_rate > %d000\n", INT_MAX);
+            av_log(avctx, AV_LOG_ERROR, "Not supported bitrate bit_rate and rc_max_rate > %d000\n", INT_MAX);
             goto ERR;
         }
         cdsc->param.bitrate = (int)(avctx->bit_rate / 1000);
@@ -441,7 +441,7 @@ static int get_conf(AVCodecContext *avctx, XEVE_CDSC *cdsc)
 
     ret = xeve_param_ppt(&cdsc->param, xectx->profile_id, xectx->preset_id, xectx->tune_id);
     if (XEVE_FAILED(ret)) {
-        av_log(avctx, AV_LOG_ERROR, "cannot set profile(%d), preset(%d), tune(%d)\n", xectx->profile_id, xectx->preset_id, xectx->tune_id);
+        av_log(avctx, AV_LOG_ERROR, "Cannot set profile(%d), preset(%d), tune(%d)\n", xectx->profile_id, xectx->preset_id, xectx->tune_id);
         goto ERR;
     }
 
@@ -693,7 +693,7 @@ static int set_extra_config(AVCodecContext* avctx, XEVE id, XeveContext *ctx)
         size = 4;
         ret = xeve_config(id, XEVE_CFG_SET_USE_PIC_SIGNATURE, &value, &size);
         if(XEVE_FAILED(ret)) {
-            av_log(avctx, AV_LOG_ERROR, "failed to set config for picture signature\n");
+            av_log(avctx, AV_LOG_ERROR, "Failed to set config for picture signature\n");
             return -1;
         }
     }
@@ -846,31 +846,31 @@ static av_cold int libxeve_init(AVCodecContext *avctx)
     /* allocate bitstream buffer */
     bs_buf = (unsigned char *)malloc(MAX_BS_BUF);
     if(bs_buf == NULL) {
-        av_log(avctx, AV_LOG_ERROR, "cannot allocate bitstream buffer, size=%d", MAX_BS_BUF);
+        av_log(avctx, AV_LOG_ERROR, "Cannot allocate bitstream buffer\n");
         goto ERR;
     }
 
     /* read configurations and set values for created descriptor (XEVE_CDSC) */
     val = get_conf(avctx, cdsc);
     if (val != XEVE_OK) {
-        av_log(avctx, AV_LOG_ERROR, "cannot get configuration\n");
+        av_log(avctx, AV_LOG_ERROR, "Cannot get configuration\n");
         goto ERR;
     }
 
     if (check_conf(avctx, cdsc) != 0) {
-        av_log(avctx, AV_LOG_ERROR, "invalid configuration\n");
+        av_log(avctx, AV_LOG_ERROR, "Invalid configuration\n");
         goto ERR;
     }
 
     /* create encoder */
     xectx->id = xeve_create(cdsc, NULL);
     if(xectx->id == NULL) {
-        av_log(avctx, AV_LOG_ERROR, "cannot create XEVE encoder\n");
+        av_log(avctx, AV_LOG_ERROR, "Cannot create XEVE encoder\n");
         goto ERR;
     }
 
     if(set_extra_config(avctx, xectx->id, xectx)) {
-        av_log(avctx, AV_LOG_ERROR, "cannot set extra configurations\n");
+        av_log(avctx, AV_LOG_ERROR, "Cannot set extra configuration\n");
         goto ERR;
     }
 
@@ -878,7 +878,7 @@ static av_cold int libxeve_init(AVCodecContext *avctx)
     xectx->bitb.bsize = MAX_BS_BUF;
 
     if(av_pix_fmt_get_chroma_sub_sample(avctx->pix_fmt, &shift_h, &shift_v)) {
-        av_log(avctx, AV_LOG_ERROR, "failed to get  chroma shift\n");
+        av_log(avctx, AV_LOG_ERROR, "Failed to get  chroma shift\n");
         goto ERR;
     }
 
@@ -1043,7 +1043,7 @@ static int libxeve_encode(AVCodecContext *avctx, AVPacket *pkt,
                     av_pic_type = AV_PICTURE_TYPE_B;
                     break;
                 case XEVE_ST_UNKNOWN:
-                    av_log(avctx, AV_LOG_ERROR, "unknown slice type\n");
+                    av_log(avctx, AV_LOG_ERROR, "Unknown slice type\n");
                     return -1;
                 }
 
@@ -1055,14 +1055,14 @@ static int libxeve_encode(AVCodecContext *avctx, AVPacket *pkt,
                 xectx->packet_count++;
             }
         } else if (ret == XEVE_OK_NO_MORE_FRM) {
-            av_log(avctx, AV_LOG_INFO, "Return OK but no more frames (%d)\n", ret);
+            // Return OK but no more frames
             return 0;
         } else {
-            av_log(avctx, AV_LOG_ERROR, "Invalid return value (%d)\n", ret);
+            av_log(avctx, AV_LOG_ERROR, "Invalid return value: %d\n", ret);
             return -1;
         }
     } else {
-        av_log(avctx, AV_LOG_ERROR, "Udefined state: %d\n", xectx->state);
+        av_log(avctx, AV_LOG_ERROR, "Udefined encoder state\n", xectx->state);
         return -1;
     }
 

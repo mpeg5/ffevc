@@ -222,7 +222,6 @@ enum AVCodecID {
     AV_CODEC_ID_WEBP,
     AV_CODEC_ID_HNM4_VIDEO,
     AV_CODEC_ID_HEVC,
-    AV_CODEC_ID_EVC,
 #define AV_CODEC_ID_H265 AV_CODEC_ID_HEVC
     AV_CODEC_ID_FIC,
     AV_CODEC_ID_ALIAS_PIX,
@@ -309,6 +308,7 @@ enum AVCodecID {
     AV_CODEC_ID_SIMBIOSIS_IMX,
     AV_CODEC_ID_SGA_VIDEO,
     AV_CODEC_ID_GEM,
+    AV_CODEC_ID_EVC,
 
     /* various PCM "codecs" */
     AV_CODEC_ID_FIRST_AUDIO = 0x10000,     ///< A dummy id pointing at the start of audio codecs

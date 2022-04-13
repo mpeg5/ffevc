@@ -1349,7 +1349,7 @@ static int mov_write_evcc_tag(AVIOContext *pb, MOVTrack *track)
     avio_wb32(pb, 0);
     ffio_wfourcc(pb, "evcC");
     ff_isom_write_avcc(pb, track->vos_data, track->vos_len);
-    
+
     return update_size(pb, pos);
 }
 
@@ -1694,7 +1694,7 @@ static unsigned int mov_get_codec_tag(AVFormatContext *s, MOVTrack *track)
         else if (track->par->codec_id == AV_CODEC_ID_H264)
             tag = mov_get_h264_codec_tag(s, track);
         else if (track->par->codec_id == AV_CODEC_ID_EVC)
-            tag = mov_get_evc_codec_tag(s, track);    
+            tag = mov_get_evc_codec_tag(s, track);
         else if (track->par->codec_id == AV_CODEC_ID_DNXHD)
             tag = mov_get_dnxhd_codec_tag(s, track);
         else if (track->par->codec_type == AVMEDIA_TYPE_VIDEO) {
@@ -2233,7 +2233,7 @@ static int mov_write_video_tag(AVFormatContext *s, AVIOContext *pb, MOVMuxContex
             mov_write_uuid_tag_ipod(pb);
     }
     else if (track->par->codec_id ==AV_CODEC_ID_EVC) {
-        mov_write_evcc_tag(pb, track);        
+        mov_write_evcc_tag(pb, track);
     } else if (track->par->codec_id == AV_CODEC_ID_VP9) {
         mov_write_vpcc_tag(mov->fc, pb, track);
     } else if (track->par->codec_id == AV_CODEC_ID_AV1) {

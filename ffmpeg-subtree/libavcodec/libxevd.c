@@ -148,31 +148,31 @@ static int export_stream_params(const XevdContext *xectx, AVCodecContext *avctx)
     size = 4;
     ret = xevd_config(xectx->id, XEVD_CFG_GET_CODED_WIDTH, &avctx->coded_width, &size);
     if (XEVD_FAILED(ret)) {
-        av_log(avctx, AV_LOG_ERROR, "failed to get coded_width\n");
+        av_log(avctx, AV_LOG_ERROR, "Failed to get coded_width\n");
         return -1;
     }
 
     ret = xevd_config(xectx->id, XEVD_CFG_GET_CODED_HEIGHT, &avctx->coded_height, &size);
     if (XEVD_FAILED(ret)) {
-        av_log(avctx, AV_LOG_ERROR, "failed to get coded_height\n");
+        av_log(avctx, AV_LOG_ERROR, "Failed to get coded_height\n");
         return -1;
     }
 
     ret = xevd_config(xectx->id, XEVD_CFG_GET_WIDTH, &avctx->width, &size);
     if (XEVD_FAILED(ret)) {
-        av_log(avctx, AV_LOG_ERROR, "failed to get width\n");
+        av_log(avctx, AV_LOG_ERROR, "Failed to get width\n");
         return -1;
     }
 
     ret = xevd_config(xectx->id, XEVD_CFG_GET_HEIGHT, &avctx->height, &size);
     if (XEVD_FAILED(ret)) {
-        av_log(avctx, AV_LOG_ERROR, "failed to get height\n");
+        av_log(avctx, AV_LOG_ERROR, "Failed to get height\n");
         return -1;
     }
 
     ret = xevd_config(xectx->id, XEVD_CFG_GET_COLOR_SPACE, &color_space, &size);
     if (XEVD_FAILED(ret)) {
-        av_log(avctx, AV_LOG_ERROR, "failed to get color_space\n");
+        av_log(avctx, AV_LOG_ERROR, "Failed to get color_space\n");
         return -1;
     }
     switch(color_space) {
@@ -189,7 +189,7 @@ static int export_stream_params(const XevdContext *xectx, AVCodecContext *avctx)
         avctx->pix_fmt = AV_PIX_FMT_YUV444P10LE;
         break;
     default:
-        av_log(avctx, AV_LOG_ERROR, "unknown color space\n");
+        av_log(avctx, AV_LOG_ERROR, "Unknown color space\n");
         avctx->pix_fmt = AV_PIX_FMT_NONE;
         return -1;
     }
@@ -197,7 +197,7 @@ static int export_stream_params(const XevdContext *xectx, AVCodecContext *avctx)
     // the function returns sps->num_reorder_pics
     ret = xevd_config(xectx->id, XEVD_CFG_GET_MAX_CODING_DELAY, &avctx->max_b_frames, &size);
     if (XEVD_FAILED(ret)) {
-        av_log(avctx, AV_LOG_ERROR, "failed to get max_coding_delay\n");
+        av_log(avctx, AV_LOG_ERROR, "Failed to get max_coding_delay\n");
         return -1;
     }
 
@@ -233,7 +233,7 @@ static av_cold int libxevd_init(AVCodecContext *avctx)
     /* create decoder */
     xectx->id = xevd_create(&(xectx->cdsc), NULL);
     if(xectx->id == NULL) {
-        av_log(avctx, AV_LOG_ERROR, "cannot create XEVD encoder\n");
+        av_log(avctx, AV_LOG_ERROR, "Cannot create XEVD encoder\n");
         return -1;
     }
 
@@ -296,7 +296,7 @@ static int libxevd_decode(AVCodecContext *avctx, void *data, int *got_frame, AVP
             /* main decoding block */
             ret = xevd_decode(xectx->id, &bitb, &stat);
             if(XEVD_FAILED(ret)) {
-                av_log(avctx, AV_LOG_ERROR, "failed to decode bitstream\n");
+                av_log(avctx, AV_LOG_ERROR, "Failed to decode bitstream\n");
                 goto ERR;
             }
 
@@ -308,7 +308,7 @@ static int libxevd_decode(AVCodecContext *avctx, void *data, int *got_frame, AVP
             }
 
             if(stat.read != nalu_size)
-                av_log(avctx, AV_LOG_INFO, "different reading of bitstream (in:%d, read:%d)\n,", nalu_size, stat.read);
+                av_log(avctx, AV_LOG_INFO, "Different reading of bitstream (in:%d, read:%d)\n,", nalu_size, stat.read);
             if(stat.fnum >= 0) {
                 if (imgb) { /* already has a decoded image */
                     imgb->release(imgb);
@@ -316,7 +316,7 @@ static int libxevd_decode(AVCodecContext *avctx, void *data, int *got_frame, AVP
                 }
                 ret = xevd_pull(xectx->id, &imgb);
                 if(XEVD_FAILED(ret)) {
-                    av_log(avctx, AV_LOG_ERROR, "failed to pull the decoded image (xevd error code: %d, frame#=%d)\n", ret, stat.fnum);
+                    av_log(avctx, AV_LOG_ERROR, "Failed to pull the decoded image (xevd error code: %d, frame#=%d)\n", ret, stat.fnum);
                     goto ERR;
                 } else if (ret == XEVD_OK_FRM_DELAYED) {
                     if(imgb) {
@@ -332,7 +332,7 @@ static int libxevd_decode(AVCodecContext *avctx, void *data, int *got_frame, AVP
             *got_frame = 0;
             return 0;
         } else if(XEVD_FAILED(ret)) {
-            av_log(avctx, AV_LOG_ERROR, "failed to pull the decoded image (xevd error code: %d)\n", ret);
+            av_log(avctx, AV_LOG_ERROR, "Failed to pull the decoded image (xevd error code: %d)\n", ret);
             goto ERR;
         }
     }
@@ -346,7 +346,7 @@ static int libxevd_decode(AVCodecContext *avctx, void *data, int *got_frame, AVP
 
         if (imgb->w[0] != avctx->width || imgb->h[0] != avctx->height) { // stream resolution changed
             if(ff_set_dimensions(avctx, imgb->w[0], imgb->h[0]) < 0) {
-                av_log(avctx, AV_LOG_ERROR, "cannot set new dimension\n");
+                av_log(avctx, AV_LOG_ERROR, "Cannot set new dimension\n");
                 goto ERR;
             }
         }
@@ -356,7 +356,7 @@ static int libxevd_decode(AVCodecContext *avctx, void *data, int *got_frame, AVP
         frame->format = AV_PIX_FMT_YUV420P10LE;
 
         if (ff_get_buffer(avctx, frame, 0) < 0) {
-            av_log(avctx, AV_LOG_ERROR, "cannot get AV buffer\n");
+            av_log(avctx, AV_LOG_ERROR, "Cannot get AV buffer\n");
             goto ERR;
         }
 

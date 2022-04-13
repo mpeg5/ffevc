@@ -32,72 +32,74 @@
 #define EVC_NAL_HEADER_SIZE   2 /* byte */
 #define MAX_SPS_CNT  16 /* defined value in EVC standard */
 
+// The sturcture reflects SPS RBSP(raw byte sequence payload) layout
+//
 // The following descriptors specify the parsing process of each element
 // u(n) - unsigned integer using n bits
 // ue(v) - unsigned integer 0-th order Exp_Golomb-coded syntax element with the left bit first
 typedef struct EVCParserSPS {
-    int sps_seq_parameter_set_id; // ue(v)
-    int profile_idc; // u(8)
-    int level_idc; // u(8)
-    // toolset_idc_h u(32)
-    // toolset_idc_l u(32)
-    int chroma_format_idc;  // ue(v)
-    int pic_width_in_luma_samples; // ue(v)
+    int sps_seq_parameter_set_id;   // ue(v)
+    int profile_idc;                // u(8)
+    int level_idc;                  // u(8)
+    int toolset_idc_h;              // u(32)
+    int toolset_idc_l;              // u(32)
+    int chroma_format_idc;          // ue(v)
+    int pic_width_in_luma_samples;  // ue(v)
     int pic_height_in_luma_samples; // ue(v)
-    int bit_depth_luma_minus8;
-    int bit_depth_chroma_minus8;
+    int bit_depth_luma_minus8;      // ue(v)
+    int bit_depth_chroma_minus8;    // ue(v)
 
-    int sps_btt_flag; // u(1)
-    int log2_ctu_size_minus5; // ue(v)
-    int log2_min_cb_size_minus2; // ue(v)
-    int log2_diff_ctu_max_14_cb_size; // ue(v)
-    int log2_diff_ctu_max_tt_cb_size; // ue(v)
+    int sps_btt_flag;                           // u(1)
+    int log2_ctu_size_minus5;                   // ue(v)
+    int log2_min_cb_size_minus2;                // ue(v)
+    int log2_diff_ctu_max_14_cb_size;           // ue(v)
+    int log2_diff_ctu_max_tt_cb_size;           // ue(v)
     int log2_diff_min_cb_min_tt_cb_size_minus2; // ue(v)
 
-    int sps_suco_flag; // u(1)
+    int sps_suco_flag;                       // u(1)
     int log2_diff_ctu_size_max_suco_cb_size; // ue(v)
     int log2_diff_max_suco_min_suco_cb_size; // ue(v)
 
-    int sps_admvp_flag; // u(1)
-    int sps_affine_flag; // u(1)
-    int sps_amvr_flag; // u(1)
-    int sps_dmvr_flag; // u(1)
-    int sps_mmvd_flag; // u(1)
-    int sps_hmvp_flag; // u(1)
+    int sps_admvp_flag;     // u(1)
+    int sps_affine_flag;    // u(1)
+    int sps_amvr_flag;      // u(1)
+    int sps_dmvr_flag;      // u(1)
+    int sps_mmvd_flag;      // u(1)
+    int sps_hmvp_flag;      // u(1)
 
-    int sps_eipd_flag; // u(1)
-    int sps_ibc_flag; // u(1)
+    int sps_eipd_flag;                 // u(1)
+    int sps_ibc_flag;                  // u(1)
     int log2_max_ibc_cand_size_minus2; // ue(v)
 
     int sps_cm_init_flag; // u(1)
-    int sps_adcc_flag; // u(1)
+    int sps_adcc_flag;    // u(1)
 
     int sps_iqt_flag; // u(1)
     int sps_ats_flag; // u(1)
 
-    int sps_addb_flag; // u(1)
-    int sps_alf_flag; // u(1)
-    int sps_htdf_flag; // u(1)
-    int sps_rpl_flag; // u(1)
-    int sps_pocs_flag; // u(1)
+    int sps_addb_flag;   // u(1)
+    int sps_alf_flag;    // u(1)
+    int sps_htdf_flag;   // u(1)
+    int sps_rpl_flag;    // u(1)
+    int sps_pocs_flag;   // u(1)
     int sps_dquant_flag; // u(1)
-    int sps_dra_flag; // u(1)
+    int sps_dra_flag;    // u(1)
 
     int log2_max_pic_order_cnt_lsb_minus4; // ue(v)
-    int log2_sub_gop_length; // ue(v)
-    int log2_ref_pic_gap_length; // ue(v)
+    int log2_sub_gop_length;               // ue(v)
+    int log2_ref_pic_gap_length;           // ue(v)
 
     int max_num_tid0_ref_pics; // ue(v)
 
     int sps_max_dec_pic_buffering_minus1; // ue(v)
-    int long_term_ref_pic_flag; // u(1)
-    int rpl1_same_as_rpl0_flag; // u(1)
-    int num_ref_pic_list_in_sps[2]; // ue(v)
+    int long_term_ref_pic_flag;           // u(1)
+    int rpl1_same_as_rpl0_flag;           // u(1)
+    int num_ref_pic_list_in_sps[2];       // ue(v)
 
-    int picture_cropping_flag; // u(1)
-    int picture_crop_left_offset; // ue(v)
-    int picture_crop_right_offset; // ue(v)
-    int picture_crop_top_offset; // ue(v)
+    int picture_cropping_flag;      // u(1)
+    int picture_crop_left_offset;   // ue(v)
+    int picture_crop_right_offset;  // ue(v)
+    int picture_crop_top_offset;    // ue(v)
     int picture_crop_bottom_offset; // ue(v)
 
 } EVCParserSPS;

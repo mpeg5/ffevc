@@ -36,10 +36,12 @@
 #include "libavutil/pixdesc.h"
 #include "libavutil/pixfmt.h"
 #include "libavutil/imgutils.h"
+#include "libavutil/cpu.h"
 
 #include "avcodec.h"
 #include "internal.h"
 #include "packet_internal.h"
+#include "codec_internal.h"
 
 #define XEVD_PARAM_BAD_NAME -1
 #define XEVD_PARAM_BAD_VALUE -2
@@ -422,22 +424,22 @@ static const AVClass xevd_class = {
     .version    = LIBAVUTIL_VERSION_INT,
 };
 
-static const AVCodecDefault xevd_defaults[] = {
+static const FFCodecDefault xevd_defaults[] = {
     { "b", "0" },
     { NULL },
 };
 
-AVCodec ff_libxevd_decoder = {
-    .name             = "evc",
-    .long_name        = NULL_IF_CONFIG_SMALL("EVC / MPEG-5 Essential Video Coding (EVC)"),
-    .type             = AVMEDIA_TYPE_VIDEO,
-    .id               = AV_CODEC_ID_EVC,
-    .init             = libxevd_init,
-    .decode           = libxevd_decode,
-    .close            = libxevd_close,
-    .priv_data_size   = sizeof(XevdContext),
-    .priv_class       = &xevd_class,
-    .defaults         = xevd_defaults,
-    .capabilities     = AV_CODEC_CAP_DELAY | AV_CODEC_CAP_AUTO_THREADS | AV_CODEC_CAP_AVOID_PROBING,
-    .wrapper_name     = "libxevd",
+FFCodec ff_libxevd_decoder = {
+    .p.name             = "evc",
+    .p.long_name        = NULL_IF_CONFIG_SMALL("EVC / MPEG-5 Essential Video Coding (EVC)"),
+    .p.type             = AVMEDIA_TYPE_VIDEO,
+    .p.id               = AV_CODEC_ID_EVC,
+    .init               = libxevd_init,
+    FF_CODEC_DECODE_CB(libxevd_decode),
+    .close              = libxevd_close,
+    .priv_data_size     = sizeof(XevdContext),
+    .p.priv_class       = &xevd_class,
+    .defaults           = xevd_defaults,
+    .p.capabilities     = AV_CODEC_CAP_DELAY | AV_CODEC_CAP_AUTO_THREADS | AV_CODEC_CAP_AVOID_PROBING,
+    .p.wrapper_name     = "libxevd",
 };

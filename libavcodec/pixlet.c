@@ -27,6 +27,7 @@
 
 #include "avcodec.h"
 #include "bytestream.h"
+#include "codec_internal.h"
 #include "get_bits.h"
 #include "internal.h"
 #include "thread.h"
@@ -600,13 +601,11 @@ static int decode_plane(AVCodecContext *avctx, int plane,
     return 0;
 }
 
-static int pixlet_decode_frame(AVCodecContext *avctx, void *data,
+static int pixlet_decode_frame(AVCodecContext *avctx, AVFrame *p,
                                int *got_frame, AVPacket *avpkt)
 {
     PixletContext *ctx = avctx->priv_data;
     int i, w, h, width, height, ret, version;
-    AVFrame *p = data;
-    ThreadFrame frame = { .f = data };
     uint32_t pktsize, depth;
 
     bytestream2_init(&ctx->gb, avpkt->data, avpkt->size);
@@ -673,36 +672,36 @@ static int pixlet_decode_frame(AVCodecContext *avctx, void *data,
     p->key_frame = 1;
     p->color_range = AVCOL_RANGE_JPEG;
 
-    ret = ff_thread_get_buffer(avctx, &frame, 0);
+    ret = ff_thread_get_buffer(avctx, p, 0);
     if (ret < 0)
         return ret;
 
     for (i = 0; i < 3; i++) {
-        ret = decode_plane(avctx, i, avpkt, frame.f);
+        ret = decode_plane(avctx, i, avpkt, p);
         if (ret < 0)
             return ret;
         if (avctx->flags & AV_CODEC_FLAG_GRAY)
             break;
     }
 
-    postprocess_luma(avctx, frame.f, ctx->w, ctx->h, ctx->depth);
-    postprocess_chroma(frame.f, ctx->w >> 1, ctx->h >> 1, ctx->depth);
+    postprocess_luma(avctx, p, ctx->w, ctx->h, ctx->depth);
+    postprocess_chroma(p, ctx->w >> 1, ctx->h >> 1, ctx->depth);
 
     *got_frame = 1;
 
     return pktsize;
 }
 
-const AVCodec ff_pixlet_decoder = {
-    .name             = "pixlet",
-    .long_name        = NULL_IF_CONFIG_SMALL("Apple Pixlet"),
-    .type             = AVMEDIA_TYPE_VIDEO,
-    .id               = AV_CODEC_ID_PIXLET,
+const FFCodec ff_pixlet_decoder = {
+    .p.name           = "pixlet",
+    .p.long_name      = NULL_IF_CONFIG_SMALL("Apple Pixlet"),
+    .p.type           = AVMEDIA_TYPE_VIDEO,
+    .p.id             = AV_CODEC_ID_PIXLET,
     .init             = pixlet_init,
     .close            = pixlet_close,
-    .decode           = pixlet_decode_frame,
+    FF_CODEC_DECODE_CB(pixlet_decode_frame),
     .priv_data_size   = sizeof(PixletContext),
-    .capabilities     = AV_CODEC_CAP_DR1 |
+    .p.capabilities   = AV_CODEC_CAP_DR1 |
                         AV_CODEC_CAP_FRAME_THREADS,
     .caps_internal    = FF_CODEC_CAP_INIT_THREADSAFE |
                         FF_CODEC_CAP_INIT_CLEANUP,

@@ -21,6 +21,7 @@
 
 #include "avformat.h"
 #include "internal.h"
+#include "version.h"
 #include "libavcodec/bsf.h"
 #include "libavcodec/internal.h"
 #include "libavcodec/packet_internal.h"
@@ -272,8 +273,25 @@ static int init_muxer(AVFormatContext *s, AVDictionary **options)
                 ret = AVERROR(EINVAL);
                 goto fail;
             }
+
+#if FF_API_OLD_CHANNEL_LAYOUT
+FF_DISABLE_DEPRECATION_WARNINGS
+            /* if the caller is using the deprecated channel layout API,
+             * convert it to the new style */
+            if (!par->ch_layout.nb_channels &&
+                par->channels) {
+                if (par->channel_layout) {
+                    av_channel_layout_from_mask(&par->ch_layout, par->channel_layout);
+                } else {
+                    par->ch_layout.order       = AV_CHANNEL_ORDER_UNSPEC;
+                    par->ch_layout.nb_channels = par->channels;
+                }
+            }
+FF_ENABLE_DEPRECATION_WARNINGS
+#endif
+
             if (!par->block_align)
-                par->block_align = par->channels *
+                par->block_align = par->ch_layout.nb_channels *
                                    av_get_bits_per_sample(par->codec_id) >> 3;
             break;
         case AVMEDIA_TYPE_VIDEO:
@@ -388,6 +406,8 @@ fail:
 
 static int init_pts(AVFormatContext *s)
 {
+    FFFormatContext *const si = ffformatcontext(s);
+
     /* init PTS generation */
     for (unsigned i = 0; i < s->nb_streams; i++) {
         AVStream *const st = s->streams[i];
@@ -418,13 +438,16 @@ static int init_pts(AVFormatContext *s)
         }
     }
 
+    si->avoid_negative_ts_status = AVOID_NEGATIVE_TS_UNKNOWN;
     if (s->avoid_negative_ts < 0) {
         av_assert2(s->avoid_negative_ts == AVFMT_AVOID_NEG_TS_AUTO);
         if (s->oformat->flags & (AVFMT_TS_NEGATIVE | AVFMT_NOTIMESTAMPS)) {
-            s->avoid_negative_ts = 0;
+            s->avoid_negative_ts = AVFMT_AVOID_NEG_TS_DISABLED;
+            si->avoid_negative_ts_status = AVOID_NEGATIVE_TS_DISABLED;
         } else
             s->avoid_negative_ts = AVFMT_AVOID_NEG_TS_MAKE_NON_NEGATIVE;
-    }
+    } else if (s->avoid_negative_ts == AVFMT_AVOID_NEG_TS_DISABLED)
+        si->avoid_negative_ts_status = AVOID_NEGATIVE_TS_DISABLED;
 
     return 0;
 }
@@ -638,6 +661,81 @@ static void guess_pkt_duration(AVFormatContext *s, AVStream *st, AVPacket *pkt)
     }
 }
 
+static void handle_avoid_negative_ts(FFFormatContext *si, FFStream *sti,
+                                     AVPacket *pkt)
+{
+    AVFormatContext *const s = &si->pub;
+    int64_t offset;
+
+    if (!AVOID_NEGATIVE_TS_ENABLED(si->avoid_negative_ts_status))
+        return;
+
+    if (si->avoid_negative_ts_status == AVOID_NEGATIVE_TS_UNKNOWN) {
+        int use_pts = si->avoid_negative_ts_use_pts;
+        int64_t ts = use_pts ? pkt->pts : pkt->dts;
+        AVRational tb = sti->pub.time_base;
+
+        if (ts == AV_NOPTS_VALUE)
+            return;
+
+        /* Peek into the muxing queue to improve our estimate
+         * of the lowest timestamp if av_interleaved_write_frame() is used. */
+        for (const PacketListEntry *pktl = si->packet_buffer.head;
+             pktl; pktl = pktl->next) {
+            AVRational cmp_tb = s->streams[pktl->pkt.stream_index]->time_base;
+            int64_t cmp_ts = use_pts ? pktl->pkt.pts : pktl->pkt.dts;
+            if (cmp_ts == AV_NOPTS_VALUE)
+                continue;
+            if (s->output_ts_offset)
+                cmp_ts += av_rescale_q(s->output_ts_offset, AV_TIME_BASE_Q, cmp_tb);
+            if (av_compare_ts(cmp_ts, cmp_tb, ts, tb) < 0) {
+                ts = cmp_ts;
+                tb = cmp_tb;
+            }
+        }
+
+        if (ts < 0 ||
+            ts > 0 && s->avoid_negative_ts == AVFMT_AVOID_NEG_TS_MAKE_ZERO) {
+            for (unsigned i = 0; i < s->nb_streams; i++) {
+                AVStream *const st2  = s->streams[i];
+                FFStream *const sti2 = ffstream(st2);
+                sti2->mux_ts_offset = av_rescale_q_rnd(-ts, tb,
+                                                       st2->time_base,
+                                                       AV_ROUND_UP);
+            }
+        }
+        si->avoid_negative_ts_status = AVOID_NEGATIVE_TS_KNOWN;
+    }
+
+    offset = sti->mux_ts_offset;
+
+    if (pkt->dts != AV_NOPTS_VALUE)
+        pkt->dts += offset;
+    if (pkt->pts != AV_NOPTS_VALUE)
+        pkt->pts += offset;
+
+    if (si->avoid_negative_ts_use_pts) {
+        if (pkt->pts != AV_NOPTS_VALUE && pkt->pts < 0) {
+            av_log(s, AV_LOG_WARNING, "failed to avoid negative "
+                   "pts %s in stream %d.\n"
+                   "Try -avoid_negative_ts 1 as a possible workaround.\n",
+                   av_ts2str(pkt->pts),
+                   pkt->stream_index
+            );
+        }
+    } else {
+        if (pkt->dts != AV_NOPTS_VALUE && pkt->dts < 0) {
+            av_log(s, AV_LOG_WARNING,
+                   "Packets poorly interleaved, failed to avoid negative "
+                   "timestamp %s in stream %d.\n"
+                   "Try -max_interleave_delta 0 as a possible workaround.\n",
+                   av_ts2str(pkt->dts),
+                   pkt->stream_index
+            );
+        }
+    }
+}
+
 /**
  * Shift timestamps and call muxer; the original pts/dts are not kept.
  *
@@ -663,52 +761,7 @@ static int write_packet(AVFormatContext *s, AVPacket *pkt)
         if (pkt->pts != AV_NOPTS_VALUE)
             pkt->pts += offset;
     }
-
-    if (s->avoid_negative_ts > 0) {
-        int64_t offset = sti->mux_ts_offset;
-        int64_t ts = si->avoid_negative_ts_use_pts ? pkt->pts : pkt->dts;
-
-        if (si->offset == AV_NOPTS_VALUE && ts != AV_NOPTS_VALUE &&
-            (ts < 0 || s->avoid_negative_ts == AVFMT_AVOID_NEG_TS_MAKE_ZERO)) {
-            si->offset = -ts;
-            si->offset_timebase = st->time_base;
-        }
-
-        if (si->offset != AV_NOPTS_VALUE && !offset) {
-            offset = sti->mux_ts_offset =
-                av_rescale_q_rnd(si->offset,
-                                 si->offset_timebase,
-                                 st->time_base,
-                                 AV_ROUND_UP);
-        }
-
-        if (pkt->dts != AV_NOPTS_VALUE)
-            pkt->dts += offset;
-        if (pkt->pts != AV_NOPTS_VALUE)
-            pkt->pts += offset;
-
-        if (si->avoid_negative_ts_use_pts) {
-            if (pkt->pts != AV_NOPTS_VALUE && pkt->pts < 0) {
-                av_log(s, AV_LOG_WARNING, "failed to avoid negative "
-                    "pts %s in stream %d.\n"
-                    "Try -avoid_negative_ts 1 as a possible workaround.\n",
-                    av_ts2str(pkt->pts),
-                    pkt->stream_index
-                );
-            }
-        } else {
-            av_assert2(pkt->dts == AV_NOPTS_VALUE || pkt->dts >= 0 || s->max_interleave_delta > 0);
-            if (pkt->dts != AV_NOPTS_VALUE && pkt->dts < 0) {
-                av_log(s, AV_LOG_WARNING,
-                    "Packets poorly interleaved, failed to avoid negative "
-                    "timestamp %s in stream %d.\n"
-                    "Try -max_interleave_delta 0 as a possible workaround.\n",
-                    av_ts2str(pkt->dts),
-                    pkt->stream_index
-                );
-            }
-        }
-    }
+    handle_avoid_negative_ts(si, sti, pkt);
 
     if ((pkt->flags & AV_PKT_FLAG_UNCODED_FRAME)) {
         AVFrame **frame = (AVFrame **)pkt->data;

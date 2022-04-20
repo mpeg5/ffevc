@@ -23,6 +23,8 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
+#include "config_components.h"
+
 #include <inttypes.h>
 #include <limits.h>
 #include <stdint.h>
@@ -50,6 +52,7 @@
 #include "libavutil/dovi_meta.h"
 #include "libavcodec/ac3tab.h"
 #include "libavcodec/flac.h"
+#include "libavcodec/hevc.h"
 #include "libavcodec/mpegaudiodecheader.h"
 #include "libavcodec/mlp_parse.h"
 #include "avformat.h"
@@ -407,7 +410,7 @@ retry:
             atom.size -= 16;
 
             if (!key && c->found_hdlr_mdta && c->meta_keys) {
-                uint32_t index = AV_RB32(&atom.type);
+                uint32_t index = av_bswap32(atom.type); // BE number has been read as LE
                 if (index < c->meta_keys_count && index > 0) {
                     key = c->meta_keys[index];
                 } else if (atom.type != MKTAG('c', 'o', 'v', 'r')) {
@@ -798,6 +801,7 @@ static int mov_read_dac3(MOVContext *c, AVIOContext *pb, MOVAtom atom)
     AVStream *st;
     enum AVAudioServiceType *ast;
     int ac3info, acmod, lfeon, bsmod;
+    uint64_t mask;
 
     if (c->fc->nb_streams < 1)
         return 0;
@@ -812,12 +816,15 @@ static int mov_read_dac3(MOVContext *c, AVIOContext *pb, MOVAtom atom)
     bsmod = (ac3info >> 14) & 0x7;
     acmod = (ac3info >> 11) & 0x7;
     lfeon = (ac3info >> 10) & 0x1;
-    st->codecpar->channels = ((int[]){2,1,2,3,3,4,4,5})[acmod] + lfeon;
-    st->codecpar->channel_layout = ff_ac3_channel_layout_tab[acmod];
+
+    mask = ff_ac3_channel_layout_tab[acmod];
     if (lfeon)
-        st->codecpar->channel_layout |= AV_CH_LOW_FREQUENCY;
+        mask |= AV_CH_LOW_FREQUENCY;
+    av_channel_layout_uninit(&st->codecpar->ch_layout);
+    av_channel_layout_from_mask(&st->codecpar->ch_layout, mask);
+
     *ast = bsmod;
-    if (st->codecpar->channels > 1 && bsmod == 0x7)
+    if (st->codecpar->ch_layout.nb_channels > 1 && bsmod == 0x7)
         *ast = AV_AUDIO_SERVICE_TYPE_KARAOKE;
 
     return 0;
@@ -828,6 +835,7 @@ static int mov_read_dec3(MOVContext *c, AVIOContext *pb, MOVAtom atom)
     AVStream *st;
     enum AVAudioServiceType *ast;
     int eac3info, acmod, lfeon, bsmod;
+    uint64_t mask;
 
     if (c->fc->nb_streams < 1)
         return 0;
@@ -846,12 +854,15 @@ static int mov_read_dec3(MOVContext *c, AVIOContext *pb, MOVAtom atom)
     bsmod = (eac3info >> 12) & 0x1f;
     acmod = (eac3info >>  9) & 0x7;
     lfeon = (eac3info >>  8) & 0x1;
-    st->codecpar->channel_layout = ff_ac3_channel_layout_tab[acmod];
+
+    mask = ff_ac3_channel_layout_tab[acmod];
     if (lfeon)
-        st->codecpar->channel_layout |= AV_CH_LOW_FREQUENCY;
-    st->codecpar->channels = av_get_channel_layout_nb_channels(st->codecpar->channel_layout);
+        mask |= AV_CH_LOW_FREQUENCY;
+    av_channel_layout_uninit(&st->codecpar->ch_layout);
+    av_channel_layout_from_mask(&st->codecpar->ch_layout, mask);
+
     *ast = bsmod;
-    if (st->codecpar->channels > 1 && bsmod == 0x7)
+    if (st->codecpar->ch_layout.nb_channels > 1 && bsmod == 0x7)
         *ast = AV_AUDIO_SERVICE_TYPE_KARAOKE;
 
     return 0;
@@ -898,15 +909,14 @@ static int mov_read_ddts(MOVContext *c, AVIOContext *pb, MOVAtom atom)
     if (channel_layout_code > 0xff) {
         av_log(c->fc, AV_LOG_WARNING, "Unsupported DTS audio channel layout\n");
     }
-    st->codecpar->channel_layout =
+    av_channel_layout_uninit(&st->codecpar->ch_layout);
+    av_channel_layout_from_mask(&st->codecpar->ch_layout,
             ((channel_layout_code & 0x1) ? AV_CH_FRONT_CENTER : 0) |
             ((channel_layout_code & 0x2) ? AV_CH_FRONT_LEFT : 0) |
             ((channel_layout_code & 0x2) ? AV_CH_FRONT_RIGHT : 0) |
             ((channel_layout_code & 0x4) ? AV_CH_SIDE_LEFT : 0) |
             ((channel_layout_code & 0x4) ? AV_CH_SIDE_RIGHT : 0) |
-            ((channel_layout_code & 0x8) ? AV_CH_LOW_FREQUENCY : 0);
-
-    st->codecpar->channels = av_get_channel_layout_nb_channels(st->codecpar->channel_layout);
+            ((channel_layout_code & 0x8) ? AV_CH_LOW_FREQUENCY : 0));
 
     return 0;
 }
@@ -2162,14 +2172,18 @@ static void mov_parse_stsd_audio(MOVContext *c, AVIOContext *pb,
     uint16_t version = avio_rb16(pb);
     uint32_t id = 0;
     AVDictionaryEntry *compatible_brands = av_dict_get(c->fc->metadata, "compatible_brands", NULL, AV_DICT_MATCH_CASE);
+    int channel_count;
 
     avio_rb16(pb); /* revision level */
     id = avio_rl32(pb); /* vendor */
     av_dict_set(&st->metadata, "vendor_id", av_fourcc2str(id), 0);
 
-    st->codecpar->channels              = avio_rb16(pb); /* channel count */
+    channel_count = avio_rb16(pb);
+
+    st->codecpar->ch_layout.order = AV_CHANNEL_ORDER_UNSPEC;
+    st->codecpar->ch_layout.nb_channels = channel_count;
     st->codecpar->bits_per_coded_sample = avio_rb16(pb); /* sample size */
-    av_log(c->fc, AV_LOG_TRACE, "audio channels %d\n", st->codecpar->channels);
+    av_log(c->fc, AV_LOG_TRACE, "audio channels %d\n", channel_count);
 
     sc->audio_cid = avio_rb16(pb);
     avio_rb16(pb); /* packet size = 0 */
@@ -2189,7 +2203,9 @@ static void mov_parse_stsd_audio(MOVContext *c, AVIOContext *pb,
         } else if (version == 2) {
             avio_rb32(pb); /* sizeof struct only */
             st->codecpar->sample_rate = av_int2double(avio_rb64(pb));
-            st->codecpar->channels    = avio_rb32(pb);
+            channel_count = avio_rb32(pb);
+            st->codecpar->ch_layout.order = AV_CHANNEL_ORDER_UNSPEC;
+            st->codecpar->ch_layout.nb_channels = channel_count;
             avio_rb32(pb); /* always 0x7F000000 */
             st->codecpar->bits_per_coded_sample = avio_rb32(pb);
 
@@ -2241,15 +2257,15 @@ static void mov_parse_stsd_audio(MOVContext *c, AVIOContext *pb,
     /* set values for old format before stsd version 1 appeared */
     case AV_CODEC_ID_MACE3:
         sc->samples_per_frame = 6;
-        sc->bytes_per_frame   = 2 * st->codecpar->channels;
+        sc->bytes_per_frame   = 2 * st->codecpar->ch_layout.nb_channels;
         break;
     case AV_CODEC_ID_MACE6:
         sc->samples_per_frame = 6;
-        sc->bytes_per_frame   = 1 * st->codecpar->channels;
+        sc->bytes_per_frame   = 1 * st->codecpar->ch_layout.nb_channels;
         break;
     case AV_CODEC_ID_ADPCM_IMA_QT:
         sc->samples_per_frame = 64;
-        sc->bytes_per_frame   = 34 * st->codecpar->channels;
+        sc->bytes_per_frame   = 34 * st->codecpar->ch_layout.nb_channels;
         break;
     case AV_CODEC_ID_GSM:
         sc->samples_per_frame = 160;
@@ -2260,9 +2276,9 @@ static void mov_parse_stsd_audio(MOVContext *c, AVIOContext *pb,
     }
 
     bits_per_sample = av_get_bits_per_sample(st->codecpar->codec_id);
-    if (bits_per_sample && (bits_per_sample >> 3) * (uint64_t)st->codecpar->channels <= INT_MAX) {
+    if (bits_per_sample && (bits_per_sample >> 3) * (uint64_t)st->codecpar->ch_layout.nb_channels <= INT_MAX) {
         st->codecpar->bits_per_coded_sample = bits_per_sample;
-        sc->sample_size = (bits_per_sample >> 3) * st->codecpar->channels;
+        sc->sample_size = (bits_per_sample >> 3) * st->codecpar->ch_layout.nb_channels;
     }
 }
 
@@ -2402,7 +2418,8 @@ static int mov_finalize_stsd_codec(MOVContext *c, AVIOContext *pb,
 #endif
     /* no ifdef since parameters are always those */
     case AV_CODEC_ID_QCELP:
-        st->codecpar->channels = 1;
+        av_channel_layout_uninit(&st->codecpar->ch_layout);
+        st->codecpar->ch_layout = (AVChannelLayout)AV_CHANNEL_LAYOUT_MONO;
         // force sample rate for qcelp when not stored in mov
         if (st->codecpar->codec_tag != MKTAG('Q','c','l','p'))
             st->codecpar->sample_rate = 8000;
@@ -2412,12 +2429,14 @@ static int mov_finalize_stsd_codec(MOVContext *c, AVIOContext *pb,
             sc->bytes_per_frame = 35;
         break;
     case AV_CODEC_ID_AMR_NB:
-        st->codecpar->channels    = 1;
+        av_channel_layout_uninit(&st->codecpar->ch_layout);
+        st->codecpar->ch_layout = (AVChannelLayout)AV_CHANNEL_LAYOUT_MONO;
         /* force sample rate for amr, stsd in 3gp does not store sample rate */
         st->codecpar->sample_rate = 8000;
         break;
     case AV_CODEC_ID_AMR_WB:
-        st->codecpar->channels    = 1;
+        av_channel_layout_uninit(&st->codecpar->ch_layout);
+        st->codecpar->ch_layout = (AVChannelLayout)AV_CHANNEL_LAYOUT_MONO;
         st->codecpar->sample_rate = 16000;
         break;
     case AV_CODEC_ID_MP2:
@@ -2436,7 +2455,12 @@ static int mov_finalize_stsd_codec(MOVContext *c, AVIOContext *pb,
         break;
     case AV_CODEC_ID_ALAC:
         if (st->codecpar->extradata_size == 36) {
-            st->codecpar->channels    = AV_RB8 (st->codecpar->extradata + 21);
+            int channel_count = AV_RB8(st->codecpar->extradata + 21);
+            if (st->codecpar->ch_layout.nb_channels != channel_count) {
+                av_channel_layout_uninit(&st->codecpar->ch_layout);
+                st->codecpar->ch_layout.order = AV_CHANNEL_ORDER_UNSPEC;
+                st->codecpar->ch_layout.nb_channels = channel_count;
+            }
             st->codecpar->sample_rate = AV_RB32(st->codecpar->extradata + 32);
         }
         break;
@@ -2543,8 +2567,8 @@ int ff_mov_read_stsd_entries(MOVContext *c, AVIOContext *pb, int entries)
                 av_log(c->fc, AV_LOG_ERROR, "Invalid sample rate %d\n", st->codecpar->sample_rate);
                 return AVERROR_INVALIDDATA;
             }
-            if (st->codecpar->channels < 0) {
-                av_log(c->fc, AV_LOG_ERROR, "Invalid channels %d\n", st->codecpar->channels);
+            if (st->codecpar->ch_layout.nb_channels < 0) {
+                av_log(c->fc, AV_LOG_ERROR, "Invalid channels %d\n", st->codecpar->ch_layout.nb_channels);
                 return AVERROR_INVALIDDATA;
             }
         } else if (st->codecpar->codec_type==AVMEDIA_TYPE_SUBTITLE){
@@ -3130,6 +3154,62 @@ static int mov_read_ctts(MOVContext *c, AVIOContext *pb, MOVAtom atom)
     return 0;
 }
 
+static int mov_read_sgpd(MOVContext *c, AVIOContext *pb, MOVAtom atom)
+{
+    AVStream *st;
+    MOVStreamContext *sc;
+    uint8_t version;
+    uint32_t grouping_type;
+    uint32_t default_length;
+    av_unused uint32_t default_group_description_index;
+    uint32_t entry_count;
+
+    if (c->fc->nb_streams < 1)
+        return 0;
+    st = c->fc->streams[c->fc->nb_streams - 1];
+    sc = st->priv_data;
+
+    version = avio_r8(pb); /* version */
+    avio_rb24(pb); /* flags */
+    grouping_type = avio_rl32(pb);
+
+    /*
+     * This function only supports "sync" boxes, but the code is able to parse
+     * other boxes (such as "tscl", "tsas" and "stsa")
+     */
+    if (grouping_type != MKTAG('s','y','n','c'))
+        return 0;
+
+    default_length = version >= 1 ? avio_rb32(pb) : 0;
+    default_group_description_index = version >= 2 ? avio_rb32(pb) : 0;
+    entry_count = avio_rb32(pb);
+
+    av_freep(&sc->sgpd_sync);
+    sc->sgpd_sync_count = entry_count;
+    sc->sgpd_sync = av_calloc(entry_count, sizeof(*sc->sgpd_sync));
+    if (!sc->sgpd_sync)
+        return AVERROR(ENOMEM);
+
+    for (uint32_t i = 0; i < entry_count && !pb->eof_reached; i++) {
+        uint32_t description_length = default_length;
+        if (version >= 1 && default_length == 0)
+            description_length = avio_rb32(pb);
+        if (grouping_type == MKTAG('s','y','n','c')) {
+            const uint8_t nal_unit_type = avio_r8(pb) & 0x3f;
+            sc->sgpd_sync[i] = nal_unit_type;
+            description_length -= 1;
+        }
+        avio_skip(pb, description_length);
+    }
+
+    if (pb->eof_reached) {
+        av_log(c->fc, AV_LOG_WARNING, "reached eof, corrupted SGPD atom\n");
+        return AVERROR_EOF;
+    }
+
+    return 0;
+}
+
 static int mov_read_sbgp(MOVContext *c, AVIOContext *pb, MOVAtom atom)
 {
     AVStream *st;
@@ -3137,6 +3217,8 @@ static int mov_read_sbgp(MOVContext *c, AVIOContext *pb, MOVAtom atom)
     unsigned int i, entries;
     uint8_t version;
     uint32_t grouping_type;
+    MOVSbgp *table, **tablep;
+    int *table_count;
 
     if (c->fc->nb_streams < 1)
         return 0;
@@ -3146,28 +3228,37 @@ static int mov_read_sbgp(MOVContext *c, AVIOContext *pb, MOVAtom atom)
     version = avio_r8(pb); /* version */
     avio_rb24(pb); /* flags */
     grouping_type = avio_rl32(pb);
-    if (grouping_type != MKTAG( 'r','a','p',' '))
-        return 0; /* only support 'rap ' grouping */
+
+    if (grouping_type == MKTAG('r','a','p',' ')) {
+        tablep = &sc->rap_group;
+        table_count = &sc->rap_group_count;
+    } else if (grouping_type == MKTAG('s','y','n','c')) {
+        tablep = &sc->sync_group;
+        table_count = &sc->sync_group_count;
+    } else {
+        return 0;
+    }
+
     if (version == 1)
         avio_rb32(pb); /* grouping_type_parameter */
 
     entries = avio_rb32(pb);
     if (!entries)
         return 0;
-    if (sc->rap_group)
-        av_log(c->fc, AV_LOG_WARNING, "Duplicated SBGP atom\n");
-    av_free(sc->rap_group);
-    sc->rap_group_count = 0;
-    sc->rap_group = av_malloc_array(entries, sizeof(*sc->rap_group));
-    if (!sc->rap_group)
+    if (*tablep)
+        av_log(c->fc, AV_LOG_WARNING, "Duplicated SBGP %s atom\n", av_fourcc2str(grouping_type));
+    av_freep(tablep);
+    table = av_malloc_array(entries, sizeof(*table));
+    if (!table)
         return AVERROR(ENOMEM);
+    *tablep = table;
 
     for (i = 0; i < entries && !pb->eof_reached; i++) {
-        sc->rap_group[i].count = avio_rb32(pb); /* sample_count */
-        sc->rap_group[i].index = avio_rb32(pb); /* group_description_index */
+        table[i].count = avio_rb32(pb); /* sample_count */
+        table[i].index = avio_rb32(pb); /* group_description_index */
     }
 
-    sc->rap_group_count = i;
+    *table_count = i;
 
     if (pb->eof_reached) {
         av_log(c->fc, AV_LOG_WARNING, "reached eof, corrupted SBGP atom\n");
@@ -3815,6 +3906,69 @@ static void mov_fix_index(MOVContext *mov, AVStream *st)
     msc->current_index = msc->index_ranges[0].start;
 }
 
+static uint32_t get_sgpd_sync_index(const MOVStreamContext *sc, int nal_unit_type)
+{
+    for (uint32_t i = 0; i < sc->sgpd_sync_count; i++)
+        if (sc->sgpd_sync[i] == HEVC_NAL_CRA_NUT)
+            return i + 1;
+    return 0;
+}
+
+static int build_open_gop_key_points(AVStream *st)
+{
+    int k;
+    int sample_id = 0;
+    uint32_t cra_index;
+    MOVStreamContext *sc = st->priv_data;
+
+    if (st->codecpar->codec_id != AV_CODEC_ID_HEVC || !sc->sync_group_count)
+        return 0;
+
+    /* Build an unrolled index of the samples */
+    sc->sample_offsets_count = 0;
+    for (uint32_t i = 0; i < sc->ctts_count; i++)
+        sc->sample_offsets_count += sc->ctts_data[i].count;
+    av_freep(&sc->sample_offsets);
+    sc->sample_offsets = av_calloc(sc->sample_offsets_count, sizeof(*sc->sample_offsets));
+    if (!sc->sample_offsets)
+        return AVERROR(ENOMEM);
+    k = 0;
+    for (uint32_t i = 0; i < sc->ctts_count; i++)
+        for (int j = 0; j < sc->ctts_data[i].count; j++)
+             sc->sample_offsets[k++] = sc->ctts_data[i].duration;
+
+    /* The following HEVC NAL type reveal the use of open GOP sync points
+     * (TODO: BLA types may also be concerned) */
+    cra_index = get_sgpd_sync_index(sc, HEVC_NAL_CRA_NUT); /* Clean Random Access */
+    if (!cra_index)
+        return 0;
+
+    /* Build a list of open-GOP key samples */
+    sc->open_key_samples_count = 0;
+    for (uint32_t i = 0; i < sc->sync_group_count; i++)
+        if (sc->sync_group[i].index == cra_index)
+            sc->open_key_samples_count += sc->sync_group[i].count;
+    av_freep(&sc->open_key_samples);
+    sc->open_key_samples = av_calloc(sc->open_key_samples_count, sizeof(*sc->open_key_samples));
+    if (!sc->open_key_samples)
+        return AVERROR(ENOMEM);
+    k = 0;
+    for (uint32_t i = 0; i < sc->sync_group_count; i++) {
+        const MOVSbgp *sg = &sc->sync_group[i];
+        if (sg->index == cra_index)
+            for (uint32_t j = 0; j < sg->count; j++)
+                sc->open_key_samples[k++] = sample_id;
+        sample_id += sg->count;
+    }
+
+    /* Identify the minimal time step between samples */
+    sc->min_sample_duration = UINT_MAX;
+    for (uint32_t i = 0; i < sc->stts_count; i++)
+        sc->min_sample_duration = FFMIN(sc->min_sample_duration, sc->stts_data[i].duration);
+
+    return 0;
+}
+
 static void mov_build_index(MOVContext *mov, AVStream *st)
 {
     MOVStreamContext *sc = st->priv_data;
@@ -3829,6 +3983,10 @@ static void mov_build_index(MOVContext *mov, AVStream *st)
     uint64_t stream_size = 0;
     MOVCtts *ctts_data_old = sc->ctts_data;
     unsigned int ctts_count_old = sc->ctts_count;
+
+    int ret = build_open_gop_key_points(st);
+    if (ret < 0)
+        return;
 
     if (sc->elst_count) {
         int i, edit_start_index = 0, multiple_edits = 0;
@@ -4363,6 +4521,8 @@ static int mov_read_trak(MOVContext *c, AVIOContext *pb, MOVAtom atom)
     av_freep(&sc->stps_data);
     av_freep(&sc->elst_data);
     av_freep(&sc->rap_group);
+    av_freep(&sc->sync_group);
+    av_freep(&sc->sgpd_sync);
 
     return 0;
 }
@@ -7038,6 +7198,7 @@ static int mov_read_dmlp(MOVContext *c, AVIOContext *pb, MOVAtom atom)
     unsigned format_info;
     int channel_assignment, channel_assignment1, channel_assignment2;
     int ratebits;
+    uint64_t chmask;
 
     if (c->fc->nb_streams < 1)
         return 0;
@@ -7058,8 +7219,10 @@ static int mov_read_dmlp(MOVContext *c, AVIOContext *pb, MOVAtom atom)
 
     st->codecpar->frame_size = 40 << (ratebits & 0x7);
     st->codecpar->sample_rate = mlp_samplerate(ratebits);
-    st->codecpar->channels = truehd_channels(channel_assignment);
-    st->codecpar->channel_layout = truehd_layout(channel_assignment);
+
+    av_channel_layout_uninit(&st->codecpar->ch_layout);
+    chmask = truehd_layout(channel_assignment);
+    av_channel_layout_from_mask(&st->codecpar->ch_layout, chmask);
 
     return 0;
 }
@@ -7173,6 +7336,100 @@ cleanup:
     return ret;
 }
 
+static int mov_read_SA3D(MOVContext *c, AVIOContext *pb, MOVAtom atom)
+{
+    AVStream *st;
+    int i, version, type;
+    int ambisonic_order, channel_order, normalization, channel_count;
+
+    if (c->fc->nb_streams < 1)
+        return 0;
+
+    st = c->fc->streams[c->fc->nb_streams - 1];
+
+    if (atom.size < 16) {
+        av_log(c->fc, AV_LOG_ERROR, "SA3D audio box too small\n");
+        return AVERROR_INVALIDDATA;
+    }
+
+    version = avio_r8(pb);
+    if (version) {
+        av_log(c->fc, AV_LOG_WARNING, "Unsupported SA3D box version %d\n", version);
+        return 0;
+    }
+
+    type = avio_r8(pb);
+    if (type) {
+        av_log(c->fc, AV_LOG_WARNING,
+               "Unsupported ambisonic type %d\n", type);
+        return 0;
+    }
+
+    ambisonic_order = avio_rb32(pb);
+
+    channel_order = avio_r8(pb);
+    if (channel_order) {
+        av_log(c->fc, AV_LOG_WARNING,
+               "Unsupported channel_order %d\n", channel_order);
+        return 0;
+    }
+
+    normalization = avio_r8(pb);
+    if (normalization) {
+        av_log(c->fc, AV_LOG_WARNING,
+               "Unsupported normalization %d\n", normalization);
+        return 0;
+    }
+
+    channel_count = avio_rb32(pb);
+    if (channel_count != (ambisonic_order + 1) * (ambisonic_order + 1)) {
+        av_log(c->fc, AV_LOG_ERROR,
+               "Invalid number of channels (%d / %d)\n",
+               channel_count, ambisonic_order);
+        return 0;
+    }
+
+    for (i = 0; i < channel_count; i++) {
+        if (i != avio_rb32(pb)) {
+            av_log(c->fc, AV_LOG_WARNING,
+                   "Ambisonic channel reordering is not supported\n");
+            return 0;
+        }
+    }
+
+    av_channel_layout_uninit(&st->codecpar->ch_layout);
+    st->codecpar->ch_layout.order = AV_CHANNEL_ORDER_AMBISONIC;
+    st->codecpar->ch_layout.nb_channels = channel_count;
+
+    return 0;
+}
+
+static int mov_read_SAND(MOVContext *c, AVIOContext *pb, MOVAtom atom)
+{
+    AVStream *st;
+    int version;
+
+    if (c->fc->nb_streams < 1)
+        return 0;
+
+    st = c->fc->streams[c->fc->nb_streams - 1];
+
+    if (atom.size < 5) {
+        av_log(c->fc, AV_LOG_ERROR, "Empty SAND audio box\n");
+        return AVERROR_INVALIDDATA;
+    }
+
+    version = avio_r8(pb);
+    if (version) {
+        av_log(c->fc, AV_LOG_WARNING, "Unsupported SAND box version %d\n", version);
+        return 0;
+    }
+
+    st->disposition |= AV_DISPOSITION_NON_DIEGETIC;
+
+    return 0;
+}
+
 static const MOVParseTableEntry mov_default_parse_table[] = {
 { MKTAG('A','C','L','R'), mov_read_aclr },
 { MKTAG('A','P','R','G'), mov_read_avid },
@@ -7243,6 +7500,7 @@ static const MOVParseTableEntry mov_default_parse_table[] = {
 { MKTAG('c','m','o','v'), mov_read_cmov },
 { MKTAG('c','h','a','n'), mov_read_chan }, /* channel layout */
 { MKTAG('d','v','c','1'), mov_read_dvc1 },
+{ MKTAG('s','g','p','d'), mov_read_sgpd },
 { MKTAG('s','b','g','p'), mov_read_sbgp },
 { MKTAG('h','v','c','C'), mov_read_glbl },
 { MKTAG('u','u','i','d'), mov_read_uuid },
@@ -7272,6 +7530,8 @@ static const MOVParseTableEntry mov_default_parse_table[] = {
 { MKTAG('d','v','v','C'), mov_read_dvcc_dvvc },
 { MKTAG('d','v','w','C'), mov_read_dvcc_dvvc },
 { MKTAG('k','i','n','d'), mov_read_kind },
+{ MKTAG('S','A','3','D'), mov_read_SA3D }, /* ambisonic audio box */
+{ MKTAG('S','A','N','D'), mov_read_SAND }, /* non diegetic audio box */
 { 0, NULL }
 };
 
@@ -7702,6 +7962,10 @@ static int mov_read_close(AVFormatContext *s)
         av_freep(&sc->stps_data);
         av_freep(&sc->elst_data);
         av_freep(&sc->rap_group);
+        av_freep(&sc->sync_group);
+        av_freep(&sc->sgpd_sync);
+        av_freep(&sc->sample_offsets);
+        av_freep(&sc->open_key_samples);
         av_freep(&sc->display_matrix);
         av_freep(&sc->index_ranges);
 
@@ -8374,6 +8638,49 @@ static int mov_seek_fragment(AVFormatContext *s, AVStream *st, int64_t timestamp
     return 0;
 }
 
+static int is_open_key_sample(const MOVStreamContext *sc, int sample)
+{
+    // TODO: a bisect search would scale much better
+    for (int i = 0; i < sc->open_key_samples_count; i++) {
+        const int oks = sc->open_key_samples[i];
+        if (oks == sample)
+            return 1;
+        if (oks > sample) /* list is monotically increasing so we can stop early */
+            break;
+    }
+    return 0;
+}
+
+/*
+ * Some key sample may be key frames but not IDR frames, so a random access to
+ * them may not be allowed.
+ */
+static int can_seek_to_key_sample(AVStream *st, int sample, int64_t requested_pts)
+{
+    MOVStreamContext *sc = st->priv_data;
+    FFStream *const sti = ffstream(st);
+    int64_t key_sample_dts, key_sample_pts;
+
+    if (st->codecpar->codec_id != AV_CODEC_ID_HEVC)
+        return 1;
+
+    if (sample >= sc->sample_offsets_count)
+        return 1;
+
+    key_sample_dts = sti->index_entries[sample].timestamp;
+    key_sample_pts = key_sample_dts + sc->sample_offsets[sample] + sc->dts_shift;
+
+    /*
+     * If the sample needs to be presented before an open key sample, they may
+     * not be decodable properly, even though they come after in decoding
+     * order.
+     */
+    if (is_open_key_sample(sc, sample) && key_sample_pts > requested_pts)
+        return 0;
+
+    return 1;
+}
+
 static int mov_seek_stream(AVFormatContext *s, AVStream *st, int64_t timestamp, int flags)
 {
     MOVStreamContext *sc = st->priv_data;
@@ -8389,12 +8696,19 @@ static int mov_seek_stream(AVFormatContext *s, AVStream *st, int64_t timestamp, 
     if (ret < 0)
         return ret;
 
-    sample = av_index_search_timestamp(st, timestamp, flags);
-    av_log(s, AV_LOG_TRACE, "stream %d, timestamp %"PRId64", sample %d\n", st->index, timestamp, sample);
-    if (sample < 0 && sti->nb_index_entries && timestamp < sti->index_entries[0].timestamp)
-        sample = 0;
-    if (sample < 0) /* not sure what to do */
-        return AVERROR_INVALIDDATA;
+    for (;;) {
+        sample = av_index_search_timestamp(st, timestamp, flags);
+        av_log(s, AV_LOG_TRACE, "stream %d, timestamp %"PRId64", sample %d\n", st->index, timestamp, sample);
+        if (sample < 0 && sti->nb_index_entries && timestamp < sti->index_entries[0].timestamp)
+            sample = 0;
+        if (sample < 0) /* not sure what to do */
+            return AVERROR_INVALIDDATA;
+
+        if (!sample || can_seek_to_key_sample(st, sample, timestamp))
+            break;
+        timestamp -= FFMAX(sc->min_sample_duration, 1);
+    }
+
     mov_current_sample_set(sc, sample);
     av_log(s, AV_LOG_TRACE, "stream %d, found sample %d\n", st->index, sc->current_sample);
     /* adjust ctts index */

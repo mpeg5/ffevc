@@ -48,6 +48,12 @@ fate-force_key_frames: CMD = enc_dec \
   avi "-c mpeg4 -g 240 -qscale 10 -force_key_frames 0.5,0:00:01.5" \
   framecrc "" "" "-skip_frame nokey"
 
+# Tests that the video is properly autorotated using the contained
+# display matrix and that the generated file does not contain
+# a display matrix any more.
+FATE_SAMPLES_FFMPEG_FFPROBE-$(call ALLYES, FILE_PROTOCOL MOV_DEMUXER H264_DECODER AAC_FIXED_DECODER MPEG2VIDEO_ENCODER AC3_FIXED_ENCODER MOV_MUXER MPEG2VIDEO_DECODER EXTRACT_EXTRADATA_BSF PIPE_PROTOCOL FRAMECRC_MUXER) += fate-autorotate
+fate-autorotate: CMD = transcode "mov -c:a aac_fixed" $(TARGET_SAMPLES)/filter/sample-in-issue-505.mov mov "-c:v mpeg2video -c:a ac3_fixed" "-c copy -t 0.5" "" "-show_entries stream_side_data_list"
+
 FATE_SAMPLES_FFMPEG-$(call ALLYES, VOBSUB_DEMUXER DVDSUB_DECODER AVFILTER OVERLAY_FILTER DVDSUB_ENCODER) += fate-sub2video
 fate-sub2video: tests/data/vsynth_lena.yuv
 fate-sub2video: CMD = framecrc -auto_conversion_filters \
@@ -93,6 +99,17 @@ FATE_SAMPLES_FFMPEG-$(call ALLYES, FILE_PROTOCOL LAVFI_INDEV RAWVIDEO_DEMUXER \
                            += fate-shortest
 fate-shortest: tests/data/vsynth_lena.yuv
 fate-shortest: CMD = framecrc -auto_conversion_filters -f lavfi -i "sine=3000:d=10" -f lavfi -i "sine=1000:d=1" -sws_flags +accurate_rnd+bitexact -fflags +bitexact -flags +bitexact -idct simple -f rawvideo -s 352x288 -pix_fmt yuv420p -i $(TARGET_PATH)/tests/data/vsynth_lena.yuv -filter_complex "[0:a:0][1:a:0]amix=inputs=2[audio]" -map 2:v:0 -map "[audio]" -sws_flags +accurate_rnd+bitexact -fflags +bitexact -flags +bitexact -idct simple -dct fastint -qscale 10 -threads 1 -c:v mpeg4 -c:a ac3_fixed -shortest
+
+# Basic test for fix_sub_duration, which calculates duration based on the
+# following subtitle's pts.
+FATE_SAMPLES_FFMPEG-$(call ALLYES, LAVFI_INDEV MOVIE_FILTER FILE_PROTOCOL \
+                                   PIPE_PROTOCOL MPEGVIDEO_DEMUXER \
+                                   MPEG2VIDEO_DECODER CCAPTION_DECODER \
+                                   SUBRIP_ENCODER SRT_MUXER) \
+                           += fate-ffmpeg-fix_sub_duration
+fate-ffmpeg-fix_sub_duration: CMD = fmtstdout srt -fix_sub_duration \
+  -real_time 1 -f lavfi \
+  -i "movie=$(TARGET_SAMPLES)/sub/Closedcaption_rollup.m2v[out0+subcc]"
 
 FATE_STREAMCOPY-$(call ALLYES, EAC3_DEMUXER MOV_MUXER) += fate-copy-trac3074
 fate-copy-trac3074: $(SAMPLES)/eac3/csi_miami_stereo_128_spx.eac3
@@ -199,6 +216,8 @@ fate-ffmpeg-bsf-remove-e: $(SAMPLES)/mpeg2/matrixbench_mpeg2.lq1.mpg
 fate-ffmpeg-bsf-remove-e: CMD = transcode "mpeg" $(TARGET_SAMPLES)/mpeg2/matrixbench_mpeg2.lq1.mpg\
                           avi "-vbsf remove_extra=e" "-codec copy"
 
+FATE_SAMPLES_FFMPEG-$(call ALLYES, APNG_DEMUXER SETTS_BSF) += fate-ffmpeg-setts-bsf
+fate-ffmpeg-setts-bsf: CMD = framecrc -i $(TARGET_SAMPLES)/apng/clock.png -c:v copy -bsf:v "setts=duration=if(eq(NEXT_PTS\,NOPTS)\,PREV_OUTDURATION\,(NEXT_PTS-PTS)/2):ts=PTS/2" -fflags +bitexact
 
 FATE_SAMPLES_FFMPEG-yes += $(FATE_STREAMCOPY-yes)
 

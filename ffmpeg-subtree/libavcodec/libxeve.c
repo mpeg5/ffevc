@@ -36,10 +36,12 @@
 #include "libavutil/pixdesc.h"
 #include "libavutil/pixfmt.h"
 #include "libavutil/time.h"
+#include "libavutil/cpu.h"
 
 #include "avcodec.h"
 #include "internal.h"
 #include "packet_internal.h"
+#include "codec_internal.h"
 
 #define MAX_BS_BUF (16*1024*1024)
 
@@ -1113,7 +1115,7 @@ static const AVClass xeve_class = {
  *  libavcodec generic global options, which can be set on all the encoders and decoders
  *  @see https://www.ffmpeg.org/ffmpeg-codecs.html#Codec-Options
  */
-static const AVCodecDefault xeve_defaults[] = {
+static const FFCodecDefault xeve_defaults[] = {
     { "b", "0" },       // bitrate
     { "g", "0" },       // gop_size (key-frame interval 0: only one I-frame at the first time; 1: every frame is coded in I-frame)
     { "bf", "15"},      // bframes (0: no B-frames)
@@ -1122,18 +1124,17 @@ static const AVCodecDefault xeve_defaults[] = {
     { NULL },
 };
 
-AVCodec ff_libxeve_encoder = {
-    .name             = "libxeve",
-    .long_name        = NULL_IF_CONFIG_SMALL("libxeve MPEG-5 EVC"),
-    .type             = AVMEDIA_TYPE_VIDEO,
-    .id               = AV_CODEC_ID_EVC,
-    .init             = libxeve_init,
-    .encode2          = libxeve_encode,
-    .close            = libxeve_close,
-    .priv_data_size   = sizeof(XeveContext),
-    .priv_class       = &xeve_class,
-    .defaults         = xeve_defaults,
-    .capabilities     = AV_CODEC_CAP_DELAY | AV_CODEC_CAP_AUTO_THREADS |
-    AV_CODEC_CAP_ENCODER_REORDERED_OPAQUE,
-    .wrapper_name     = "libxeve",
+FFCodec ff_libxeve_encoder = {
+    .p.name             = "libxeve",
+    .p.long_name        = NULL_IF_CONFIG_SMALL("libxeve MPEG-5 EVC"),
+    .p.type             = AVMEDIA_TYPE_VIDEO,
+    .p.id               = AV_CODEC_ID_EVC,
+    .init               = libxeve_init,
+    FF_CODEC_ENCODE_CB(libxeve_encode),
+    .close              = libxeve_close,
+    .priv_data_size     = sizeof(XeveContext),
+    .p.priv_class       = &xeve_class,
+    .defaults           = xeve_defaults,
+    .p.capabilities     = AV_CODEC_CAP_DELAY | AV_CODEC_CAP_AUTO_THREADS | AV_CODEC_CAP_ENCODER_REORDERED_OPAQUE,
+    .p.wrapper_name     = "libxeve",
 };

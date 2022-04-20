@@ -552,8 +552,8 @@ dshow_cycle_devices(AVFormatContext *avctx, ICreateDevEnum *devenum,
                 if (!device)
                     goto fail;
 
-                device->device_name = av_strdup(friendly_name);
-                device->device_description = av_strdup(unique_name);
+                device->device_name = av_strdup(unique_name);
+                device->device_description = av_strdup(friendly_name);
                 if (!device->device_name || !device->device_description)
                     goto fail;
 
@@ -1621,7 +1621,7 @@ dshow_add_device(AVFormatContext *avctx,
         par->format      = sample_fmt_bits_per_sample(fmt_info->sample_size);
         par->codec_id    = waveform_codec_id(par->format);
         par->sample_rate = fmt_info->sample_rate;
-        par->channels    = fmt_info->channels;
+        par->ch_layout.nb_channels = fmt_info->channels;
     }
 
     avpriv_set_pts_info(st, 64, 1, 10000000);

@@ -1,5 +1,7 @@
 /*
- * RV10/RV20 decoder
+ * H.261 encoder
+ * Copyright (c) 2002-2004 Michael Niedermayer <michaelni@gmx.at>
+ * Copyright (c) 2004 Maarten Daniels
  *
  * This file is part of FFmpeg.
  *
@@ -18,16 +20,21 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
-#ifndef AVCODEC_RV10_H
-#define AVCODEC_RV10_H
+/**
+ * @file
+ * H.261 encoder header.
+ */
 
-#include <stdint.h>
+#ifndef AVCODEC_H261ENC_H
+#define AVCODEC_H261ENC_H
 
 #include "mpegvideo.h"
 
-int ff_rv_decode_dc(MpegEncContext *s, int n);
+int ff_h261_get_picture_format(int width, int height);
+void ff_h261_reorder_mb_index(MpegEncContext *s);
+void ff_h261_encode_mb(MpegEncContext *s, int16_t block[6][64],
+                       int motion_x, int motion_y);
+void ff_h261_encode_picture_header(MpegEncContext *s, int picture_number);
+void ff_h261_encode_init(MpegEncContext *s);
 
-int ff_rv10_encode_picture_header(MpegEncContext *s, int picture_number);
-void ff_rv20_encode_picture_header(MpegEncContext *s, int picture_number);
-
-#endif /* AVCODEC_RV10_H */
+#endif

@@ -19,6 +19,8 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
+#include "config_components.h"
+
 #include <inttypes.h>
 
 #include "libavutil/avassert.h"
@@ -36,7 +38,7 @@
 #include "riff.h"
 #include "libavcodec/bytestream.h"
 #include "libavcodec/exif.h"
-#include "libavcodec/internal.h"
+#include "libavcodec/startcode.h"
 
 typedef struct AVIStream {
     int64_t frame_offset;   /* current frame (video) or byte (audio) counter

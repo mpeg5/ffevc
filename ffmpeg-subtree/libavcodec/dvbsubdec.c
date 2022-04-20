@@ -22,6 +22,7 @@
 #include "avcodec.h"
 #include "get_bits.h"
 #include "bytestream.h"
+#include "codec_internal.h"
 #include "internal.h"
 #include "libavutil/colorspace.h"
 #include "libavutil/imgutils.h"
@@ -1606,14 +1607,12 @@ static int dvbsub_display_end_segment(AVCodecContext *avctx, const uint8_t *buf,
     return 0;
 }
 
-static int dvbsub_decode(AVCodecContext *avctx,
-                         void *data, int *got_sub_ptr,
-                         AVPacket *avpkt)
+static int dvbsub_decode(AVCodecContext *avctx, AVSubtitle *sub,
+                         int *got_sub_ptr, const AVPacket *avpkt)
 {
     const uint8_t *buf = avpkt->data;
     int buf_size = avpkt->size;
     DVBSubContext *ctx = avctx->priv_data;
-    AVSubtitle *sub = data;
     const uint8_t *p, *p_end;
     int segment_type;
     int page_id;
@@ -1739,15 +1738,15 @@ static const AVClass dvbsubdec_class = {
     .version    = LIBAVUTIL_VERSION_INT,
 };
 
-const AVCodec ff_dvbsub_decoder = {
-    .name           = "dvbsub",
-    .long_name      = NULL_IF_CONFIG_SMALL("DVB subtitles"),
-    .type           = AVMEDIA_TYPE_SUBTITLE,
-    .id             = AV_CODEC_ID_DVB_SUBTITLE,
+const FFCodec ff_dvbsub_decoder = {
+    .p.name         = "dvbsub",
+    .p.long_name    = NULL_IF_CONFIG_SMALL("DVB subtitles"),
+    .p.type         = AVMEDIA_TYPE_SUBTITLE,
+    .p.id           = AV_CODEC_ID_DVB_SUBTITLE,
     .priv_data_size = sizeof(DVBSubContext),
     .init           = dvbsub_init_decoder,
     .close          = dvbsub_close_decoder,
-    .decode         = dvbsub_decode,
-    .priv_class     = &dvbsubdec_class,
+    FF_CODEC_DECODE_SUB_CB(dvbsub_decode),
+    .p.priv_class   = &dvbsubdec_class,
     .caps_internal  = FF_CODEC_CAP_INIT_THREADSAFE,
 };

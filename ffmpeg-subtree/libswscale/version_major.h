@@ -1,6 +1,4 @@
 /*
- * XVideo Motion Compensation internal functions
- *
  * This file is part of FFmpeg.
  *
  * FFmpeg is free software; you can redistribute it and/or
@@ -18,14 +16,20 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
-#ifndef AVCODEC_XVMC_INTERNAL_H
-#define AVCODEC_XVMC_INTERNAL_H
+#ifndef SWSCALE_VERSION_MAJOR_H
+#define SWSCALE_VERSION_MAJOR_H
 
-#include "avcodec.h"
-#include "mpegvideo.h"
-#include "version.h"
+/**
+ * @file
+ * swscale version macros
+ */
 
-void ff_xvmc_init_block(MpegEncContext *s);
-void ff_xvmc_pack_pblocks(MpegEncContext *s, int cbp);
+#define LIBSWSCALE_VERSION_MAJOR   6
 
-#endif /* AVCODEC_XVMC_INTERNAL_H */
+/**
+ * FF_API_* defines may be placed below to indicate public API that will be
+ * dropped at a future version bump. The defines themselves are not part of
+ * the public API and may change, break or disappear at any time.
+ */
+
+#endif /* SWSCALE_VERSION_MAJOR_H */

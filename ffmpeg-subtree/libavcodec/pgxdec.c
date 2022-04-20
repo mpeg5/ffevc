@@ -22,6 +22,7 @@
 #include "avcodec.h"
 #include "internal.h"
 #include "bytestream.h"
+#include "codec_internal.h"
 #include "libavutil/imgutils.h"
 
 static int pgx_get_number(AVCodecContext *avctx, GetByteContext *g, int *number) {
@@ -116,10 +117,9 @@ error:
 WRITE_FRAME(8, int8_t, byte)
 WRITE_FRAME(16, int16_t, be16)
 
-static int pgx_decode_frame(AVCodecContext *avctx, void *data,
+static int pgx_decode_frame(AVCodecContext *avctx, AVFrame *p,
                             int *got_frame, AVPacket *avpkt)
 {
-    AVFrame *p = data;
     int ret;
     int bpp;
     int width, height, depth;
@@ -158,11 +158,11 @@ static int pgx_decode_frame(AVCodecContext *avctx, void *data,
     return 0;
 }
 
-const AVCodec ff_pgx_decoder = {
-    .name           = "pgx",
-    .long_name      = NULL_IF_CONFIG_SMALL("PGX (JPEG2000 Test Format)"),
-    .type           = AVMEDIA_TYPE_VIDEO,
-    .id             = AV_CODEC_ID_PGX,
-    .decode         = pgx_decode_frame,
-    .capabilities   = AV_CODEC_CAP_DR1,
+const FFCodec ff_pgx_decoder = {
+    .p.name         = "pgx",
+    .p.long_name    = NULL_IF_CONFIG_SMALL("PGX (JPEG2000 Test Format)"),
+    .p.type         = AVMEDIA_TYPE_VIDEO,
+    .p.id           = AV_CODEC_ID_PGX,
+    .p.capabilities = AV_CODEC_CAP_DR1,
+    FF_CODEC_DECODE_CB(pgx_decode_frame),
 };

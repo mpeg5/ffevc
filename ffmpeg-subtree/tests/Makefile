@@ -74,6 +74,16 @@ ENCDEC2 = $(call ALLYES, $(firstword $(1))_ENCODER $(lastword $(1))_DECODER  \
                          $(firstword $(2))_ENCODER $(lastword $(2))_DECODER  \
                          $(firstword $(3))_MUXER   $(lastword $(3))_DEMUXER)
 
+# RAWVIDEO_ENCODER and PCM_S16LE_ENCODER corresponds to the default codecs
+# for framecrc. These requirements are not always necessary.
+TRANSCODE = $(call ALLYES, $(firstword $(1))_ENCODER $(lastword $(1))_DECODER \
+                           $(firstword $(2))_MUXER   $(lastword $(2))_DEMUXER \
+                           $(3) FILE_PROTOCOL PIPE_PROTOCOL RAWVIDEO_ENCODER  \
+                           PCM_S16LE_ENCODER FRAMECRC_MUXER)
+
+REMUX = $(call ALLYES, $(firstword $(1))_MUXER $(lastword $(1))_DEMUXER \
+                       $(2) FILE_PROTOCOL PIPE_PROTOCOL FRAMECRC_MUXER)
+
 DEMDEC  = $(call ALLYES, $(1)_DEMUXER $(2:%=%_DECODER))
 ENCMUX  = $(call ALLYES, $(1:%=%_ENCODER) $(2)_MUXER)
 
@@ -133,6 +143,7 @@ include $(SRC_PATH)/tests/fate/dfa.mak
 include $(SRC_PATH)/tests/fate/dnn.mak
 include $(SRC_PATH)/tests/fate/dnxhd.mak
 include $(SRC_PATH)/tests/fate/dpcm.mak
+include $(SRC_PATH)/tests/fate/dvvideo.mak
 include $(SRC_PATH)/tests/fate/ea.mak
 include $(SRC_PATH)/tests/fate/exif.mak
 include $(SRC_PATH)/tests/fate/ffmpeg.mak
@@ -153,6 +164,7 @@ include $(SRC_PATH)/tests/fate/hlsenc.mak
 include $(SRC_PATH)/tests/fate/hw.mak
 include $(SRC_PATH)/tests/fate/id3v2.mak
 include $(SRC_PATH)/tests/fate/image.mak
+include $(SRC_PATH)/tests/fate/imf.mak
 include $(SRC_PATH)/tests/fate/indeo.mak
 include $(SRC_PATH)/tests/fate/libavcodec.mak
 include $(SRC_PATH)/tests/fate/libavdevice.mak
@@ -189,6 +201,7 @@ include $(SRC_PATH)/tests/fate/speedhq.mak
 include $(SRC_PATH)/tests/fate/subtitles.mak
 include $(SRC_PATH)/tests/fate/truehd.mak
 include $(SRC_PATH)/tests/fate/utvideo.mak
+include $(SRC_PATH)/tests/fate/vbn.mak
 include $(SRC_PATH)/tests/fate/video.mak
 include $(SRC_PATH)/tests/fate/voice.mak
 include $(SRC_PATH)/tests/fate/vorbis.mak

@@ -1,5 +1,7 @@
 /*
- * FLV specific private header.
+ * MPEG-4 encoder internal header.
+ * Copyright (c) 2000,2001 Fabrice Bellard
+ * Copyright (c) 2002-2010 Michael Niedermayer <michaelni@gmx.at>
  *
  * This file is part of FFmpeg.
  *
@@ -18,17 +20,24 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
-#ifndef AVCODEC_FLV_H
-#define AVCODEC_FLV_H
+#ifndef AVCODEC_MPEG4VIDEOENC_H
+#define AVCODEC_MPEG4VIDEOENC_H
 
-#include "get_bits.h"
+#include <stdint.h>
+
 #include "mpegvideo.h"
 #include "put_bits.h"
 
-void ff_flv_encode_picture_header(MpegEncContext *s, int picture_number);
-void ff_flv2_encode_ac_esc(PutBitContext *pb, int slevel, int level, int run,
-                           int last);
+void ff_mpeg4_encode_mb(MpegEncContext *s,
+                        int16_t block[6][64],
+                        int motion_x, int motion_y);
+void ff_set_mpeg4_time(MpegEncContext *s);
+int ff_mpeg4_encode_picture_header(MpegEncContext *s, int picture_number);
 
-int ff_flv_decode_picture_header(MpegEncContext *s);
+void ff_mpeg4_encode_video_packet_header(MpegEncContext *s);
+void ff_mpeg4_stuffing(PutBitContext *pbc);
+void ff_mpeg4_init_partitions(MpegEncContext *s);
+void ff_mpeg4_merge_partitions(MpegEncContext *s);
+void ff_clean_mpeg4_qscales(MpegEncContext *s);
 
-#endif /* AVCODEC_FLV_H */
+#endif

@@ -22,15 +22,27 @@
 
 #include <stdint.h>
 
-#include <xevd.h>
-
 #include "libavutil/common.h"
 
 #include "parser.h"
 #include "golomb.h"
 
-#define EVC_NAL_HEADER_SIZE   2 /* byte */
-#define MAX_SPS_CNT  16 /* defined value in EVC standard */
+// The length field that indicates the length in bytes of the following NAL unit is configured to be of 4 bytes
+#define EVC_NAL_UNIT_LENGTH_BYTE        (4)  /* byte */
+
+#define EVC_NAL_HEADER_SIZE             (2)  /* byte */
+#define MAX_SPS_CNT                     (16) /* defined value in EVC standard */
+
+// NALU types
+// @see ISO_IEC_23094-1_2020 7.4.2.2 NAL unit header semantics
+//
+#define EVC_NUT_NONIDR                  (0)  /* Coded slice of a non-IDR picture */
+#define EVC_NUT_IDR                     (1)  /* Coded slice of an IDR picture */
+#define EVC_NUT_SPS                     (24) /* Sequence parameter set */
+#define EVC_NUT_PPS                     (25) /* Picture paremeter set */
+#define EVC_NUT_APS                     (26) /* Adaptation parameter set */
+#define EVC_NUT_FD                      (27) /* Filler data */
+#define EVC_NUT_SEI                     (28) /* Supplemental enhancement information */
 
 // The sturcture reflects SPS RBSP(raw byte sequence payload) layout
 // @see ISO_IEC_23094-1 section 7.3.2.1
@@ -119,45 +131,46 @@ typedef struct EVCParserContext {
     int got_slice;
 } EVCParserContext;
 
-static int get_nalu_type(const uint8_t *bs, int bs_size, AVCodecContext *avctx)
+static int get_nalu_type(const uint8_t *bits, int bits_size, AVCodecContext *avctx)
 {
     int unit_type_plus1 = 0;
-    XEVD_INFO info;
-    int ret;
 
-    if(bs_size >= EVC_NAL_HEADER_SIZE) {
-        ret = xevd_info((void *)bs, EVC_NAL_HEADER_SIZE, 1, &info);
-        if (XEVD_FAILED(ret)) {
-            av_log(avctx, AV_LOG_ERROR, "Cannot get bitstream information\n");
+    if(bits_size >= EVC_NAL_HEADER_SIZE) {
+        unsigned char *p = (unsigned char *)bits;
+        // forbidden_zero_bit
+        if ((p[0] & 0x80) != 0) {
+            av_log(avctx, AV_LOG_ERROR, "Cannot get bitstream information. Malformed bitstream.\n");
             return -1;
         }
-        unit_type_plus1 = info.nalu_type;
 
+        // nal_unit_type
+        unit_type_plus1 = (p[0] >> 1) & 0x3F;
     }
 
     return unit_type_plus1 - 1;
 }
 
-static uint32_t read_nal_unit_length(const uint8_t *bs, int bs_size, AVCodecContext *avctx)
+static uint32_t read_nal_unit_length(const uint8_t *bits, int bits_size, AVCodecContext *avctx)
 {
-    uint32_t len = 0;
-    XEVD_INFO info;
-    int ret;
+    uint32_t nalu_len = 0;
 
-    if(bs_size >= XEVD_NAL_UNIT_LENGTH_BYTE) {
-        ret = xevd_info((void *)bs, XEVD_NAL_UNIT_LENGTH_BYTE, 1, &info);
-        if (XEVD_FAILED(ret)) {
-            av_log(avctx, AV_LOG_ERROR, "Cannot get bitstream information\n");
-            return 0;
+    if(bits_size >= EVC_NAL_UNIT_LENGTH_BYTE) {
+
+        int t = 0;
+        unsigned char *p = (unsigned char *)bits;
+
+        for(int i=0; i<EVC_NAL_UNIT_LENGTH_BYTE; i++) {
+            t = (t << 8) | p[i];
         }
-        len = info.nalu_len;
-        if(len == 0) {
+
+        nalu_len = t;
+        if(nalu_len == 0) {
             av_log(avctx, AV_LOG_ERROR, "Invalid bitstream size!\n");
             return 0;
         }
     }
 
-    return len;
+    return nalu_len;
 }
 
 // @see ISO_IEC_23094-1 (7.3.2.1 SPS RBSP syntax)
@@ -274,15 +287,15 @@ static int parse_nal_units(AVCodecParserContext *s, const uint8_t *bs,
         return -1;
     }
 
-    bits += XEVD_NAL_UNIT_LENGTH_BYTE;
-    bits_size -= XEVD_NAL_UNIT_LENGTH_BYTE;
+    bits += EVC_NAL_UNIT_LENGTH_BYTE;
+    bits_size -= EVC_NAL_UNIT_LENGTH_BYTE;
 
     nalu_type = get_nalu_type(bits, bits_size, avctx);
 
     bits += EVC_NAL_HEADER_SIZE;
     bits_size -= EVC_NAL_HEADER_SIZE;
 
-    if (nalu_type == XEVD_NUT_SPS) { // NAL Unit type: SPS (Sequence Parameter Set)
+    if (nalu_type == EVC_NUT_SPS) { // NAL Unit type: SPS (Sequence Parameter Set)
         EVCParserSPS *sps;
 
         sps = parse_sps(bits, bits_size, ev);
@@ -337,11 +350,11 @@ static int parse_nal_units(AVCodecParserContext *s, const uint8_t *bs,
 
         ev->got_sps = 1;
 
-    } else if (nalu_type == XEVD_NUT_PPS) // NAL Unit type: PPS (Video Parameter Set)
+    } else if (nalu_type == EVC_NUT_PPS) // NAL Unit type: PPS (Video Parameter Set)
         ev->got_pps = 1;
-    else if(nalu_type == XEVD_NUT_SEI) // NAL unit type: SEI (Supplemental Enhancement Information)
+    else if(nalu_type == EVC_NUT_SEI) // NAL unit type: SEI (Supplemental Enhancement Information)
         ev->got_sei = 1;
-    else if (nalu_type == XEVD_NUT_IDR || nalu_type == XEVD_NUT_NONIDR) // NAL Unit type: Coded slice of a IDR or non-IDR picture
+    else if (nalu_type == EVC_NUT_IDR || nalu_type == EVC_NUT_NONIDR) // NAL Unit type: Coded slice of a IDR or non-IDR picture
         ev->got_slice++;
     else {
         av_log(avctx, AV_LOG_ERROR, "Invalid NAL unit type: %d\n", nalu_type);
@@ -365,8 +378,8 @@ static int evc_find_frame_end(AVCodecParserContext *s, const uint8_t *buf,
         int next = END_NOT_FOUND;
 
         // This is the case when buffer size is not enough for buffer to store NAL unit length
-        if(buf_size < XEVD_NAL_UNIT_LENGTH_BYTE) {
-            ev->to_read = XEVD_NAL_UNIT_LENGTH_BYTE;
+        if(buf_size < EVC_NAL_UNIT_LENGTH_BYTE) {
+            ev->to_read = EVC_NAL_UNIT_LENGTH_BYTE;
             ev->nal_length_size = buf_size;
             ev->incomplete_nalu_prefix_read  = 1;
 
@@ -374,9 +387,9 @@ static int evc_find_frame_end(AVCodecParserContext *s, const uint8_t *buf,
         }
 
         nal_unit_size = read_nal_unit_length(buf, buf_size, avctx);
-        ev->nal_length_size = XEVD_NAL_UNIT_LENGTH_BYTE;
+        ev->nal_length_size = EVC_NAL_UNIT_LENGTH_BYTE;
 
-        next = nal_unit_size + XEVD_NAL_UNIT_LENGTH_BYTE;
+        next = nal_unit_size + EVC_NAL_UNIT_LENGTH_BYTE;
         ev->to_read = next;
         if(next < buf_size)
             return next;
@@ -388,7 +401,7 @@ static int evc_find_frame_end(AVCodecParserContext *s, const uint8_t *buf,
         if(ev->incomplete_nalu_prefix_read  == 1) {
             EVCParserContext *ev = s->priv_data;
             ParseContext *pc = &ev->pc;
-            uint8_t nalu_len[XEVD_NAL_UNIT_LENGTH_BYTE] = {0};
+            uint8_t nalu_len[EVC_NAL_UNIT_LENGTH_BYTE] = {0};
             int nal_unit_size = 0;
 
             // 1. pc->buffer contains previously read bytes of NALU prefix
@@ -421,7 +434,7 @@ static int evc_find_frame_end(AVCodecParserContext *s, const uint8_t *buf,
             // |  0x00 |  0x00 |  0x3C |  0xXX |  0xXX | ... |  0xXX |
             // -------------------------------------------------------
             //
-            for(int i = 0; i < XEVD_NAL_UNIT_LENGTH_BYTE; i++) {
+            for(int i = 0; i < EVC_NAL_UNIT_LENGTH_BYTE; i++) {
                 if(i < pc->index)
                     nalu_len[i] = pc->buffer[i];
                 else
@@ -440,9 +453,9 @@ static int evc_find_frame_end(AVCodecParserContext *s, const uint8_t *buf,
             // ---------------------------------
             // NAL Unit lenght =  60 (0x0000003C)
 
-            nal_unit_size = read_nal_unit_length(nalu_len, XEVD_NAL_UNIT_LENGTH_BYTE, avctx);
+            nal_unit_size = read_nal_unit_length(nalu_len, EVC_NAL_UNIT_LENGTH_BYTE, avctx);
 
-            ev->to_read = nal_unit_size + XEVD_NAL_UNIT_LENGTH_BYTE - pc->index;
+            ev->to_read = nal_unit_size + EVC_NAL_UNIT_LENGTH_BYTE - pc->index;
 
             ev->incomplete_nalu_prefix_read = 0;
 
@@ -465,7 +478,7 @@ static int evc_parser_init(AVCodecParserContext *s)
     ev->got_pps = 0;
     ev->got_sei = 0;
     ev->got_slice = 0;
-    ev->nal_length_size = XEVD_NAL_UNIT_LENGTH_BYTE;
+    ev->nal_length_size = EVC_NAL_UNIT_LENGTH_BYTE;
     ev->incomplete_nalu_prefix_read = 0;
 
     return 0;

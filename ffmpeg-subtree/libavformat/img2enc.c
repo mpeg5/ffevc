@@ -20,6 +20,8 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
+#include "config_components.h"
+
 #include "libavutil/intreadwrite.h"
 #include "libavutil/avstring.h"
 #include "libavutil/dict.h"
@@ -261,9 +263,9 @@ static const AVClass img2mux_class = {
 const AVOutputFormat ff_image2_muxer = {
     .name           = "image2",
     .long_name      = NULL_IF_CONFIG_SMALL("image2 sequence"),
-    .extensions     = "bmp,dpx,exr,jls,jpeg,jpg,ljpg,pam,pbm,pcx,pfm,pgm,pgmyuv,png,"
-                      "ppm,sgi,tga,tif,tiff,jp2,j2c,j2k,xwd,sun,ras,rs,im1,im8,im24,"
-                      "sunras,xbm,xface,pix,y",
+    .extensions     = "bmp,dpx,exr,jls,jpeg,jpg,jxl,ljpg,pam,pbm,pcx,pfm,pgm,pgmyuv,"
+                      "png,ppm,sgi,tga,tif,tiff,jp2,j2c,j2k,xwd,sun,ras,rs,im1,im8,"
+                      "im24,sunras,vbn,xbm,xface,pix,y",
     .priv_data_size = sizeof(VideoMuxData),
     .video_codec    = AV_CODEC_ID_MJPEG,
     .write_header   = write_header,

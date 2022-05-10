@@ -308,6 +308,8 @@ enum AVCodecID {
     AV_CODEC_ID_SIMBIOSIS_IMX,
     AV_CODEC_ID_SGA_VIDEO,
     AV_CODEC_ID_GEM,
+    AV_CODEC_ID_VBN,
+    AV_CODEC_ID_JPEGXL,
     AV_CODEC_ID_EVC,
 
     /* various PCM "codecs" */
@@ -517,6 +519,7 @@ enum AVCodecID {
     AV_CODEC_ID_HCA,
     AV_CODEC_ID_FASTAUDIO,
     AV_CODEC_ID_MSNSIREN,
+    AV_CODEC_ID_DFPWM,
 
     /* subtitle codecs */
     AV_CODEC_ID_FIRST_SUBTITLE = 0x17000,          ///< A dummy ID pointing at the start of subtitle codecs.

@@ -26,11 +26,10 @@
  */
 
 #include "avcodec.h"
+#include "codec_internal.h"
 #include "get_bits.h"
 #include "golomb.h"
-#include "internal.h"
 #include "mathops.h"
-#include "mjpeg.h"
 #include "mjpegdec.h"
 #include "jpegls.h"
 #include "jpeglsdec.h"
@@ -279,7 +278,7 @@ static inline int ls_decode_line(JLSState *state, MJpegDecodeContext *s,
             /* decode aborted run */
             r = ff_log2_run[state->run_index[comp]];
             if (r)
-                r = get_bits_long(&s->gb, r);
+                r = get_bits(&s->gb, r);
             if (x + r * stride > w) {
                 r = (w - x) / stride;
             }
@@ -551,16 +550,16 @@ end:
     return ret;
 }
 
-const AVCodec ff_jpegls_decoder = {
-    .name           = "jpegls",
-    .long_name      = NULL_IF_CONFIG_SMALL("JPEG-LS"),
-    .type           = AVMEDIA_TYPE_VIDEO,
-    .id             = AV_CODEC_ID_JPEGLS,
+const FFCodec ff_jpegls_decoder = {
+    .p.name         = "jpegls",
+    .p.long_name    = NULL_IF_CONFIG_SMALL("JPEG-LS"),
+    .p.type         = AVMEDIA_TYPE_VIDEO,
+    .p.id           = AV_CODEC_ID_JPEGLS,
     .priv_data_size = sizeof(MJpegDecodeContext),
     .init           = ff_mjpeg_decode_init,
     .close          = ff_mjpeg_decode_end,
-    .receive_frame  = ff_mjpeg_receive_frame,
-    .capabilities   = AV_CODEC_CAP_DR1,
+    FF_CODEC_RECEIVE_FRAME_CB(ff_mjpeg_receive_frame),
+    .p.capabilities = AV_CODEC_CAP_DR1,
     .caps_internal  = FF_CODEC_CAP_INIT_THREADSAFE | FF_CODEC_CAP_INIT_CLEANUP |
                       FF_CODEC_CAP_SETS_PKT_DTS,
 };

@@ -16,6 +16,7 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
+#include <stdatomic.h>
 #include <stdint.h>
 #include <string.h>
 
@@ -71,12 +72,11 @@ typedef struct QSVDeviceContext {
 
 typedef struct QSVFramesContext {
     mfxSession session_download;
-    int session_download_init;
+    atomic_int session_download_init;
     mfxSession session_upload;
-    int session_upload_init;
+    atomic_int session_upload_init;
 #if HAVE_PTHREADS
     pthread_mutex_t session_lock;
-    pthread_cond_t session_cond;
 #endif
 
     AVBufferRef *child_frames_ref;
@@ -91,7 +91,8 @@ typedef struct QSVFramesContext {
 
     mfxExtOpaqueSurfaceAlloc opaque_alloc;
     mfxExtBuffer *ext_buffers[1];
-    AVFrame realigned_tmp_frame;
+    AVFrame realigned_upload_frame;
+    AVFrame realigned_download_frame;
 } QSVFramesContext;
 
 static const struct {
@@ -111,6 +112,40 @@ static const struct {
 #endif
 #endif
 };
+
+extern int ff_qsv_get_surface_base_handle(mfxFrameSurface1 *surf,
+                                          enum AVHWDeviceType base_dev_type,
+                                          void **base_handle);
+
+/**
+ * Caller needs to allocate enough space for base_handle pointer.
+ **/
+int ff_qsv_get_surface_base_handle(mfxFrameSurface1 *surf,
+                                   enum AVHWDeviceType base_dev_type,
+                                   void **base_handle)
+{
+    mfxHDLPair *handle_pair;
+    handle_pair = surf->Data.MemId;
+    switch (base_dev_type) {
+#if CONFIG_VAAPI
+    case AV_HWDEVICE_TYPE_VAAPI:
+        base_handle[0] = handle_pair->first;
+        return 0;
+#endif
+#if CONFIG_D3D11VA
+    case AV_HWDEVICE_TYPE_D3D11VA:
+        base_handle[0] = handle_pair->first;
+        base_handle[1] = handle_pair->second;
+        return 0;
+#endif
+#if CONFIG_DXVA2
+    case AV_HWDEVICE_TYPE_DXVA2:
+        base_handle[0] = handle_pair->first;
+        return 0;
+#endif
+    }
+    return AVERROR(EINVAL);
+}
 
 static uint32_t qsv_fourcc_from_pix_fmt(enum AVPixelFormat pix_fmt)
 {
@@ -263,14 +298,14 @@ static void qsv_frames_uninit(AVHWFramesContext *ctx)
 
 #if HAVE_PTHREADS
     pthread_mutex_destroy(&s->session_lock);
-    pthread_cond_destroy(&s->session_cond);
 #endif
 
     av_freep(&s->mem_ids);
     av_freep(&s->surface_ptrs);
     av_freep(&s->surfaces_internal);
     av_freep(&s->handle_pairs_internal);
-    av_frame_unref(&s->realigned_tmp_frame);
+    av_frame_unref(&s->realigned_upload_frame);
+    av_frame_unref(&s->realigned_download_frame);
     av_buffer_unref(&s->child_frames_ref);
 }
 
@@ -710,7 +745,6 @@ static int qsv_frames_init(AVHWFramesContext *ctx)
 
 #if HAVE_PTHREADS
     pthread_mutex_init(&s->session_lock, NULL);
-    pthread_cond_init(&s->session_cond, NULL);
 #endif
 
     return 0;
@@ -990,6 +1024,32 @@ static int map_frame_to_surface(const AVFrame *frame, mfxFrameSurface1 *surface)
     return 0;
 }
 
+static int qsv_internal_session_check_init(AVHWFramesContext *ctx, int upload)
+{
+    QSVFramesContext *s = ctx->internal->priv;
+    atomic_int *inited  = upload ? &s->session_upload_init : &s->session_download_init;
+    mfxSession *session = upload ? &s->session_upload      : &s->session_download;
+    int ret = 0;
+
+    if (atomic_load(inited))
+        return 0;
+
+#if HAVE_PTHREADS
+    pthread_mutex_lock(&s->session_lock);
+#endif
+
+    if (!atomic_load(inited)) {
+        ret = qsv_init_internal_session(ctx, session, upload);
+        atomic_store(inited, 1);
+    }
+
+#if HAVE_PTHREADS
+    pthread_mutex_unlock(&s->session_lock);
+#endif
+
+    return ret;
+}
+
 static int qsv_transfer_data_from(AVHWFramesContext *ctx, AVFrame *dst,
                                   const AVFrame *src)
 {
@@ -1000,42 +1060,46 @@ static int qsv_transfer_data_from(AVHWFramesContext *ctx, AVFrame *dst,
     mfxSyncPoint sync = NULL;
     mfxStatus err;
     int ret = 0;
+    /* download to temp frame if the output is not padded as libmfx requires */
+    AVFrame *tmp_frame = &s->realigned_download_frame;
+    AVFrame *dst_frame;
+    int realigned = 0;
 
-    while (!s->session_download_init && !s->session_download && !ret) {
-#if HAVE_PTHREADS
-        if (pthread_mutex_trylock(&s->session_lock) == 0) {
-#endif
-            if (!s->session_download_init) {
-                ret = qsv_init_internal_session(ctx, &s->session_download, 0);
-                if (s->session_download)
-                    s->session_download_init = 1;
-            }
-#if HAVE_PTHREADS
-            pthread_mutex_unlock(&s->session_lock);
-            pthread_cond_signal(&s->session_cond);
-        } else {
-            pthread_mutex_lock(&s->session_lock);
-            while (!s->session_download_init && !s->session_download) {
-                pthread_cond_wait(&s->session_cond, &s->session_lock);
-            }
-            pthread_mutex_unlock(&s->session_lock);
-        }
-#endif
-    }
-
+    ret = qsv_internal_session_check_init(ctx, 0);
     if (ret < 0)
         return ret;
 
+    /* According to MSDK spec for mfxframeinfo, "Width must be a multiple of 16.
+     * Height must be a multiple of 16 for progressive frame sequence and a
+     * multiple of 32 otherwise.", so allign all frames to 16 before downloading. */
+    if (dst->height & 15 || dst->linesize[0] & 15) {
+        realigned = 1;
+        if (tmp_frame->format != dst->format ||
+            tmp_frame->width  != FFALIGN(dst->linesize[0], 16) ||
+            tmp_frame->height != FFALIGN(dst->height, 16)) {
+            av_frame_unref(tmp_frame);
+
+            tmp_frame->format = dst->format;
+            tmp_frame->width  = FFALIGN(dst->linesize[0], 16);
+            tmp_frame->height = FFALIGN(dst->height, 16);
+            ret = av_frame_get_buffer(tmp_frame, 0);
+            if (ret < 0)
+                return ret;
+        }
+    }
+
+    dst_frame = realigned ? tmp_frame : dst;
+
     if (!s->session_download) {
         if (s->child_frames_ref)
-            return qsv_transfer_data_child(ctx, dst, src);
+            return qsv_transfer_data_child(ctx, dst_frame, src);
 
         av_log(ctx, AV_LOG_ERROR, "Surface download not possible\n");
         return AVERROR(ENOSYS);
     }
 
     out.Info = in->Info;
-    map_frame_to_surface(dst, &out);
+    map_frame_to_surface(dst_frame, &out);
 
     do {
         err = MFXVideoVPP_RunFrameVPPAsync(s->session_download, in, &out, NULL, &sync);
@@ -1056,6 +1120,16 @@ static int qsv_transfer_data_from(AVHWFramesContext *ctx, AVFrame *dst,
         return AVERROR_UNKNOWN;
     }
 
+    if (realigned) {
+        tmp_frame->width  = dst->width;
+        tmp_frame->height = dst->height;
+        ret = av_frame_copy(dst, tmp_frame);
+        tmp_frame->width  = FFALIGN(dst->linesize[0], 16);
+        tmp_frame->height = FFALIGN(dst->height, 16);
+        if (ret < 0)
+            return ret;
+    }
+
     return 0;
 }
 
@@ -1071,32 +1145,11 @@ static int qsv_transfer_data_to(AVHWFramesContext *ctx, AVFrame *dst,
     mfxStatus err;
     int ret = 0;
     /* make a copy if the input is not padded as libmfx requires */
-    AVFrame *tmp_frame = &s->realigned_tmp_frame;
+    AVFrame *tmp_frame = &s->realigned_upload_frame;
     const AVFrame *src_frame;
     int realigned = 0;
 
-
-    while (!s->session_upload_init && !s->session_upload && !ret) {
-#if HAVE_PTHREADS
-        if (pthread_mutex_trylock(&s->session_lock) == 0) {
-#endif
-            if (!s->session_upload_init) {
-                ret = qsv_init_internal_session(ctx, &s->session_upload, 1);
-                if (s->session_upload)
-                    s->session_upload_init = 1;
-            }
-#if HAVE_PTHREADS
-            pthread_mutex_unlock(&s->session_lock);
-            pthread_cond_signal(&s->session_cond);
-        } else {
-            pthread_mutex_lock(&s->session_lock);
-            while (!s->session_upload_init && !s->session_upload) {
-                pthread_cond_wait(&s->session_cond, &s->session_lock);
-            }
-            pthread_mutex_unlock(&s->session_lock);
-        }
-#endif
-    }
+    ret = qsv_internal_session_check_init(ctx, 1);
     if (ret < 0)
         return ret;
 

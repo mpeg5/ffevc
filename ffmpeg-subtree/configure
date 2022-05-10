@@ -2463,7 +2463,6 @@ CONFIG_EXTRA="
     h264pred
     h264qpel
     hevcparse
-    evcparse
     hpeldsp
     huffman
     huffyuvdsp
@@ -3261,7 +3260,6 @@ mpegaudio_parser_select="mpegaudioheader"
 mpegvideo_parser_select="mpegvideo"
 mpeg4video_parser_select="h263dsp mpegvideodec qpeldsp"
 vc1_parser_select="vc1dsp"
-evc_parser_select="evcparse"
 
 # bitstream_filters
 aac_adtstoasc_bsf_select="adts_header mpeg4audio"

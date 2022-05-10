@@ -120,7 +120,7 @@ static int get_profile_id(const char *profile)
     else if (!strcmp(profile, "main"))
         return XEVE_PROFILE_MAIN;
     else
-        return -1;
+        return AVERROR(EINVAL);
 }
 
 /**
@@ -140,7 +140,7 @@ static int get_preset_id(const char *preset)
     else if (!strcmp(preset, "placebo"))
         return XEVE_PRESET_PLACEBO;
     else
-        return -1;
+        return AVERROR(EINVAL);
 }
 
 /**
@@ -156,7 +156,7 @@ static int get_tune_id(const char *tune)
     else if (!strcmp(tune, "zerolatency"))
         return XEVE_TUNE_ZEROLATENCY;
     else
-        return -1;
+        return AVERROR(EINVAL);
 }
 
 /**
@@ -197,7 +197,7 @@ static int get_pix_fmt(enum AVPixelFormat pix_fmt, int *color_format, int *bit_d
         break;
     default:
         *color_format = XEVE_CF_UNKNOWN;
-        return -1;
+        return AVERROR_INVALIDDATA;
     }
 
     return 0;
@@ -355,7 +355,7 @@ static int get_conf(AVCodecContext *avctx, XEVE_CDSC *cdsc)
     ret = xeve_param_default(&cdsc->param);
     if (XEVE_FAILED(ret)) {
         av_log(avctx, AV_LOG_ERROR, "Cannot set_default parameter\n");
-        goto ERR;
+        return AVERROR_EXTERNAL;
     }
 
     /* read options from AVCodecContext */
@@ -380,17 +380,16 @@ static int get_conf(AVCodecContext *avctx, XEVE_CDSC *cdsc)
     } else {
         av_log(avctx, AV_LOG_ERROR, "Incorrect value for maximum number of B frames: (%d) \n"
                "Acceptable values for bf option (maximum number of B frames) are 0,1,3,7 or 15\n", avctx->max_b_frames);
-        goto ERR;
+        return AVERROR_INVALIDDATA;
     }
 
     if (avctx->level >= 0)
         cdsc->param.level_idc = avctx->level;
 
     ret = get_pix_fmt(avctx->pix_fmt, &color_format, &xectx->input_depth);
-
     if (ret != 0) {
         av_log(avctx, AV_LOG_ERROR, "Unsupported pixel format.\n");
-        goto ERR;
+        return AVERROR_INVALIDDATA;
     }
     cdsc->param.cs = XEVE_CS_SET(color_format, xectx->input_depth, 0);
 
@@ -402,7 +401,7 @@ static int get_conf(AVCodecContext *avctx, XEVE_CDSC *cdsc)
     if (avctx->bit_rate > 0) {
         if (avctx->bit_rate / 1000 > INT_MAX || avctx->rc_max_rate / 1000 > INT_MAX) {
             av_log(avctx, AV_LOG_ERROR, "Not supported bitrate bit_rate and rc_max_rate > %d000\n", INT_MAX);
-            goto ERR;
+            return AVERROR_INVALIDDATA;
         }
         cdsc->param.bitrate = (int)(avctx->bit_rate / 1000);
         cdsc->param.rc_type = XEVE_RC_ABR;
@@ -430,7 +429,7 @@ static int get_conf(AVCodecContext *avctx, XEVE_CDSC *cdsc)
     else {
         av_log(avctx, AV_LOG_ERROR, "Unknown encoder profile (%d)\n"
                "Acceptable values for profile option are 0 and 1 (0: baseline profile; 1: main profile)\n", avctx->profile);
-        goto ERR;
+        return AVERROR_INVALIDDATA;
     }
 
     if (xectx->op_preset) { // preset
@@ -444,7 +443,7 @@ static int get_conf(AVCodecContext *avctx, XEVE_CDSC *cdsc)
     ret = xeve_param_ppt(&cdsc->param, xectx->profile_id, xectx->preset_id, xectx->tune_id);
     if (XEVE_FAILED(ret)) {
         av_log(avctx, AV_LOG_ERROR, "Cannot set profile(%d), preset(%d), tune(%d)\n", xectx->profile_id, xectx->preset_id, xectx->tune_id);
-        goto ERR;
+        return AVERROR_EXTERNAL;
     }
 
     /* parse : separated list of key=value parameters and set values for created descriptor (XEVE_CDSC) */
@@ -469,9 +468,6 @@ static int get_conf(AVCodecContext *avctx, XEVE_CDSC *cdsc)
     }
 
     return 0;
-
-ERR:
-    return AVERROR(EINVAL);
 }
 
 /**
@@ -674,7 +670,11 @@ static int check_conf(AVCodecContext *avctx,  XEVE_CDSC *cdsc)
         ret = -1;
     }
 
-    return ret;
+    if(ret == -1) {
+        return AVERROR_INVALIDDATA;
+    }
+
+    return 0;
 }
 
 /**
@@ -705,7 +705,7 @@ static int set_extra_config(AVCodecContext* avctx, XEVE id, XeveContext *ctx)
     if (XEVE_FAILED(ret))
     {
         av_log(avctx, AV_LOG_ERROR, "Failed to set config for sei command info messages\n");
-        return -1;
+        return AVERROR_EXTERNAL;
     }
 
     if(ctx->hash) {
@@ -713,7 +713,7 @@ static int set_extra_config(AVCodecContext* avctx, XEVE id, XeveContext *ctx)
         ret = xeve_config(id, XEVE_CFG_SET_USE_PIC_SIGNATURE, &value, &size);
         if(XEVE_FAILED(ret)) {
             av_log(avctx, AV_LOG_ERROR, "Failed to set config for picture signature\n");
-            return -1;
+            return AVERROR_EXTERNAL;
         }
     }
 
@@ -834,7 +834,7 @@ static int setup_bumping(XEVE id)
     val  = 1;
     size = sizeof(int);
     if(XEVE_FAILED(xeve_config(id, XEVE_CFG_SET_FORCE_OUT, (void *)(&val), &size)))
-        return -1;
+        return AVERROR_EXTERNAL;
 
     return 0;
 }
@@ -850,15 +850,17 @@ static av_cold int libxeve_init(AVCodecContext *avctx)
 {
     XeveContext *xectx = avctx->priv_data;
     unsigned char *bs_buf = NULL;
-    int i, val = 0;
+    int i;
     int shift_h = 0;
     int shift_v = 0;
     XEVE_IMGB *imgb = NULL;
+    int ret = 0;
 
     XEVE_CDSC *cdsc = &(xectx->cdsc);
 
     if(avctx->pix_fmt != AV_PIX_FMT_YUV420P && avctx->pix_fmt != AV_PIX_FMT_YUV420P10) {
         av_log(avctx, AV_LOG_ERROR, "Invalid pixel format: %s\n", av_get_pix_fmt_name(avctx->pix_fmt));
+        ret = AVERROR_INVALIDDATA;
         goto ERR;
     }
 
@@ -866,17 +868,17 @@ static av_cold int libxeve_init(AVCodecContext *avctx)
     bs_buf = (unsigned char *)malloc(MAX_BS_BUF);
     if(bs_buf == NULL) {
         av_log(avctx, AV_LOG_ERROR, "Cannot allocate bitstream buffer\n");
+        ret = AVERROR(ENOMEM);
         goto ERR;
     }
 
     /* read configurations and set values for created descriptor (XEVE_CDSC) */
-    val = get_conf(avctx, cdsc);
-    if (val != XEVE_OK) {
+    if ((ret = get_conf(avctx, cdsc)) != 0) {
         av_log(avctx, AV_LOG_ERROR, "Cannot get configuration\n");
         goto ERR;
     }
 
-    if (check_conf(avctx, cdsc) != 0) {
+    if ((ret = check_conf(avctx, cdsc)) != 0) {
         av_log(avctx, AV_LOG_ERROR, "Invalid configuration\n");
         goto ERR;
     }
@@ -885,10 +887,11 @@ static av_cold int libxeve_init(AVCodecContext *avctx)
     xectx->id = xeve_create(cdsc, NULL);
     if(xectx->id == NULL) {
         av_log(avctx, AV_LOG_ERROR, "Cannot create XEVE encoder\n");
+        ret = AVERROR_EXTERNAL;
         goto ERR;
     }
 
-    if(set_extra_config(avctx, xectx->id, xectx)) {
+    if((ret = set_extra_config(avctx, xectx->id, xectx))!=0) {
         av_log(avctx, AV_LOG_ERROR, "Cannot set extra configuration\n");
         goto ERR;
     }
@@ -896,7 +899,7 @@ static av_cold int libxeve_init(AVCodecContext *avctx)
     xectx->bitb.addr = bs_buf;
     xectx->bitb.bsize = MAX_BS_BUF;
 
-    if(av_pix_fmt_get_chroma_sub_sample(avctx->pix_fmt, &shift_h, &shift_v)) {
+    if((ret = av_pix_fmt_get_chroma_sub_sample(avctx->pix_fmt, &shift_h, &shift_v)) != 0) {
         av_log(avctx, AV_LOG_ERROR, "Failed to get  chroma shift\n");
         goto ERR;
     }
@@ -934,7 +937,7 @@ ERR:
     if(bs_buf)
         free(bs_buf);
 
-    return -1;
+    return ret;
 }
 
 /**
@@ -956,12 +959,12 @@ static int libxeve_encode(AVCodecContext *avctx, AVPacket *pkt,
     int xeve_cs;
     if(avctx == NULL || pkt == NULL || got_packet == NULL) {
         av_log(avctx, AV_LOG_ERROR, "Invalid arguments\n");
-        return -1;
+        return AVERROR(EINVAL);
     }
     xectx = avctx->priv_data;
     if(xectx == NULL) {
         av_log(avctx, AV_LOG_ERROR, "Invalid XEVE context\n");
-        return -1;
+        return AVERROR_INVALIDDATA;
     }
     if(xectx->state == STATE_SKIPPING && frame ) {
         xectx->state = STATE_ENCODING; // Entering encoding process
@@ -978,13 +981,13 @@ static int libxeve_encode(AVCodecContext *avctx, AVPacket *pkt,
         const AVPixFmtDescriptor *pixel_fmt_desc = av_pix_fmt_desc_get (frame->format);
         if(!pixel_fmt_desc) {
             av_log(avctx, AV_LOG_ERROR, "Invalid pixel format descriptor for pixel format: %s\n", av_get_pix_fmt_name(avctx->pix_fmt));
-            return -1;
+            return AVERROR_INVALIDDATA;
         }
 
         xeve_cs = xeve_color_space(avctx->pix_fmt);
         if(xeve_cs != XEVE_CS_YCBCR420 && xeve_cs != XEVE_CS_YCBCR420_10LE) {
             av_log(avctx, AV_LOG_ERROR, "Invalid pixel format: %s\n", av_get_pix_fmt_name(avctx->pix_fmt));
-            return -1;
+            return AVERROR_INVALIDDATA;
         }
 
         {
@@ -1000,7 +1003,7 @@ static int libxeve_encode(AVCodecContext *avctx, AVPacket *pkt,
 
             if(xectx->id == NULL) {
                 av_log(avctx, AV_LOG_ERROR, "Invalid XEVE encoder\n");
-                return -1;
+                return AVERROR_INVALIDDATA;
             }
 
             imgb->ts[0] = frame->pts;
@@ -1010,7 +1013,7 @@ static int libxeve_encode(AVCodecContext *avctx, AVPacket *pkt,
             ret = xeve_push(xectx->id, imgb);
             if(XEVE_FAILED(ret)) {
                 av_log(avctx, AV_LOG_ERROR, "xeve_push() failed\n");
-                return -1;
+                return AVERROR_EXTERNAL;
             }
         }
     }
@@ -1020,7 +1023,7 @@ static int libxeve_encode(AVCodecContext *avctx, AVPacket *pkt,
         ret = xeve_encode(xectx->id, &(xectx->bitb), &(xectx->stat));
         if(XEVE_FAILED(ret)) {
             av_log(avctx, AV_LOG_ERROR, "xeve_encode() failed\n");
-            return -1;
+            return AVERROR_EXTERNAL;
         }
 
         xectx->encod_frames++;
@@ -1061,7 +1064,7 @@ static int libxeve_encode(AVCodecContext *avctx, AVPacket *pkt,
                     break;
                 case XEVE_ST_UNKNOWN:
                     av_log(avctx, AV_LOG_ERROR, "Unknown slice type\n");
-                    return -1;
+                    return AVERROR_INVALIDDATA;
                 }
 
                 ff_side_data_set_encoder_stats(pkt, xectx->stat.qp * FF_QP2LAMBDA, NULL, 0, av_pic_type);
@@ -1076,11 +1079,11 @@ static int libxeve_encode(AVCodecContext *avctx, AVPacket *pkt,
             return 0;
         } else {
             av_log(avctx, AV_LOG_ERROR, "Invalid return value: %d\n", ret);
-            return -1;
+            return AVERROR_EXTERNAL;
         }
     } else {
         av_log(avctx, AV_LOG_ERROR, "Udefined encoder state\n", xectx->state);
-        return -1;
+        return AVERROR_INVALIDDATA;
     }
 
     return 0;

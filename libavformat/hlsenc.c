@@ -21,7 +21,7 @@
  */
 
 #include "config.h"
-#include <float.h>
+#include "config_components.h"
 #include <stdint.h>
 #if HAVE_UNISTD_H
 #include <unistd.h>
@@ -35,11 +35,9 @@
 
 #include "libavutil/avassert.h"
 #include "libavutil/mathematics.h"
-#include "libavutil/parseutils.h"
 #include "libavutil/avstring.h"
 #include "libavutil/bprint.h"
 #include "libavutil/intreadwrite.h"
-#include "libavutil/random_seed.h"
 #include "libavutil/opt.h"
 #include "libavutil/log.h"
 #include "libavutil/time.h"
@@ -53,6 +51,7 @@
 #endif
 #include "hlsplaylist.h"
 #include "internal.h"
+#include "mux.h"
 #include "os_support.h"
 
 typedef enum {
@@ -316,8 +315,7 @@ static int hlsenc_io_close(AVFormatContext *s, AVIOContext **pb, char *filename)
         URLContext *http_url_context = ffio_geturlcontext(*pb);
         av_assert0(http_url_context);
         avio_flush(*pb);
-        ffurl_shutdown(http_url_context, AVIO_FLAG_WRITE);
-        ret = ff_http_get_shutdown_status(http_url_context);
+        ret = ffurl_shutdown(http_url_context, AVIO_FLAG_WRITE);
 #endif
     }
     return ret;

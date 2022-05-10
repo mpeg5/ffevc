@@ -689,10 +689,27 @@ static int check_conf(AVCodecContext *avctx,  XEVE_CDSC *cdsc)
 static int set_extra_config(AVCodecContext* avctx, XEVE id, XeveContext *ctx)
 {
     int ret, size, value;
+    size = 4;
+
+    // embed SEI messages identifying encoder parameters and command line arguments
+    // - 0: off\n"
+    // - 1: emit sei info"
+    //
+    // SEI - Supplemental enhancement information contains information
+    // that is not necessary to decode the samples of coded pictures from VCL NAL units.
+    // Some SEI message information is required to check bitstream conformance
+    // and for output timing decoder conformance.
+    // @see ISO_IEC_23094-1_2020 7.4.3.5
+    // @see ISO_IEC_23094-1_2020 Annex D
+    ret = xeve_config(id, XEVE_CFG_SET_SEI_CMD, &value, &size); // sei_cmd_info
+    if (XEVE_FAILED(ret))
+    {
+        av_log(avctx, AV_LOG_ERROR, "Failed to set config for sei command info messages\n");
+        return -1;
+    }
 
     if(ctx->hash) {
         value = 1;
-        size = 4;
         ret = xeve_config(id, XEVE_CFG_SET_USE_PIC_SIGNATURE, &value, &size);
         if(XEVE_FAILED(ret)) {
             av_log(avctx, AV_LOG_ERROR, "Failed to set config for picture signature\n");
@@ -988,8 +1005,6 @@ static int libxeve_encode(AVCodecContext *avctx, AVPacket *pkt,
 
             imgb->ts[0] = frame->pts;
             imgb->ts[1] = 0;
-            imgb->ts[2] = 0;
-            imgb->ts[3] = 0;
 
             /* push image to encoder */
             ret = xeve_push(xectx->id, imgb);

@@ -42,6 +42,7 @@
 #include "internal.h"
 #include "packet_internal.h"
 #include "codec_internal.h"
+#include "encode.h"
 
 #define MAX_BS_BUF (16*1024*1024)
 
@@ -951,21 +952,15 @@ ERR:
   *
   * @return 0 on success, negative error code on failure
   */
-static int libxeve_encode(AVCodecContext *avctx, AVPacket *pkt,
+static int libxeve_encode(AVCodecContext *avctx, AVPacket *avpkt,
                           const AVFrame *frame, int *got_packet)
 {
     XeveContext *xectx = NULL;
     int  ret = -1;
     int xeve_cs;
-    if(avctx == NULL || pkt == NULL || got_packet == NULL) {
-        av_log(avctx, AV_LOG_ERROR, "Invalid arguments\n");
-        return AVERROR(EINVAL);
-    }
+
     xectx = avctx->priv_data;
-    if(xectx == NULL) {
-        av_log(avctx, AV_LOG_ERROR, "Invalid XEVE context\n");
-        return AVERROR_INVALIDDATA;
-    }
+
     if(xectx->state == STATE_SKIPPING && frame ) {
         xectx->state = STATE_ENCODING; // Entering encoding process
     } else if(xectx->state == STATE_ENCODING && frame == NULL) {
@@ -1038,23 +1033,23 @@ static int libxeve_encode(AVCodecContext *avctx, AVPacket *pkt,
             if(xectx->stat.write > 0) {
                 xectx->bytes_total += xectx->stat.write;
 
-                ret = av_grow_packet(pkt, xectx->stat.write);
+                ret = ff_get_encode_buffer(avctx, avpkt, xectx->stat.write, AV_GET_ENCODE_BUFFER_FLAG_REF);
                 if (ret < 0) {
                     av_log(avctx, AV_LOG_ERROR, "Can't allocate memory for AVPacket data\n");
                     return ret;
                 }
 
-                memcpy(pkt->data, xectx->bitb.addr, xectx->stat.write);
+                memcpy(avpkt->data, xectx->bitb.addr, xectx->stat.write);
 
-                pkt->pts = xectx->bitb.ts[0];
-                pkt->dts = xectx->bitb.ts[1];
+                avpkt->pts = xectx->bitb.ts[0];
+                avpkt->dts = xectx->bitb.ts[1];
 
                 xectx->bitrate += (xectx->stat.write - xectx->stat.sei_size);
 
                 switch(xectx->stat.stype) {
                 case XEVE_ST_I:
                     av_pic_type = AV_PICTURE_TYPE_I;
-                    pkt->flags |= AV_PKT_FLAG_KEY;
+                    avpkt->flags |= AV_PKT_FLAG_KEY;
                     break;
                 case XEVE_ST_P:
                     av_pic_type = AV_PICTURE_TYPE_P;
@@ -1067,7 +1062,7 @@ static int libxeve_encode(AVCodecContext *avctx, AVPacket *pkt,
                     return AVERROR_INVALIDDATA;
                 }
 
-                ff_side_data_set_encoder_stats(pkt, xectx->stat.qp * FF_QP2LAMBDA, NULL, 0, av_pic_type);
+                ff_side_data_set_encoder_stats(avpkt, xectx->stat.qp * FF_QP2LAMBDA, NULL, 0, av_pic_type);
 
                 xectx->bitrate += (xectx->stat.write - xectx->stat.sei_size);
 
@@ -1153,6 +1148,6 @@ FFCodec ff_libxeve_encoder = {
     .priv_data_size     = sizeof(XeveContext),
     .p.priv_class       = &xeve_class,
     .defaults           = xeve_defaults,
-    .p.capabilities     = AV_CODEC_CAP_DELAY | AV_CODEC_CAP_AUTO_THREADS | AV_CODEC_CAP_ENCODER_REORDERED_OPAQUE,
+    .p.capabilities     = AV_CODEC_CAP_DELAY | AV_CODEC_CAP_AUTO_THREADS | AV_CODEC_CAP_DR1,
     .p.wrapper_name     = "libxeve",
 };

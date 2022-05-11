@@ -429,11 +429,6 @@ static const AVClass xevd_class = {
     .version    = LIBAVUTIL_VERSION_INT,
 };
 
-static const FFCodecDefault xevd_defaults[] = {
-    { "b", "0" },
-    { NULL },
-};
-
 FFCodec ff_libxevd_decoder = {
     .p.name             = "evc",
     .p.long_name        = NULL_IF_CONFIG_SMALL("EVC / MPEG-5 Essential Video Coding (EVC)"),
@@ -444,7 +439,6 @@ FFCodec ff_libxevd_decoder = {
     .close              = libxevd_close,
     .priv_data_size     = sizeof(XevdContext),
     .p.priv_class       = &xevd_class,
-    .defaults           = xevd_defaults,
     .p.capabilities     = AV_CODEC_CAP_DELAY | AV_CODEC_CAP_AUTO_THREADS | AV_CODEC_CAP_AVOID_PROBING | AV_CODEC_CAP_DR1,
     .p.wrapper_name     = "libxevd",
 };

@@ -1076,7 +1076,7 @@ static int libxeve_encode(AVCodecContext *avctx, AVPacket *avpkt,
             return AVERROR_EXTERNAL;
         }
     } else {
-        av_log(avctx, AV_LOG_ERROR, "Udefined encoder state\n", xectx->state);
+        av_log(avctx, AV_LOG_ERROR, "Udefined encoder state\n");
         return AVERROR_INVALIDDATA;
     }
 

@@ -865,7 +865,7 @@ static av_cold int libxeve_init(AVCodecContext *avctx)
     }
 
     /* allocate bitstream buffer */
-    bs_buf = (unsigned char *)malloc(MAX_BS_BUF);
+    bs_buf = (unsigned char *)av_malloc(MAX_BS_BUF);
     if(bs_buf == NULL) {
         av_log(avctx, AV_LOG_ERROR, "Cannot allocate bitstream buffer\n");
         ret = AVERROR(ENOMEM);
@@ -935,7 +935,7 @@ static av_cold int libxeve_init(AVCodecContext *avctx)
 
 ERR:
     if(bs_buf)
-        free(bs_buf);
+        av_free(bs_buf);
 
     return ret;
 }
@@ -1096,7 +1096,7 @@ static av_cold int libxeve_close(AVCodecContext *avctx)
     xeve_delete(xectx->id);
 
     if(xectx->bitb.addr)
-        free(xectx->bitb.addr); /* release bitstream buffer */
+        av_free(xectx->bitb.addr); /* release bitstream buffer */
 
     return 0;
 }

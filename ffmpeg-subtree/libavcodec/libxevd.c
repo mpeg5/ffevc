@@ -50,7 +50,6 @@
 
 /**
  * The structure stores all the states associated with the instance of Xeve MPEG-5 EVC decoder
- * The first field is a pointer to an AVClass struct (@see https://ffmpeg.org/doxygen/trunk/structAVClass.html#details).
  */
 typedef struct XevdContext {
     const AVClass *class;
@@ -424,17 +423,9 @@ static av_cold int libxevd_close(AVCodecContext *avctx)
 #define OFFSET(x) offsetof(XevdContext, x)
 #define VD AV_OPT_FLAG_VIDEO_PARAM | AV_OPT_FLAG_DECODING_PARAM
 
-// @todo consider using following options (./ffmpeg --help decoder=libxevd)
-//
-static const AVOption options[] = {
-    { "xevd-params",                "override the xevd configuration using a : separated list of key=value parameters", OFFSET(xevd_opts), AV_OPT_TYPE_DICT,   { 0 }, 0, 0, VD },
-    { NULL }
-};
-
 static const AVClass xevd_class = {
     .class_name = "libxevd",
     .item_name  = av_default_item_name,
-    .option     = options,
     .version    = LIBAVUTIL_VERSION_INT,
 };
 

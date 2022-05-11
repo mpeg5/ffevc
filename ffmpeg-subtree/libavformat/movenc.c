@@ -1382,7 +1382,6 @@ static int mov_write_evcc_tag(AVIOContext *pb, MOVTrack *track)
 
     avio_wb32(pb, 0);
     ffio_wfourcc(pb, "evcC");
-    ff_isom_write_avcc(pb, track->vos_data, track->vos_len);
 
     return update_size(pb, pos);
 }

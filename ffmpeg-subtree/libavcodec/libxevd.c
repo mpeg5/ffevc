@@ -454,6 +454,6 @@ FFCodec ff_libxevd_decoder = {
     .priv_data_size     = sizeof(XevdContext),
     .p.priv_class       = &xevd_class,
     .defaults           = xevd_defaults,
-    .p.capabilities     = AV_CODEC_CAP_DELAY | AV_CODEC_CAP_AUTO_THREADS | AV_CODEC_CAP_AVOID_PROBING,
+    .p.capabilities     = AV_CODEC_CAP_DELAY | AV_CODEC_CAP_AUTO_THREADS | AV_CODEC_CAP_AVOID_PROBING | AV_CODEC_CAP_DR1,
     .p.wrapper_name     = "libxevd",
 };

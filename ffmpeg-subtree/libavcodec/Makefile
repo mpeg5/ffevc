@@ -1099,10 +1099,10 @@ OBJS-$(CONFIG_LIBWEBP_ANIM_ENCODER)       += libwebpenc_common.o libwebpenc_anim
 OBJS-$(CONFIG_LIBX262_ENCODER)            += libx264.o
 OBJS-$(CONFIG_LIBX264_ENCODER)            += libx264.o
 OBJS-$(CONFIG_LIBX265_ENCODER)            += libx265.o
-OBJS-$(CONFIG_LIBXEVE_ENCODER)            += libxeve.o
-OBJS-$(CONFIG_LIBXEVD_DECODER)            += libxevd.o
 OBJS-$(CONFIG_LIBXAVS_ENCODER)            += libxavs.o
 OBJS-$(CONFIG_LIBXAVS2_ENCODER)           += libxavs2.o
+OBJS-$(CONFIG_LIBXEVD_DECODER)            += libxevd.o
+OBJS-$(CONFIG_LIBXEVE_ENCODER)            += libxeve.o
 OBJS-$(CONFIG_LIBXVID_ENCODER)            += libxvid.o
 OBJS-$(CONFIG_LIBZVBI_TELETEXT_DECODER)   += libzvbi-teletextdec.o ass.o
 
@@ -1130,6 +1130,7 @@ OBJS-$(CONFIG_DVAUDIO_PARSER)          += dvaudio_parser.o
 OBJS-$(CONFIG_DVBSUB_PARSER)           += dvbsub_parser.o
 OBJS-$(CONFIG_DVD_NAV_PARSER)          += dvd_nav_parser.o
 OBJS-$(CONFIG_DVDSUB_PARSER)           += dvdsub_parser.o
+OBJS-$(CONFIG_EVC_PARSER)              += evc_parser.o
 OBJS-$(CONFIG_FLAC_PARSER)             += flac_parser.o flacdata.o flac.o
 OBJS-$(CONFIG_G723_1_PARSER)           += g723_1_parser.o
 OBJS-$(CONFIG_G729_PARSER)             += g729_parser.o
@@ -1166,7 +1167,6 @@ OBJS-$(CONFIG_VP9_PARSER)              += vp9_parser.o
 OBJS-$(CONFIG_WEBP_PARSER)             += webp_parser.o
 OBJS-$(CONFIG_XBM_PARSER)              += xbm_parser.o
 OBJS-$(CONFIG_XMA_PARSER)              += xma_parser.o
-OBJS-$(CONFIG_EVC_PARSER)              += evc_parser.o
 
 # bitstream filters
 OBJS-$(CONFIG_AAC_ADTSTOASC_BSF)          += aac_adtstoasc_bsf.o

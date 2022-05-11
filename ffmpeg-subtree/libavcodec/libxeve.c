@@ -67,7 +67,6 @@ typedef enum State {
 
 /**
  * The structure stores all the states associated with the instance of Xeve MPEG-5 EVC encoder
- * The first field is a pointer to an AVClass struct (@see https://ffmpeg.org/doxygen/trunk/structAVClass.html#details).
  */
 typedef struct XeveContext {
     const AVClass *class;

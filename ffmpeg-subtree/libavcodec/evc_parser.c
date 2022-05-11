@@ -518,7 +518,7 @@ static int evc_parse(AVCodecParserContext *s, AVCodecContext *avctx,
     return next;
 }
 
-AVCodecParser ff_evc_parser = {
+const AVCodecParser ff_evc_parser = {
     .codec_ids      = { AV_CODEC_ID_EVC },
     .priv_data_size = sizeof(EVCParserContext),
     .parser_init    = evc_parser_init,

@@ -429,7 +429,7 @@ static const AVClass xevd_class = {
     .version    = LIBAVUTIL_VERSION_INT,
 };
 
-FFCodec ff_libxevd_decoder = {
+const FFCodec ff_libxevd_decoder = {
     .p.name             = "evc",
     .p.long_name        = NULL_IF_CONFIG_SMALL("EVC / MPEG-5 Essential Video Coding (EVC)"),
     .p.type             = AVMEDIA_TYPE_VIDEO,

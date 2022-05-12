@@ -155,12 +155,7 @@ int attribute_align_arg avcodec_open2(AVCodecContext *avctx, const AVCodec *code
 
     avci->buffer_frame = av_frame_alloc();
     avci->buffer_pkt = av_packet_alloc();
-    avci->in_pkt = av_packet_alloc();
-    avci->last_pkt_props = av_packet_alloc();
-    avci->pkt_props = av_fifo_alloc2(1, sizeof(*avci->last_pkt_props),
-                                     AV_FIFO_FLAG_AUTO_GROW);
-    if (!avci->buffer_frame || !avci->buffer_pkt          ||
-        !avci->in_pkt || !avci->last_pkt_props || !avci->pkt_props) {
+    if (!avci->buffer_frame || !avci->buffer_pkt) {
         ret = AVERROR(ENOMEM);
         goto free_and_end;
     }
@@ -288,9 +283,6 @@ FF_ENABLE_DEPRECATION_WARNINGS
         ret = ff_decode_preinit(avctx);
     if (ret < 0)
         goto free_and_end;
-
-    if (!HAVE_THREADS)
-        av_log(avctx, AV_LOG_WARNING, "Warning: not compiled with thread support, using thread emulation\n");
 
     if (CONFIG_FRAME_THREAD_ENCODER && av_codec_is_encoder(avctx->codec)) {
         ret = ff_frame_thread_encoder_init(avctx);

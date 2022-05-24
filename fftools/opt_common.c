@@ -51,6 +51,9 @@
 #include "libavdevice/avdevice.h"
 #include "libavdevice/version.h"
 
+#include "libavfilter/avfilter.h"
+#include "libavfilter/version.h"
+
 #include "libswscale/swscale.h"
 #include "libswscale/version.h"
 
@@ -672,6 +675,8 @@ int show_codecs(void *optctx, const char *opt, const char *arg)
            " ..V... = Video codec\n"
            " ..A... = Audio codec\n"
            " ..S... = Subtitle codec\n"
+           " ..D... = Data codec\n"
+           " ..T... = Attachment codec\n"
            " ...I.. = Intra frame-only codec\n"
            " ....L. = Lossy compression\n"
            " .....S = Lossless compression\n"

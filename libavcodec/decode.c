@@ -32,6 +32,7 @@
 #include "libavutil/bprint.h"
 #include "libavutil/channel_layout.h"
 #include "libavutil/common.h"
+#include "libavutil/fifo.h"
 #include "libavutil/frame.h"
 #include "libavutil/hwcontext.h"
 #include "libavutil/imgutils.h"
@@ -1405,6 +1406,8 @@ int ff_get_buffer(AVCodecContext *avctx, AVFrame *frame, int flags)
     int override_dimensions = 1;
     int ret;
 
+    av_assert0(av_codec_is_decoder(avctx->codec));
+
     if (avctx->codec_type == AVMEDIA_TYPE_VIDEO) {
         if ((unsigned)avctx->width > INT_MAX - STRIDE_ALIGN ||
             (ret = av_image_check_size2(FFALIGN(avctx->width, STRIDE_ALIGN), avctx->height, avctx->max_pixels, AV_PIX_FMT_NONE, 0, avctx)) < 0 || avctx->pix_fmt<0) {
@@ -1525,6 +1528,7 @@ int ff_reget_buffer(AVCodecContext *avctx, AVFrame *frame, int flags)
 
 int ff_decode_preinit(AVCodecContext *avctx)
 {
+    AVCodecInternal *avci = avctx->internal;
     int ret = 0;
 
     /* if the decoder init function was already called previously,
@@ -1602,6 +1606,13 @@ FF_ENABLE_DEPRECATION_WARNINGS
     if (avctx->flags2 & AV_CODEC_FLAG2_EXPORT_MVS) {
         avctx->export_side_data |= AV_CODEC_EXPORT_DATA_MVS;
     }
+
+    avci->in_pkt         = av_packet_alloc();
+    avci->last_pkt_props = av_packet_alloc();
+    avci->pkt_props      = av_fifo_alloc2(1, sizeof(*avci->last_pkt_props),
+                                          AV_FIFO_FLAG_AUTO_GROW);
+    if (!avci->in_pkt || !avci->last_pkt_props || !avci->pkt_props)
+        return AVERROR(ENOMEM);
 
     ret = decode_bsfs_init(avctx);
     if (ret < 0)

@@ -127,7 +127,6 @@ typedef struct BenchmarkTimeStamps {
     int64_t sys_usec;
 } BenchmarkTimeStamps;
 
-static void do_video_stats(OutputStream *ost, int frame_size);
 static BenchmarkTimeStamps get_benchmark_time_stamps(void);
 static int64_t getmaxrss(void);
 static int ifilter_has_all_input_formats(FilterGraph *fg);
@@ -831,11 +830,151 @@ static int init_output_stream_wrapper(OutputStream *ost, AVFrame *frame,
     return ret;
 }
 
+static double psnr(double d)
+{
+    return -10.0 * log10(d);
+}
+
+static void update_video_stats(OutputStream *ost, const AVPacket *pkt, int write_vstats)
+{
+    const uint8_t *sd = av_packet_get_side_data(pkt, AV_PKT_DATA_QUALITY_STATS,
+                                                NULL);
+    AVCodecContext *enc = ost->enc_ctx;
+    int frame_number;
+    double ti1, bitrate, avg_bitrate;
+
+    ost->quality   = sd ? AV_RL32(sd) : -1;
+    ost->pict_type = sd ? sd[4] : AV_PICTURE_TYPE_NONE;
+
+    for (int i = 0; i<FF_ARRAY_ELEMS(ost->error); i++) {
+        if (sd && i < sd[5])
+            ost->error[i] = AV_RL64(sd + 8 + 8*i);
+        else
+            ost->error[i] = -1;
+    }
+
+    if (!write_vstats)
+        return;
+
+    /* this is executed just the first time update_video_stats is called */
+    if (!vstats_file) {
+        vstats_file = fopen(vstats_filename, "w");
+        if (!vstats_file) {
+            perror("fopen");
+            exit_program(1);
+        }
+    }
+
+    frame_number = ost->packets_encoded;
+    if (vstats_version <= 1) {
+        fprintf(vstats_file, "frame= %5d q= %2.1f ", frame_number,
+                ost->quality / (float)FF_QP2LAMBDA);
+    } else  {
+        fprintf(vstats_file, "out= %2d st= %2d frame= %5d q= %2.1f ", ost->file_index, ost->index, frame_number,
+                ost->quality / (float)FF_QP2LAMBDA);
+    }
+
+    if (ost->error[0]>=0 && (enc->flags & AV_CODEC_FLAG_PSNR))
+        fprintf(vstats_file, "PSNR= %6.2f ", psnr(ost->error[0] / (enc->width * enc->height * 255.0 * 255.0)));
+
+    fprintf(vstats_file,"f_size= %6d ", pkt->size);
+    /* compute pts value */
+    ti1 = pkt->dts * av_q2d(ost->mux_timebase);
+    if (ti1 < 0.01)
+        ti1 = 0.01;
+
+    bitrate     = (pkt->size * 8) / av_q2d(enc->time_base) / 1000.0;
+    avg_bitrate = (double)(ost->data_size * 8) / ti1 / 1000.0;
+    fprintf(vstats_file, "s_size= %8.0fkB time= %0.3f br= %7.1fkbits/s avg_br= %7.1fkbits/s ",
+           (double)ost->data_size / 1024, ti1, bitrate, avg_bitrate);
+    fprintf(vstats_file, "type= %c\n", av_get_picture_type_char(ost->pict_type));
+}
+
+static int encode_frame(OutputFile *of, OutputStream *ost, AVFrame *frame)
+{
+    AVCodecContext   *enc = ost->enc_ctx;
+    AVPacket         *pkt = ost->pkt;
+    const char *type_desc = av_get_media_type_string(enc->codec_type);
+    const char    *action = frame ? "encode" : "flush";
+    int ret;
+
+    if (frame) {
+        ost->frames_encoded++;
+
+        if (debug_ts) {
+            av_log(NULL, AV_LOG_INFO, "encoder <- type:%s "
+                   "frame_pts:%s frame_pts_time:%s time_base:%d/%d\n",
+                   type_desc,
+                   av_ts2str(frame->pts), av_ts2timestr(frame->pts, &enc->time_base),
+                   enc->time_base.num, enc->time_base.den);
+        }
+    }
+
+    update_benchmark(NULL);
+
+    ret = avcodec_send_frame(enc, frame);
+    if (ret < 0 && !(ret == AVERROR_EOF && !frame)) {
+        av_log(NULL, AV_LOG_ERROR, "Error submitting %s frame to the encoder\n",
+               type_desc);
+        return ret;
+    }
+
+    while (1) {
+        ret = avcodec_receive_packet(enc, pkt);
+        update_benchmark("%s_%s %d.%d", action, type_desc,
+                         ost->file_index, ost->index);
+
+        /* if two pass, output log on success and EOF */
+        if ((ret >= 0 || ret == AVERROR_EOF) && ost->logfile && enc->stats_out)
+            fprintf(ost->logfile, "%s", enc->stats_out);
+
+        if (ret == AVERROR(EAGAIN)) {
+            av_assert0(frame); // should never happen during flushing
+            return 0;
+        } else if (ret == AVERROR_EOF) {
+            output_packet(of, pkt, ost, 1);
+            return ret;
+        } else if (ret < 0) {
+            av_log(NULL, AV_LOG_ERROR, "%s encoding failed\n", type_desc);
+            return ret;
+        }
+
+        if (debug_ts) {
+            av_log(NULL, AV_LOG_INFO, "encoder -> type:%s "
+                   "pkt_pts:%s pkt_pts_time:%s pkt_dts:%s pkt_dts_time:%s "
+                   "duration:%s duration_time:%s\n",
+                   type_desc,
+                   av_ts2str(pkt->pts), av_ts2timestr(pkt->pts, &enc->time_base),
+                   av_ts2str(pkt->dts), av_ts2timestr(pkt->dts, &enc->time_base),
+                   av_ts2str(pkt->duration), av_ts2timestr(pkt->duration, &enc->time_base));
+        }
+
+        av_packet_rescale_ts(pkt, enc->time_base, ost->mux_timebase);
+
+        if (debug_ts) {
+            av_log(NULL, AV_LOG_INFO, "encoder -> type:%s "
+                   "pkt_pts:%s pkt_pts_time:%s pkt_dts:%s pkt_dts_time:%s "
+                   "duration:%s duration_time:%s\n",
+                   type_desc,
+                   av_ts2str(pkt->pts), av_ts2timestr(pkt->pts, &enc->time_base),
+                   av_ts2str(pkt->dts), av_ts2timestr(pkt->dts, &enc->time_base),
+                   av_ts2str(pkt->duration), av_ts2timestr(pkt->duration, &enc->time_base));
+        }
+
+        if (enc->codec_type == AVMEDIA_TYPE_VIDEO)
+            update_video_stats(ost, pkt, !!vstats_filename);
+
+        ost->packets_encoded++;
+
+        output_packet(of, pkt, ost, 0);
+    }
+
+    av_assert0(0);
+}
+
 static void do_audio_out(OutputFile *of, OutputStream *ost,
                          AVFrame *frame)
 {
-    AVCodecContext *enc = ost->enc_ctx;
-    AVPacket *pkt = ost->pkt;
     int ret;
 
     adjust_frame_pts_to_encoder_tb(of, ost, frame);
@@ -847,47 +986,10 @@ static void do_audio_out(OutputFile *of, OutputStream *ost,
         frame->pts = ost->sync_opts;
     ost->sync_opts = frame->pts + frame->nb_samples;
     ost->samples_encoded += frame->nb_samples;
-    ost->frames_encoded++;
 
-    update_benchmark(NULL);
-    if (debug_ts) {
-        av_log(NULL, AV_LOG_INFO, "encoder <- type:audio "
-               "frame_pts:%s frame_pts_time:%s time_base:%d/%d\n",
-               av_ts2str(frame->pts), av_ts2timestr(frame->pts, &enc->time_base),
-               enc->time_base.num, enc->time_base.den);
-    }
-
-    ret = avcodec_send_frame(enc, frame);
+    ret = encode_frame(of, ost, frame);
     if (ret < 0)
-        goto error;
-
-    while (1) {
-        ret = avcodec_receive_packet(enc, pkt);
-        if (ret == AVERROR(EAGAIN))
-            break;
-        if (ret < 0)
-            goto error;
-
-        update_benchmark("encode_audio %d.%d", ost->file_index, ost->index);
-
-        av_packet_rescale_ts(pkt, enc->time_base, ost->mux_timebase);
-
-        if (debug_ts) {
-            av_log(NULL, AV_LOG_INFO, "encoder -> type:audio "
-                   "pkt_pts:%s pkt_pts_time:%s pkt_dts:%s pkt_dts_time:%s "
-                   "duration:%s duration_time:%s\n",
-                   av_ts2str(pkt->pts), av_ts2timestr(pkt->pts, &enc->time_base),
-                   av_ts2str(pkt->dts), av_ts2timestr(pkt->dts, &enc->time_base),
-                   av_ts2str(pkt->duration), av_ts2timestr(pkt->duration, &enc->time_base));
-        }
-
-        output_packet(of, pkt, ost, 0);
-    }
-
-    return;
-error:
-    av_log(NULL, AV_LOG_FATAL, "Audio encoding failed\n");
-    exit_program(1);
+        exit_program(1);
 }
 
 static void do_subtitle_out(OutputFile *of,
@@ -979,14 +1081,12 @@ static void do_video_out(OutputFile *of,
                          AVFrame *next_picture)
 {
     int ret;
-    AVPacket *pkt = ost->pkt;
     AVCodecContext *enc = ost->enc_ctx;
     AVRational frame_rate;
     int nb_frames, nb0_frames, i;
     double delta, delta0;
     double duration = 0;
     double sync_ipts = AV_NOPTS_VALUE;
-    int frame_size = 0;
     InputStream *ist = NULL;
     AVFilterContext *filter = ost->filter->filter;
 
@@ -1179,121 +1279,17 @@ static void do_video_out(OutputFile *of,
             av_log(NULL, AV_LOG_DEBUG, "Forced keyframe at time %f\n", pts_time);
         }
 
-        update_benchmark(NULL);
-        if (debug_ts) {
-            av_log(NULL, AV_LOG_INFO, "encoder <- type:video "
-                   "frame_pts:%s frame_pts_time:%s time_base:%d/%d\n",
-                   av_ts2str(in_picture->pts), av_ts2timestr(in_picture->pts, &enc->time_base),
-                   enc->time_base.num, enc->time_base.den);
-        }
-
-        ost->frames_encoded++;
-
-        ret = avcodec_send_frame(enc, in_picture);
+        ret = encode_frame(of, ost, in_picture);
         if (ret < 0)
-            goto error;
-        // Make sure Closed Captions will not be duplicated
-        av_frame_remove_side_data(in_picture, AV_FRAME_DATA_A53_CC);
+            exit_program(1);
 
-        while (1) {
-            ret = avcodec_receive_packet(enc, pkt);
-            update_benchmark("encode_video %d.%d", ost->file_index, ost->index);
-            if (ret == AVERROR(EAGAIN))
-                break;
-            if (ret < 0)
-                goto error;
-
-            if (debug_ts) {
-                av_log(NULL, AV_LOG_INFO, "encoder -> type:video "
-                       "pkt_pts:%s pkt_pts_time:%s pkt_dts:%s pkt_dts_time:%s "
-                       "duration:%s duration_time:%s\n",
-                       av_ts2str(pkt->pts), av_ts2timestr(pkt->pts, &enc->time_base),
-                       av_ts2str(pkt->dts), av_ts2timestr(pkt->dts, &enc->time_base),
-                       av_ts2str(pkt->duration), av_ts2timestr(pkt->duration, &enc->time_base));
-            }
-
-            av_packet_rescale_ts(pkt, enc->time_base, ost->mux_timebase);
-
-            if (debug_ts) {
-                av_log(NULL, AV_LOG_INFO, "encoder -> type:video "
-                    "pkt_pts:%s pkt_pts_time:%s pkt_dts:%s pkt_dts_time:%s "
-                    "duration:%s duration_time:%s\n",
-                    av_ts2str(pkt->pts), av_ts2timestr(pkt->pts, &ost->mux_timebase),
-                    av_ts2str(pkt->dts), av_ts2timestr(pkt->dts, &ost->mux_timebase),
-                    av_ts2str(pkt->duration), av_ts2timestr(pkt->duration, &ost->mux_timebase));
-            }
-
-            frame_size = pkt->size;
-            output_packet(of, pkt, ost, 0);
-
-            /* if two pass, output log */
-            if (ost->logfile && enc->stats_out) {
-                fprintf(ost->logfile, "%s", enc->stats_out);
-            }
-        }
         ost->sync_opts++;
         ost->frame_number++;
-
-        if (vstats_filename && frame_size)
-            do_video_stats(ost, frame_size);
     }
 
     av_frame_unref(ost->last_frame);
     if (next_picture)
         av_frame_move_ref(ost->last_frame, next_picture);
-
-    return;
-error:
-    av_log(NULL, AV_LOG_FATAL, "Video encoding failed\n");
-    exit_program(1);
-}
-
-static double psnr(double d)
-{
-    return -10.0 * log10(d);
-}
-
-static void do_video_stats(OutputStream *ost, int frame_size)
-{
-    AVCodecContext *enc;
-    int frame_number;
-    double ti1, bitrate, avg_bitrate;
-
-    /* this is executed just the first time do_video_stats is called */
-    if (!vstats_file) {
-        vstats_file = fopen(vstats_filename, "w");
-        if (!vstats_file) {
-            perror("fopen");
-            exit_program(1);
-        }
-    }
-
-    enc = ost->enc_ctx;
-    if (enc->codec_type == AVMEDIA_TYPE_VIDEO) {
-        frame_number = ost->st->nb_frames;
-        if (vstats_version <= 1) {
-            fprintf(vstats_file, "frame= %5d q= %2.1f ", frame_number,
-                    ost->quality / (float)FF_QP2LAMBDA);
-        } else  {
-            fprintf(vstats_file, "out= %2d st= %2d frame= %5d q= %2.1f ", ost->file_index, ost->index, frame_number,
-                    ost->quality / (float)FF_QP2LAMBDA);
-        }
-
-        if (ost->error[0]>=0 && (enc->flags & AV_CODEC_FLAG_PSNR))
-            fprintf(vstats_file, "PSNR= %6.2f ", psnr(ost->error[0] / (enc->width * enc->height * 255.0 * 255.0)));
-
-        fprintf(vstats_file,"f_size= %6d ", frame_size);
-        /* compute pts value */
-        ti1 = av_stream_get_end_pts(ost->st) * av_q2d(ost->st->time_base);
-        if (ti1 < 0.01)
-            ti1 = 0.01;
-
-        bitrate     = (frame_size * 8) / av_q2d(enc->time_base) / 1000.0;
-        avg_bitrate = (double)(ost->data_size * 8) / ti1 / 1000.0;
-        fprintf(vstats_file, "s_size= %8.0fkB time= %0.3f br= %7.1fkbits/s avg_br= %7.1fkbits/s ",
-               (double)ost->data_size / 1024, ti1, bitrate, avg_bitrate);
-        fprintf(vstats_file, "type= %c\n", av_get_picture_type_char(ost->pict_type));
-    }
 }
 
 static void finish_output_stream(OutputStream *ost)
@@ -1787,59 +1783,9 @@ static void flush_encoders(void)
         if (enc->codec_type != AVMEDIA_TYPE_VIDEO && enc->codec_type != AVMEDIA_TYPE_AUDIO)
             continue;
 
-        for (;;) {
-            const char *desc = NULL;
-            AVPacket *pkt = ost->pkt;
-            int pkt_size;
-
-            switch (enc->codec_type) {
-            case AVMEDIA_TYPE_AUDIO:
-                desc   = "audio";
-                break;
-            case AVMEDIA_TYPE_VIDEO:
-                desc   = "video";
-                break;
-            default:
-                av_assert0(0);
-            }
-
-            update_benchmark(NULL);
-
-            while ((ret = avcodec_receive_packet(enc, pkt)) == AVERROR(EAGAIN)) {
-                ret = avcodec_send_frame(enc, NULL);
-                if (ret < 0) {
-                    av_log(NULL, AV_LOG_FATAL, "%s encoding failed: %s\n",
-                           desc,
-                           av_err2str(ret));
-                    exit_program(1);
-                }
-            }
-
-            update_benchmark("flush_%s %d.%d", desc, ost->file_index, ost->index);
-            if (ret < 0 && ret != AVERROR_EOF) {
-                av_log(NULL, AV_LOG_FATAL, "%s encoding failed: %s\n",
-                       desc,
-                       av_err2str(ret));
-                exit_program(1);
-            }
-            if (ost->logfile && enc->stats_out) {
-                fprintf(ost->logfile, "%s", enc->stats_out);
-            }
-            if (ret == AVERROR_EOF) {
-                output_packet(of, pkt, ost, 1);
-                break;
-            }
-            if (ost->finished & MUXER_FINISHED) {
-                av_packet_unref(pkt);
-                continue;
-            }
-            av_packet_rescale_ts(pkt, enc->time_base, ost->mux_timebase);
-            pkt_size = pkt->size;
-            output_packet(of, pkt, ost, 0);
-            if (ost->enc_ctx->codec_type == AVMEDIA_TYPE_VIDEO && vstats_filename) {
-                do_video_stats(ost, pkt_size);
-            }
-        }
+        ret = encode_frame(of, ost, NULL);
+        if (ret != AVERROR_EOF)
+            exit_program(1);
     }
 }
 

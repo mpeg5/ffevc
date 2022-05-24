@@ -24,7 +24,6 @@
 #include <stdint.h>
 
 #include "libavcodec/avcodec.h"
-#include "libavcodec/bsf.h"
 #include "libavcodec/packet_internal.h"
 
 #include "avformat.h"
@@ -212,7 +211,7 @@ typedef struct FFStream {
      * - encoding: Set by muxer using ff_stream_add_bitstream_filter
      * - decoding: unused
      */
-    AVBSFContext *bsfc;
+    struct AVBSFContext *bsfc;
 
     /**
      * Whether or not check_bitstream should still be run on each packet
@@ -232,7 +231,7 @@ typedef struct FFStream {
      * inited=1/bsf=NULL signals that extracting is not possible (codec not
      * supported) */
     struct {
-        AVBSFContext *bsf;
+        struct AVBSFContext *bsf;
         int inited;
     } extract_extradata;
 
@@ -650,12 +649,6 @@ int ff_alloc_extradata(AVCodecParameters *par, int size);
  * Copies the whilelists from one context to the other
  */
 int ff_copy_whiteblacklists(AVFormatContext *dst, const AVFormatContext *src);
-
-/**
- * Returned by demuxers to indicate that data was consumed but discarded
- * (ignored streams or junk data). The framework will re-call the demuxer.
- */
-#define FFERROR_REDO FFERRTAG('R','E','D','O')
 
 /*
  * A wrapper around AVFormatContext.io_close that should be used

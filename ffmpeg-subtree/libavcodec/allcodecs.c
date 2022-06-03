@@ -790,7 +790,6 @@ extern const FFCodec ff_libx262_encoder;
 #endif
 extern LIBX264_CONST FFCodec ff_libx264_encoder;
 #endif
-
 extern const FFCodec ff_libx264rgb_encoder;
 extern FFCodec ff_libx265_encoder;
 extern const FFCodec ff_libxeve_encoder;

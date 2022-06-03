@@ -171,24 +171,8 @@ static int get_pix_fmt(enum AVPixelFormat pix_fmt, int *color_format, int *bit_d
         *color_format = XEVE_CF_YCBCR420;
         *bit_depth = 8;
         break;
-    case AV_PIX_FMT_YUV422P:
-        *color_format = XEVE_CF_YCBCR422;
-        *bit_depth = 8;
-        break;
-    case AV_PIX_FMT_YUV444P:
-        *color_format = XEVE_CF_YCBCR444;
-        *bit_depth = 8;
-        break;
     case AV_PIX_FMT_YUV420P10:
         *color_format = XEVE_CF_YCBCR420;
-        *bit_depth = 10;
-        break;
-    case AV_PIX_FMT_YUV422P10:
-        *color_format = XEVE_CF_YCBCR422;
-        *bit_depth = 10;
-        break;
-    case AV_PIX_FMT_YUV444P10:
-        *color_format = XEVE_CF_YCBCR444;
         *bit_depth = 10;
         break;
     default:
@@ -446,7 +430,7 @@ static int get_conf(AVCodecContext *avctx, XEVE_CDSC *cdsc)
 
     /* parse : separated list of key=value parameters and set values for created descriptor (XEVE_CDSC) */
     {
-        AVDictionaryEntry *en = NULL;
+        const AVDictionaryEntry *en = NULL;
 
         // Start to parse xeve_params
         while ((en = av_dict_get(xectx->xeve_params, "", en, AV_DICT_IGNORE_SUFFIX))) {
@@ -742,76 +726,6 @@ static int xeve_color_space(enum AVPixelFormat pix_fmt)
 #endif
 
         break;
-    case AV_PIX_FMT_YUV420P12:
-#if AV_HAVE_BIGENDIAN
-        cs = XEVE_CS_SET(XEVE_CF_YCBCR420, 12, 1);
-#else
-        cs = XEVE_CS_YCBCR420_12LE;
-#endif
-
-        break;
-    case AV_PIX_FMT_YUV422P:
-        cs = XEVE_CS_YCBCR422;
-        break;
-    case AV_PIX_FMT_YUV422P10:
-#if AV_HAVE_BIGENDIAN
-        cs = XEVE_CS_SET(XEVE_CF_YCBCR422, 10, 1);
-#else
-        cs = XEVE_CS_YCBCR422_10LE;
-#endif
-
-        break;
-    case AV_PIX_FMT_YUV422P12:
-#if AV_HAVE_BIGENDIAN
-        cs = XEVE_CS_SET(XEVE_CF_YCBCR422, 12, 1);
-#else
-        cs = XEVE_CS_SET(XEVE_CF_YCBCR422, 12, 0);
-#endif
-
-        break;
-    case AV_PIX_FMT_GBRP:
-    case AV_PIX_FMT_GBRP10:
-    case AV_PIX_FMT_GBRP12:
-        cs = XEVE_CF_UNKNOWN;
-        break;
-    case AV_PIX_FMT_YUV444P:
-        cs = XEVE_CF_YCBCR444;
-        break;
-    case AV_PIX_FMT_YUV444P10:
-#if AV_HAVE_BIGENDIAN
-        cs = XEVE_CS_SET(XEVE_CF_YCBCR444, 10, 1);
-#else
-        cs = XEVE_CS_YCBCR444_10LE;
-#endif
-
-        break;
-    case AV_PIX_FMT_YUV444P12:
-#if AV_HAVE_BIGENDIAN
-        cs = XEVE_CS_SET(XEVE_CF_YCBCR444, 12, 1);
-#else
-        cs = XEVE_CS_SET(XEVE_CF_YCBCR444, 12, 0);
-#endif
-
-        break;
-    case AV_PIX_FMT_GRAY8:
-        cs = XEVE_CF_YCBCR400;
-        break;
-    case AV_PIX_FMT_GRAY10:
-#if AV_HAVE_BIGENDIAN
-        cs = XEVE_CS_SET(XEVE_CF_YCBCR400, 10, 1);
-#else
-        cs = XEVE_CS_YCBCR400_10LE;
-#endif
-
-        break;
-    case AV_PIX_FMT_GRAY12:
-#if AV_HAVE_BIGENDIAN
-        cs = XEVE_CS_SET(XEVE_CF_YCBCR400, 12, 1);
-#else
-        cs = XEVE_CS_YCBCR400_12LE;
-#endif
-
-        break;
     default:
         cs = XEVE_CF_UNKNOWN;
         break;
@@ -828,9 +742,8 @@ static int xeve_color_space(enum AVPixelFormat pix_fmt)
  */
 static int setup_bumping(XEVE id)
 {
-    int val, size;
-    val  = 1;
-    size = sizeof(int);
+    int val = 1;
+    int size = sizeof(int);
     if(XEVE_FAILED(xeve_config(id, XEVE_CFG_SET_FORCE_OUT, (void *)(&val), &size)))
         return AVERROR_EXTERNAL;
 
@@ -858,7 +771,7 @@ static av_cold int libxeve_init(AVCodecContext *avctx)
 
     if(avctx->pix_fmt != AV_PIX_FMT_YUV420P && avctx->pix_fmt != AV_PIX_FMT_YUV420P10) {
         av_log(avctx, AV_LOG_ERROR, "Invalid pixel format: %s\n", av_get_pix_fmt_name(avctx->pix_fmt));
-        ret = AVERROR_INVALIDDATA;
+        ret = AVERROR(EINVAL);
         goto ERR;
     }
 

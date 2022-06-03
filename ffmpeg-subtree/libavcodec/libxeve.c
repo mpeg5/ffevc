@@ -79,11 +79,6 @@ typedef struct XeveContext {
 
     State state;        // encoder state (skipping, encoding, bumping)
 
-    int encod_frames;   // num of encoded frames
-    double bytes_total; // encoded bitstream byte size
-    double bitrate;     // bits per second
-    int packet_count;   // num of packets created by encoder
-
     // Chroma subsampling
     int width_luma;
     int height_luma;
@@ -925,11 +920,7 @@ static av_cold int libxeve_init(AVCodecContext *avctx)
     imgb->h[0] = imgb->ah[0] = xectx->height_luma;
     imgb->h[1] = imgb->h[2] = imgb->ah[1] = imgb->ah[2] = xectx->height_chroma;
 
-    xectx->encod_frames = 0;
-    xectx->bytes_total = 0;
     xectx->state = STATE_ENCODING;
-    xectx->packet_count = 0;
-    xectx->bitrate = 0;
 
     return 0;
 
@@ -1020,8 +1011,6 @@ static int libxeve_encode(AVCodecContext *avctx, AVPacket *avpkt,
             return AVERROR_EXTERNAL;
         }
 
-        xectx->encod_frames++;
-
         /* store bitstream */
         if (ret == XEVE_OK_OUT_NOT_AVAILABLE) { // Return OK but picture is not available yet
             *got_packet = 0;
@@ -1030,7 +1019,6 @@ static int libxeve_encode(AVCodecContext *avctx, AVPacket *avpkt,
             int av_pic_type;
 
             if(xectx->stat.write > 0) {
-                xectx->bytes_total += xectx->stat.write;
 
                 ret = ff_get_encode_buffer(avctx, avpkt, xectx->stat.write, AV_GET_ENCODE_BUFFER_FLAG_REF);
                 if (ret < 0) {
@@ -1042,8 +1030,6 @@ static int libxeve_encode(AVCodecContext *avctx, AVPacket *avpkt,
 
                 avpkt->pts = xectx->bitb.ts[0];
                 avpkt->dts = xectx->bitb.ts[1];
-
-                xectx->bitrate += (xectx->stat.write - xectx->stat.sei_size);
 
                 switch(xectx->stat.stype) {
                 case XEVE_ST_I:
@@ -1063,10 +1049,7 @@ static int libxeve_encode(AVCodecContext *avctx, AVPacket *avpkt,
 
                 ff_side_data_set_encoder_stats(avpkt, xectx->stat.qp * FF_QP2LAMBDA, NULL, 0, av_pic_type);
 
-                xectx->bitrate += (xectx->stat.write - xectx->stat.sei_size);
-
                 *got_packet = 1;
-                xectx->packet_count++;
             }
         } else if (ret == XEVE_OK_NO_MORE_FRM) {
             // Return OK but no more frames

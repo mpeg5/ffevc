@@ -3130,7 +3130,6 @@ wmv3_vdpau_hwaccel_select="vc1_vdpau_hwaccel"
 
 # hardware-accelerated codecs
 mediafoundation_deps="mftransform_h MFCreateAlignedMemoryBuffer"
-mediafoundation_extralibs="-lmfplat -lmfuuid -lole32 -lstrmiids"
 omx_deps="libdl pthreads"
 omx_rpi_select="omx"
 qsv_deps="libmfx"
@@ -6566,8 +6565,11 @@ enabled liblensfun        && require_pkg_config liblensfun lensfun lensfun.h lf_
 # Media SDK or Intel Media Server Studio, these don't come with
 # pkg-config support.  Instead, users should make sure that the build
 # can find the libraries and headers through other means.
-enabled libmfx            && { check_pkg_config libmfx libmfx "mfx/mfxvideo.h" MFXInit ||
-                               { require libmfx "mfx/mfxvideo.h" MFXInit "-llibmfx $advapi32_extralibs" && warn "using libmfx without pkg-config"; } }
+enabled libmfx            && { check_pkg_config libmfx "libmfx >= 1.28" "mfx/mfxvideo.h" MFXInit ||
+                               { require libmfx "mfx/mfxvideo.h mfx/mfxdefs.h" MFXInit "-llibmfx $advapi32_extralibs" &&
+                                 { test_cpp_condition mfx/mfxdefs.h "MFX_VERSION >= 1028" || die "ERROR: libmfx version must be >= 1.28"; }  &&
+                                 warn "using libmfx without pkg-config"; } }
+
 if enabled libmfx; then
    check_cc MFX_CODEC_VP9 "mfx/mfxvp9.h mfx/mfxstructures.h" "MFX_CODEC_VP9"
 fi
@@ -6875,6 +6877,9 @@ test_cpp <<EOF && enable uwp && d3d11va_extralibs="-ldxgi -ld3d11"
 #error no family set
 #endif
 EOF
+
+# mediafoundation requires linking directly to mfplat if building for uwp target
+enabled uwp && mediafoundation_extralibs="-lmfplat -lmfuuid -lole32 -lstrmiids" || mediafoundation_extralibs="-lmfuuid -lole32 -lstrmiids"
 
 enabled libdrm &&
     check_pkg_config libdrm_getfb2 libdrm "xf86drmMode.h" drmModeGetFB2

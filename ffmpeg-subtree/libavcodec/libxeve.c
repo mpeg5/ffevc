@@ -205,12 +205,13 @@ static int kbps_str_to_int(char *str)
     char *saveptr = NULL;
     if (strchr(str, 'K') || strchr(str, 'k')) {
         char *tmp = av_strtok(str, "Kk ", &saveptr);
-        kbps = (int)(atof(tmp));
+        kbps = (int)(strtof(tmp, NULL));
     } else if (strchr(str, 'M') || strchr(str, 'm')) {
         char *tmp = av_strtok(str, "Mm ", &saveptr);
-        kbps = (int)(atof(tmp) * 1000);
-    } else
-        kbps = atoi(str);
+        kbps = (int)(strtof(tmp, NULL) * 1000);
+    } else {
+        kbps = strtol(str, NULL, 10);
+    }
 
     return kbps;
 }
@@ -247,7 +248,7 @@ static int parse_xeve_params(AVCodecContext *avctx, const char *key, const char 
         cdsc->param.vbv_bufsize = kbps_str_to_int((char *)value);
         av_log(avctx, AV_LOG_INFO, "VBV buffer size: %dkbits\n", cdsc->param.vbv_bufsize);
     } else if (strcmp(key, "rc-type") == 0 ) {
-        int rc_type = atoi(value);
+        int rc_type = strtol(value, NULL, 10);
         if(rc_type < 0 || rc_type > 2) {
             av_log(avctx, AV_LOG_ERROR, "Rate control type [ 0(rc_off) / 1(CBR) ] bad value: %d\n", rc_type);
             return XEVE_PARAM_BAD_VALUE;
@@ -255,7 +256,7 @@ static int parse_xeve_params(AVCodecContext *avctx, const char *key, const char 
         cdsc->param.rc_type = rc_type;
         av_log(avctx, AV_LOG_INFO, "Rate control type [ 0(rc_off) / 1(CBR) ] : %d\n", rc_type);
     } else if (strcmp(key, "bframes") == 0 ) {
-        int bframes = atoi(value);
+        int bframes = strtol(value, NULL, 10);
         if(bframes < 0) {
             av_log(avctx, AV_LOG_ERROR, "bframes: bad value: %d\n", bframes);
             return XEVE_PARAM_BAD_VALUE;
@@ -296,7 +297,7 @@ static int parse_xeve_params(AVCodecContext *avctx, const char *key, const char 
         cdsc->param.bitrate = kbps_str_to_int((char *)value);
         av_log(avctx, AV_LOG_INFO, "Bitrate = %dkbps\n", cdsc->param.bitrate);
     } else if (strcmp(key, "q") == 0 || strcmp(key, "qp") == 0) {
-        int qp = atoi(value);
+        int qp = strtol(value, NULL, 10);
         if(qp < 0 || qp > 51) {
             av_log(avctx, AV_LOG_ERROR, "Invalid QP value (0~51) :%d\n", qp);
             return XEVE_PARAM_BAD_VALUE;

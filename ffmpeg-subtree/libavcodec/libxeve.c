@@ -343,7 +343,6 @@ static int get_conf(AVCodecContext *avctx, XEVE_CDSC *cdsc)
 {
     XeveContext *xectx = NULL;
     int color_format;
-    int cpu_count = av_cpu_count();
     int ret;
 
     xectx = avctx->priv_data;
@@ -411,6 +410,7 @@ static int get_conf(AVCodecContext *avctx, XEVE_CDSC *cdsc)
     }
 
     if(avctx->thread_count <= 0) {
+        int cpu_count = av_cpu_count();
         cdsc->param.threads = (cpu_count < XEVE_MAX_THREADS) ? cpu_count : XEVE_MAX_THREADS;
     } else if(avctx->thread_count > XEVE_MAX_THREADS)
         cdsc->param.threads = XEVE_MAX_THREADS;

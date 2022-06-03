@@ -37,6 +37,7 @@
 #include "libavutil/pixfmt.h"
 #include "libavutil/time.h"
 #include "libavutil/cpu.h"
+#include "libavutil/avstring.h"
 
 #include "avcodec.h"
 #include "internal.h"
@@ -201,11 +202,12 @@ static int get_pix_fmt(enum AVPixelFormat pix_fmt, int *color_format, int *bit_d
 static int kbps_str_to_int(char *str)
 {
     int kbps = 0;
+    char *saveptr = NULL;
     if (strchr(str, 'K') || strchr(str, 'k')) {
-        char *tmp = strtok(str, "Kk ");
+        char *tmp = av_strtok(str, "Kk ", &saveptr);
         kbps = (int)(atof(tmp));
     } else if (strchr(str, 'M') || strchr(str, 'm')) {
-        char *tmp = strtok(str, "Mm ");
+        char *tmp = av_strtok(str, "Mm ", &saveptr);
         kbps = (int)(atof(tmp) * 1000);
     } else
         kbps = atoi(str);

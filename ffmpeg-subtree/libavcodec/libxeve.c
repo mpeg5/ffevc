@@ -981,8 +981,7 @@ static av_cold int libxeve_close(AVCodecContext *avctx)
 
     xeve_delete(xectx->id);
 
-    if(xectx->bitb.addr)
-        av_free(xectx->bitb.addr); /* release bitstream buffer */
+    av_free(xectx->bitb.addr); /* release bitstream buffer */
 
     return 0;
 }

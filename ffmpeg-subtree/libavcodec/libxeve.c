@@ -851,11 +851,9 @@ static av_cold int libxeve_init(AVCodecContext *avctx)
 static int libxeve_encode(AVCodecContext *avctx, AVPacket *avpkt,
                           const AVFrame *frame, int *got_packet)
 {
-    XeveContext *xectx = NULL;
+    XeveContext *xectx =  avctx->priv_data;
     int  ret = -1;
     int xeve_cs;
-
-    xectx = avctx->priv_data;
 
     if(xectx->state == STATE_SKIPPING && frame ) {
         xectx->state = STATE_ENCODING; // Entering encoding process
@@ -926,9 +924,8 @@ static int libxeve_encode(AVCodecContext *avctx, AVPacket *avpkt,
 
             if(xectx->stat.write > 0) {
 
-                ret = ff_get_encode_buffer(avctx, avpkt, xectx->stat.write, AV_GET_ENCODE_BUFFER_FLAG_REF);
+                ret = ff_get_encode_buffer(avctx, avpkt, xectx->stat.write, 0);
                 if (ret < 0) {
-                    av_log(avctx, AV_LOG_ERROR, "Can't allocate memory for AVPacket data\n");
                     return ret;
                 }
 

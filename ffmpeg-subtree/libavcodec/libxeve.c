@@ -771,48 +771,44 @@ static av_cold int libxeve_init(AVCodecContext *avctx)
 
     if(avctx->pix_fmt != AV_PIX_FMT_YUV420P && avctx->pix_fmt != AV_PIX_FMT_YUV420P10) {
         av_log(avctx, AV_LOG_ERROR, "Invalid pixel format: %s\n", av_get_pix_fmt_name(avctx->pix_fmt));
-        ret = AVERROR(EINVAL);
-        goto ERR;
+        return AVERROR(EINVAL);
     }
 
     /* allocate bitstream buffer */
-    bs_buf = (unsigned char *)av_malloc(MAX_BS_BUF);
+    bs_buf = av_malloc(MAX_BS_BUF);
     if(bs_buf == NULL) {
         av_log(avctx, AV_LOG_ERROR, "Cannot allocate bitstream buffer\n");
-        ret = AVERROR(ENOMEM);
-        goto ERR;
+        return AVERROR(ENOMEM);
     }
+    xectx->bitb.addr = bs_buf;
+    xectx->bitb.bsize = MAX_BS_BUF;
 
     /* read configurations and set values for created descriptor (XEVE_CDSC) */
     if ((ret = get_conf(avctx, cdsc)) != 0) {
         av_log(avctx, AV_LOG_ERROR, "Cannot get configuration\n");
-        goto ERR;
+        return AVERROR(EINVAL);
     }
 
     if ((ret = check_conf(avctx, cdsc)) != 0) {
         av_log(avctx, AV_LOG_ERROR, "Invalid configuration\n");
-        goto ERR;
+        return AVERROR(EINVAL);
     }
 
     /* create encoder */
     xectx->id = xeve_create(cdsc, NULL);
     if(xectx->id == NULL) {
         av_log(avctx, AV_LOG_ERROR, "Cannot create XEVE encoder\n");
-        ret = AVERROR_EXTERNAL;
-        goto ERR;
+        return AVERROR_EXTERNAL;
     }
 
     if((ret = set_extra_config(avctx, xectx->id, xectx))!=0) {
         av_log(avctx, AV_LOG_ERROR, "Cannot set extra configuration\n");
-        goto ERR;
+        return AVERROR(EINVAL);
     }
-
-    xectx->bitb.addr = bs_buf;
-    xectx->bitb.bsize = MAX_BS_BUF;
 
     if((ret = av_pix_fmt_get_chroma_sub_sample(avctx->pix_fmt, &shift_h, &shift_v)) != 0) {
         av_log(avctx, AV_LOG_ERROR, "Failed to get  chroma shift\n");
-        goto ERR;
+        return AVERROR(EINVAL);
     }
 
     // YUV format explanation
@@ -839,12 +835,6 @@ static av_cold int libxeve_init(AVCodecContext *avctx)
     xectx->state = STATE_ENCODING;
 
     return 0;
-
-ERR:
-    if(bs_buf)
-        av_free(bs_buf);
-
-    return ret;
 }
 
 /**
@@ -1046,6 +1036,6 @@ const FFCodec ff_libxeve_encoder = {
     .priv_data_size     = sizeof(XeveContext),
     .p.priv_class       = &xeve_class,
     .defaults           = xeve_defaults,
-    .p.capabilities     = AV_CODEC_CAP_DELAY | AV_CODEC_CAP_AUTO_THREADS | AV_CODEC_CAP_DR1,
+    .p.capabilities     = FF_CODEC_CAP_INIT_CLEANUP | AV_CODEC_CAP_DELAY | AV_CODEC_CAP_AUTO_THREADS | AV_CODEC_CAP_DR1,
     .p.wrapper_name     = "libxeve",
 };

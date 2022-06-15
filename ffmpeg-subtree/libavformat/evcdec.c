@@ -130,7 +130,7 @@ static int parse_nal_units(const AVProbeData *p, EVCParserContext *ev)
 
 static int evc_probe(const AVProbeData *p)
 {
-    EVCParserContext ev = {};
+    EVCParserContext ev = {0};
     int ret = parse_nal_units(p, &ev);
 
     if (ret == 0 && ev.got_sps && ev.got_pps && (ev.got_idr || ev.got_nonidr > 3))

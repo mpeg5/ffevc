@@ -21,10 +21,6 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
-#if defined(_MSC_VER)
-#define XEVD_API_IMPORTS 1
-#endif
-
 #include <float.h>
 #include <stdlib.h>
 

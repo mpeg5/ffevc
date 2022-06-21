@@ -86,6 +86,7 @@ typedef struct XeveContext {
     int preset_id;      // preset of xeve ( fast, medium, slow, placebo)
     int tune_id;        // tune of xeve (psnr, zerolatency)
     int input_depth;    // input bit-depth: 8bit, 10bit
+    int color_format;   // input data color format: currently only XEVE_CF_YCBCR420 is supported
     int hash;           // embed picture signature (HASH) for conformance checking in decoding
 
     /* variables for input parameter */
@@ -98,22 +99,6 @@ typedef struct XeveContext {
     // xeve configuration read from a : separated list of key=value parameters
     AVDictionary *xeve_params;
 } XeveContext;
-
-/**
- * Gets Xeve encoder pre-defined profile
- *
- * @param profile string describing Xeve encoder profile (baseline, main)
- * @return XEVE pre-defined profile on success, negative value on failure
- */
-static int get_profile_id(const char *profile)
-{
-    if (!strcmp(profile, "baseline"))
-        return XEVE_PROFILE_BASELINE;
-    else if (!strcmp(profile, "main"))
-        return XEVE_PROFILE_MAIN;
-    else
-        return AVERROR(EINVAL);
-}
 
 /**
  * Gets Xeve pre-defined preset
@@ -154,29 +139,58 @@ static int get_tune_id(const char *tune)
 /**
  * Convert FFmpeg pixel format (AVPixelFormat) to XEVE pre-defined color format
  *
- * @param[in]  px_fmt pixel format (@see https://ffmpeg.org/doxygen/trunk/pixfmt_8h.html#a9a8e335cf3be472042bc9f0cf80cd4c5)
- * @param[out] color_format XEVE pre-defined color format (@see xeve.h)
- * @param[out] bit_depth bit depth
+ * @param[in]  av_pix_fmt pixel format (@see https://ffmpeg.org/doxygen/trunk/pixfmt_8h.html#a9a8e335cf3be472042bc9f0cf80cd4c5)
+ * @param[out] xeve_col_fmt XEVE pre-defined color format (@see xeve.h)
  *
  * @return 0 on success, negative value on failure
  */
-static int get_pix_fmt(enum AVPixelFormat pix_fmt, int *color_format, int *bit_depth)
+static int xeve_color_fmt(enum AVPixelFormat av_pix_fmt, int *xeve_col_fmt)
 {
-    switch (pix_fmt) {
+    switch (av_pix_fmt) {
     case AV_PIX_FMT_YUV420P:
-        *color_format = XEVE_CF_YCBCR420;
-        *bit_depth = 8;
+        *xeve_col_fmt = XEVE_CF_YCBCR420;
         break;
     case AV_PIX_FMT_YUV420P10:
-        *color_format = XEVE_CF_YCBCR420;
-        *bit_depth = 10;
+        *xeve_col_fmt = XEVE_CF_YCBCR420;
         break;
     default:
-        *color_format = XEVE_CF_UNKNOWN;
+        *xeve_col_fmt = XEVE_CF_UNKNOWN;
         return AVERROR_INVALIDDATA;
     }
 
     return 0;
+}
+
+/**
+ * Convert FFmpeg pixel format (AVPixelFormat) into XEVE pre-defined color space
+ *
+ * @param[in] px_fmt pixel format (@see https://ffmpeg.org/doxygen/trunk/pixfmt_8h.html#a9a8e335cf3be472042bc9f0cf80cd4c5)
+ *
+ * @return XEVE pre-defined color space (@see xeve.h) on success, XEVE_CF_UNKNOWN on failure
+ */
+static int xeve_color_space(enum AVPixelFormat av_pix_fmt)
+{
+    /* color space of input image */
+    int cs = XEVE_CF_UNKNOWN;
+
+    switch (av_pix_fmt) {
+    case AV_PIX_FMT_YUV420P:
+        cs = XEVE_CS_YCBCR420;
+        break;
+    case AV_PIX_FMT_YUV420P10:
+#if AV_HAVE_BIGENDIAN
+        cs = XEVE_CS_SET(XEVE_CF_YCBCR420, 10, 1);
+#else
+        cs = XEVE_CS_YCBCR420_10LE;
+#endif
+
+        break;
+    default:
+        cs = XEVE_CF_UNKNOWN;
+        break;
+    }
+
+    return cs;
 }
 
 static int kbps_str_to_int(char *str)
@@ -227,63 +241,6 @@ static int parse_xeve_params(AVCodecContext *avctx, const char *key, const char 
     } else if (strcmp(key, "vbv-bufsize") == 0 ) {
         cdsc->param.vbv_bufsize = kbps_str_to_int((char *)value);
         av_log(avctx, AV_LOG_INFO, "VBV buffer size: %dkbits\n", cdsc->param.vbv_bufsize);
-    } else if (strcmp(key, "rc-type") == 0 ) {
-        int rc_type = strtol(value, NULL, 10);
-        if(rc_type < 0 || rc_type > 2) {
-            av_log(avctx, AV_LOG_ERROR, "Rate control type [ 0(rc_off) / 1(CBR) ] bad value: %d\n", rc_type);
-            return XEVE_PARAM_BAD_VALUE;
-        }
-        cdsc->param.rc_type = rc_type;
-        av_log(avctx, AV_LOG_INFO, "Rate control type [ 0(rc_off) / 1(CBR) ] : %d\n", rc_type);
-    } else if (strcmp(key, "bframes") == 0 ) {
-        int bframes = strtol(value, NULL, 10);
-        if(bframes < 0) {
-            av_log(avctx, AV_LOG_ERROR, "bframes: bad value: %d\n", bframes);
-            return XEVE_PARAM_BAD_VALUE;
-        }
-        cdsc->param.bframes = bframes;
-        av_log(avctx, AV_LOG_INFO, "bframes : %d\n", bframes);
-    } else if (strcmp(key, "profile") == 0 ) {
-        const char *profile = value;
-        int profile_id;
-        av_log(avctx, AV_LOG_INFO, "profile (baseline, main): %s\n", profile);
-        profile_id = get_profile_id(profile);
-        if (profile_id < 0) {
-            av_log(avctx, AV_LOG_ERROR, "Invalid xeve param: profile(%s)\n", profile);
-            return XEVE_PARAM_BAD_VALUE;
-        }
-        xectx->profile_id = profile_id;
-    } else if (strcmp(key, "preset") == 0 ) {
-        const char *preset = value;
-        int preset_id;
-        av_log(avctx, AV_LOG_INFO, "Preset of xeve (fast, medium, slow, placebo): %s\n", preset);
-        preset_id = get_preset_id(preset);
-        if( preset_id < 0) {
-            av_log(avctx, AV_LOG_ERROR, "Invalid xeve param: preset(%s)\n", preset);
-            return XEVE_PARAM_BAD_VALUE;
-        }
-        xectx->preset_id = preset_id;
-    } else if (strcmp(key, "tune") == 0 ) {
-        const char *tune = value;
-        int tune_id;
-        av_log(avctx, AV_LOG_INFO, "Tune of xeve (psnr, zerolatency): %s\n", tune);
-        tune_id = get_tune_id(tune);
-        if( tune_id < 0) {
-            av_log(avctx, AV_LOG_ERROR, "Invalid xeve param: tune(%s)\n", tune);
-            return XEVE_PARAM_BAD_VALUE;
-        }
-        xectx->tune_id = tune_id;
-    } else if (strcmp(key, "bitrate") == 0 ) {
-        cdsc->param.bitrate = kbps_str_to_int((char *)value);
-        av_log(avctx, AV_LOG_INFO, "Bitrate = %dkbps\n", cdsc->param.bitrate);
-    } else if (strcmp(key, "q") == 0 || strcmp(key, "qp") == 0) {
-        int qp = strtol(value, NULL, 10);
-        if(qp < 0 || qp > 51) {
-            av_log(avctx, AV_LOG_ERROR, "Invalid QP value (0~51) :%d\n", qp);
-            return XEVE_PARAM_BAD_VALUE;
-        }
-        cdsc->param.qp = qp;
-        av_log(avctx, AV_LOG_INFO, "QP value (0~51): %d\n", cdsc->param.qp);
     } else {
         av_log(avctx, AV_LOG_ERROR, "Unknown xeve codec option: %s\n", key);
         return XEVE_PARAM_BAD_NAME;
@@ -322,7 +279,6 @@ static int parse_xeve_params(AVCodecContext *avctx, const char *key, const char 
 static int get_conf(AVCodecContext *avctx, XEVE_CDSC *cdsc)
 {
     XeveContext *xectx = NULL;
-    int color_format;
     int ret;
 
     xectx = avctx->priv_data;
@@ -363,13 +319,6 @@ static int get_conf(AVCodecContext *avctx, XEVE_CDSC *cdsc)
     if (avctx->level >= 0)
         cdsc->param.level_idc = avctx->level;
 
-    ret = get_pix_fmt(avctx->pix_fmt, &color_format, &xectx->input_depth);
-    if (ret != 0) {
-        av_log(avctx, AV_LOG_ERROR, "Unsupported pixel format.\n");
-        return AVERROR_INVALIDDATA;
-    }
-    cdsc->param.cs = XEVE_CS_SET(color_format, xectx->input_depth, 0);
-
     if (avctx->rc_buffer_size > 0) { // VBV buf size
         cdsc->param.vbv_bufsize = (int)(avctx->rc_buffer_size / 1000);
     }
@@ -397,7 +346,15 @@ static int get_conf(AVCodecContext *avctx, XEVE_CDSC *cdsc)
     else
         cdsc->param.threads = avctx->thread_count;
 
-    cdsc->param.cs = XEVE_CS_SET(color_format, cdsc->param.codec_bit_depth, 0);
+
+    xeve_color_fmt(avctx->pix_fmt, &xectx->color_format);
+
+#if AV_HAVE_BIGENDIAN
+    cdsc->param.cs = XEVE_CS_SET(xectx->color_format, cdsc->param.codec_bit_depth, 1);
+#else
+    cdsc->param.cs = XEVE_CS_SET(xectx->color_format, cdsc->param.codec_bit_depth, 0);
+#endif
+
     cdsc->max_bs_buf_size = MAX_BS_BUF;
 
     if(avctx->profile == FF_PROFILE_EVC_BASELINE)
@@ -492,38 +449,6 @@ static int set_extra_config(AVCodecContext* avctx, XEVE id, XeveContext *ctx)
 }
 
 /**
- * Convert FFmpeg pixel format (AVPixelFormat) into XEVE pre-defined color space
- *
- * @param[in] px_fmt pixel format (@see https://ffmpeg.org/doxygen/trunk/pixfmt_8h.html#a9a8e335cf3be472042bc9f0cf80cd4c5)
- *
- * @return XEVE pre-defined color space (@see xeve.h) on success, XEVE_CF_UNKNOWN on failure
- */
-static int xeve_color_space(enum AVPixelFormat pix_fmt)
-{
-    /* color space of input image */
-    int cs = XEVE_CF_UNKNOWN;
-
-    switch (pix_fmt) {
-    case AV_PIX_FMT_YUV420P:
-        cs = XEVE_CS_YCBCR420;
-        break;
-    case AV_PIX_FMT_YUV420P10:
-#if AV_HAVE_BIGENDIAN
-        cs = XEVE_CS_SET(XEVE_CF_YCBCR420, 10, 1);
-#else
-        cs = XEVE_CS_YCBCR420_10LE;
-#endif
-
-        break;
-    default:
-        cs = XEVE_CF_UNKNOWN;
-        break;
-    }
-
-    return cs;
-}
-
-/**
  * @brief Switch encoder to bumping mode
  *
  * @param id XEVE encodec instance identifier
@@ -557,11 +482,6 @@ static av_cold int libxeve_init(AVCodecContext *avctx)
     int ret = 0;
 
     XEVE_CDSC *cdsc = &(xectx->cdsc);
-
-    if(avctx->pix_fmt != AV_PIX_FMT_YUV420P && avctx->pix_fmt != AV_PIX_FMT_YUV420P10) {
-        av_log(avctx, AV_LOG_ERROR, "Invalid pixel format: %s\n", av_get_pix_fmt_name(avctx->pix_fmt));
-        return AVERROR(EINVAL);
-    }
 
     /* allocate bitstream buffer */
     bs_buf = av_malloc(MAX_BS_BUF);
@@ -778,6 +698,12 @@ static av_cold int libxeve_close(AVCodecContext *avctx)
 #define OFFSET(x) offsetof(XeveContext, x)
 #define VE AV_OPT_FLAG_VIDEO_PARAM | AV_OPT_FLAG_ENCODING_PARAM
 
+static const enum AVPixelFormat supported_pixel_formats[] = {
+    AV_PIX_FMT_YUV420P,
+    AV_PIX_FMT_YUV420P10,
+    AV_PIX_FMT_NONE
+};
+
 // Example of using: ./ffmpeg -xeve-params "m=2:q=17"
 // Consider using following options (./ffmpeg --help encoder=libxeve)
 //
@@ -823,4 +749,5 @@ const FFCodec ff_libxeve_encoder = {
     .defaults           = xeve_defaults,
     .p.capabilities     = FF_CODEC_CAP_INIT_CLEANUP | AV_CODEC_CAP_DELAY | AV_CODEC_CAP_AUTO_THREADS | AV_CODEC_CAP_DR1,
     .p.wrapper_name     = "libxeve",
+    .p.pix_fmts         = supported_pixel_formats,
 };

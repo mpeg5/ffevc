@@ -449,24 +449,6 @@ static int get_conf(AVCodecContext *avctx, XEVE_CDSC *cdsc)
 }
 
 /**
- * Check encoder configuration
- *
- * @param[in] avctx context for logger
- * @param[in] cdsc contains all encoder parameters that should be initialized before its use
- *
- * @return 0 on success, negative error code on failure
- */
-static int check_conf(AVCodecContext *avctx,  XEVE_CDSC *cdsc)
-{
-    int ret = xeve_param_check(&cdsc->param);
-    if(ret == -1) {
-        return AVERROR_INVALIDDATA;
-    }
-
-    return 0;
-}
-
-/**
  * Set XEVE_CFG_SET_USE_PIC_SIGNATURE for encoder
  *
  * @param[in] logger context
@@ -596,7 +578,7 @@ static av_cold int libxeve_init(AVCodecContext *avctx)
         return AVERROR(EINVAL);
     }
 
-    if ((ret = check_conf(avctx, cdsc)) != 0) {
+    if ((ret = xeve_param_check(&cdsc->param)) != 0) {
         av_log(avctx, AV_LOG_ERROR, "Invalid configuration\n");
         return AVERROR(EINVAL);
     }

@@ -310,6 +310,7 @@ enum AVCodecID {
     AV_CODEC_ID_GEM,
     AV_CODEC_ID_VBN,
     AV_CODEC_ID_JPEGXL,
+    AV_CODEC_ID_QOI,
     AV_CODEC_ID_EVC,
 
     /* various PCM "codecs" */

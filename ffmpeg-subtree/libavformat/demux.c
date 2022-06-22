@@ -1235,10 +1235,14 @@ static int read_frame_internal(AVFormatContext *s, AVPacket *pkt)
     FFFormatContext *const si = ffformatcontext(s);
     int ret, got_packet = 0;
     AVDictionary *metadata = NULL;
+    int empty = 0;
 
     while (!got_packet && !si->parse_queue.head) {
         AVStream *st;
         FFStream *sti;
+
+        if (empty > 1)
+            return AVERROR(EAGAIN);
 
         /* read next packet */
         ret = ff_read_packet(s, pkt);
@@ -1330,6 +1334,8 @@ static int read_frame_internal(AVFormatContext *s, AVPacket *pkt)
             }
             got_packet = 1;
         } else if (st->discard < AVDISCARD_ALL) {
+            if (pkt->size == 0)
+                empty ++;
             if ((ret = parse_packet(s, pkt, pkt->stream_index, 0)) < 0)
                 return ret;
             st->codecpar->sample_rate = sti->avctx->sample_rate;
@@ -2609,8 +2615,10 @@ int avformat_find_stream_info(AVFormatContext *ic, AVDictionary **options)
         /* NOTE: A new stream can be added there if no header in file
          * (AVFMTCTX_NOHEADER). */
         ret = read_frame_internal(ic, pkt1);
-        if (ret == AVERROR(EAGAIN))
+        if (ret == AVERROR(EAGAIN)) {
+            read_size += 100;
             continue;
+        }
 
         if (ret < 0) {
             /* EOF or error*/

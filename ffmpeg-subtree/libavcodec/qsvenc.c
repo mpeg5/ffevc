@@ -828,8 +828,13 @@ static int init_video_param(AVCodecContext *avctx, QSVEncContext *q)
 
             if (q->b_strategy >= 0)
                 q->extco2.BRefType = q->b_strategy ? MFX_B_REF_PYRAMID : MFX_B_REF_OFF;
-            if (avctx->qmin >= 0 && avctx->qmax >= 0 && avctx->qmin > avctx->qmax) {
-                av_log(avctx, AV_LOG_ERROR, "qmin and or qmax are set but invalid, please make sure min <= max\n");
+            if ((avctx->qmin >= 0 && avctx->qmax >= 0 && avctx->qmin > avctx->qmax) ||
+                (q->max_qp_i >= 0 && q->min_qp_i >= 0 && q->min_qp_i > q->max_qp_i) ||
+                (q->max_qp_p >= 0 && q->min_qp_p >= 0 && q->min_qp_p > q->max_qp_p) ||
+                (q->max_qp_b >= 0 && q->min_qp_b >= 0 && q->min_qp_b > q->max_qp_b)) {
+                av_log(avctx, AV_LOG_ERROR,
+                       "qmin and or qmax are set but invalid,"
+                       " please make sure min <= max\n");
                 return AVERROR(EINVAL);
             }
             if (avctx->qmin >= 0) {
@@ -840,6 +845,18 @@ static int init_video_param(AVCodecContext *avctx, QSVEncContext *q)
                 q->extco2.MaxQPI = avctx->qmax > 51 ? 51 : avctx->qmax;
                 q->extco2.MaxQPP = q->extco2.MaxQPB = q->extco2.MaxQPI;
             }
+            if (q->min_qp_i >= 0)
+                q->extco2.MinQPI = q->min_qp_i > 51 ? 51 : q->min_qp_i;
+            if (q->max_qp_i >= 0)
+                q->extco2.MaxQPI = q->max_qp_i > 51 ? 51 : q->max_qp_i;
+            if (q->min_qp_p >= 0)
+                q->extco2.MinQPP = q->min_qp_p > 51 ? 51 : q->min_qp_p;
+            if (q->max_qp_p >= 0)
+                q->extco2.MaxQPP = q->max_qp_p > 51 ? 51 : q->max_qp_p;
+            if (q->min_qp_b >= 0)
+                q->extco2.MinQPB = q->min_qp_b > 51 ? 51 : q->min_qp_b;
+            if (q->max_qp_b >= 0)
+                q->extco2.MaxQPB = q->max_qp_b > 51 ? 51 : q->max_qp_b;
             if (q->mbbrc >= 0)
                 q->extco2.MBBRC = q->mbbrc ? MFX_CODINGOPTION_ON : MFX_CODINGOPTION_OFF;
 
@@ -1373,15 +1390,29 @@ static void free_encoder_ctrl_payloads(mfxEncodeCtrl* enc_ctrl)
     }
 }
 
+static void free_encoder_ctrl_extparam(mfxEncodeCtrl* enc_ctrl)
+{
+    if (enc_ctrl) {
+        int i;
+        for (i = 0; i < enc_ctrl->NumExtParam && i < QSV_MAX_ENC_EXTPARAM; i++) {
+            if (enc_ctrl->ExtParam[i])
+                av_freep(&(enc_ctrl->ExtParam[i]));
+        }
+        enc_ctrl->NumExtParam = 0;
+    }
+}
+
 static void clear_unused_frames(QSVEncContext *q)
 {
     QSVFrame *cur = q->work_frames;
     while (cur) {
         if (cur->used && !cur->surface.Data.Locked) {
             free_encoder_ctrl_payloads(&cur->enc_ctrl);
+            free_encoder_ctrl_extparam(&cur->enc_ctrl);
             //do not reuse enc_ctrl from previous frame
             memset(&cur->enc_ctrl, 0, sizeof(cur->enc_ctrl));
             cur->enc_ctrl.Payload = cur->payloads;
+            cur->enc_ctrl.ExtParam = cur->extparam;
             if (cur->frame->format == AV_PIX_FMT_QSV) {
                 av_frame_unref(cur->frame);
             }
@@ -1419,6 +1450,7 @@ static int get_free_frame(QSVEncContext *q, QSVFrame **f)
         return AVERROR(ENOMEM);
     }
     frame->enc_ctrl.Payload = frame->payloads;
+    frame->enc_ctrl.ExtParam = frame->extparam;
     *last = frame;
 
     *f = frame;
@@ -1520,6 +1552,67 @@ static void print_interlace_msg(AVCodecContext *avctx, QSVEncContext *q)
     }
 }
 
+static int set_roi_encode_ctrl(AVCodecContext *avctx, const AVFrame *frame,
+                               mfxEncodeCtrl *enc_ctrl)
+{
+    AVFrameSideData *sd = NULL;
+    int mb_size;
+
+    if (avctx->codec_id == AV_CODEC_ID_H264)
+        mb_size = 16;
+    else if (avctx->codec_id == AV_CODEC_ID_H265)
+        mb_size = 32;
+    else
+        return 0;
+
+    if (frame)
+        sd = av_frame_get_side_data(frame, AV_FRAME_DATA_REGIONS_OF_INTEREST);
+
+    if (sd) {
+        mfxExtEncoderROI *enc_roi = NULL;
+        AVRegionOfInterest *roi;
+        uint32_t roi_size;
+        int nb_roi, i;
+
+        roi = (AVRegionOfInterest *)sd->data;
+        roi_size = roi->self_size;
+        if (!roi_size || sd->size % roi_size) {
+            av_log(avctx, AV_LOG_ERROR, "Invalid ROI Data.\n");
+            return AVERROR(EINVAL);
+        }
+        nb_roi = sd->size / roi_size;
+        if (nb_roi > QSV_MAX_ROI_NUM) {
+            av_log(avctx, AV_LOG_WARNING, "More ROIs set than "
+                    "supported by driver (%d > %d).\n",
+                    nb_roi, QSV_MAX_ROI_NUM);
+            nb_roi = QSV_MAX_ROI_NUM;
+        }
+
+        enc_roi = av_mallocz(sizeof(*enc_roi));
+        if (!enc_roi)
+            return AVERROR(ENOMEM);
+        enc_roi->Header.BufferId = MFX_EXTBUFF_ENCODER_ROI;
+        enc_roi->Header.BufferSz = sizeof(*enc_roi);
+        enc_roi->NumROI  = nb_roi;
+        enc_roi->ROIMode = MFX_ROI_MODE_QP_DELTA;
+        for (i = 0; i < nb_roi; i++) {
+            roi = (AVRegionOfInterest *)(sd->data + roi_size * i);
+            enc_roi->ROI[i].Top    = FFALIGN(roi->top, mb_size);
+            enc_roi->ROI[i].Bottom = FFALIGN(roi->bottom, mb_size);
+            enc_roi->ROI[i].Left   = FFALIGN(roi->left, mb_size);
+            enc_roi->ROI[i].Right  = FFALIGN(roi->right, mb_size);
+            enc_roi->ROI[i].DeltaQP =
+                roi->qoffset.num * 51 / roi->qoffset.den;
+            av_log(avctx, AV_LOG_DEBUG, "ROI: (%d,%d)-(%d,%d) -> %+d.\n",
+                   roi->top, roi->left, roi->bottom, roi->right,
+                   enc_roi->ROI[i].DeltaQP);
+        }
+        enc_ctrl->ExtParam[enc_ctrl->NumExtParam] = (mfxExtBuffer *)enc_roi;
+        enc_ctrl->NumExtParam++;
+    }
+    return 0;
+}
+
 static int encode_frame(AVCodecContext *avctx, QSVEncContext *q,
                         const AVFrame *frame)
 {
@@ -1580,6 +1673,14 @@ static int encode_frame(AVCodecContext *avctx, QSVEncContext *q,
 
     if (q->set_encode_ctrl_cb) {
         q->set_encode_ctrl_cb(avctx, frame, &qsv_frame->enc_ctrl);
+    }
+
+    if ((avctx->codec_id == AV_CODEC_ID_H264 ||
+         avctx->codec_id == AV_CODEC_ID_H265) &&
+         enc_ctrl && QSV_RUNTIME_VERSION_ATLEAST(q->ver, 1, 8)) {
+        ret = set_roi_encode_ctrl(avctx, frame, enc_ctrl);
+        if (ret < 0)
+            goto free;
     }
 
     pkt.sync = av_mallocz(sizeof(*pkt.sync));
@@ -1704,6 +1805,7 @@ int ff_qsv_enc_close(AVCodecContext *avctx, QSVEncContext *q)
     while (cur) {
         q->work_frames = cur->next;
         av_frame_free(&cur->frame);
+        free_encoder_ctrl_extparam(&cur->enc_ctrl);
         free_encoder_ctrl_payloads(&cur->enc_ctrl);
         av_freep(&cur);
         cur = q->work_frames;

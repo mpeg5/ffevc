@@ -624,21 +624,21 @@ The parameters set for each target are as follows.
 @var{pal}:
 -f vcd -muxrate 1411200 -muxpreload 0.44 -packetsize 2324
 -s 352x288 -r 25
--codec:v mpeg1video -g 15 -b:v 1150k -maxrate:v 1150v -minrate:v 1150k -bufsize:v 327680
+-codec:v mpeg1video -g 15 -b:v 1150k -maxrate:v 1150k -minrate:v 1150k -bufsize:v 327680
 -ar 44100 -ac 2
 -codec:a mp2 -b:a 224k
 
 @var{ntsc}:
 -f vcd -muxrate 1411200 -muxpreload 0.44 -packetsize 2324
 -s 352x240 -r 30000/1001
--codec:v mpeg1video -g 18 -b:v 1150k -maxrate:v 1150v -minrate:v 1150k -bufsize:v 327680
+-codec:v mpeg1video -g 18 -b:v 1150k -maxrate:v 1150k -minrate:v 1150k -bufsize:v 327680
 -ar 44100 -ac 2
 -codec:a mp2 -b:a 224k
 
 @var{film}:
 -f vcd -muxrate 1411200 -muxpreload 0.44 -packetsize 2324
 -s 352x240 -r 24000/1001
--codec:v mpeg1video -g 18 -b:v 1150k -maxrate:v 1150v -minrate:v 1150k -bufsize:v 327680
+-codec:v mpeg1video -g 18 -b:v 1150k -maxrate:v 1150k -minrate:v 1150k -bufsize:v 327680
 -ar 44100 -ac 2
 -codec:a mp2 -b:a 224k
 @end example
@@ -1618,12 +1618,14 @@ it may cause packet loss.
 It is useful for when flow speed of output packets is important, such as live streaming.
 @item -re (@emph{input})
 Read input at native frame rate. This is equivalent to setting @code{-readrate 1}.
-@item -vsync @var{parameter}
-Video sync method.
+@item -vsync @var{parameter} (@emph{global})
+@itemx -fps_mode[:@var{stream_specifier}] @var{parameter} (@emph{output,per-stream})
+Set video sync method / framerate mode. vsync is applied to all output video streams
+but can be overridden for a stream by setting fps_mode. vsync is deprecated and will be
+removed in the future.
 
-For compatibility reasons some of the values can be specified as numbers (shown
-in parentheses in the following table). This is deprecated and will stop working
-in the future.
+For compatibility reasons some of the values for vsync can be specified as numbers (shown
+in parentheses in the following table).
 
 @table @option
 @item passthrough (0)

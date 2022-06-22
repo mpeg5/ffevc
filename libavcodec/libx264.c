@@ -37,10 +37,6 @@
 #include "atsc_a53.h"
 #include "sei.h"
 
-#if defined(_MSC_VER)
-#define X264_API_IMPORTS 1
-#endif
-
 #include <x264.h>
 #include <float.h>
 #include <math.h>
@@ -944,7 +940,9 @@ static av_cold int X264_init(AVCodecContext *avctx)
                     return ret;
             }
             p= strchr(p, ':');
-            p+=!!p;
+            if (p) {
+                ++p;
+            }
         }
     }
 

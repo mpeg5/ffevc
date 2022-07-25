@@ -311,6 +311,8 @@ enum AVCodecID {
     AV_CODEC_ID_VBN,
     AV_CODEC_ID_JPEGXL,
     AV_CODEC_ID_QOI,
+    AV_CODEC_ID_PHM,
+    AV_CODEC_ID_RADIANCE_HDR,
     AV_CODEC_ID_EVC,
 
     /* various PCM "codecs" */

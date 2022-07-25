@@ -2886,11 +2886,14 @@ static int matroska_parse_tracks(AVFormatContext *s)
                 mkv_stereo_mode_display_mul(track->video.stereo_mode, &display_width_mul, &display_height_mul);
 
             if (track->video.display_unit < MATROSKA_VIDEO_DISPLAYUNIT_UNKNOWN) {
-                av_reduce(&st->sample_aspect_ratio.num,
-                          &st->sample_aspect_ratio.den,
-                          st->codecpar->height * track->video.display_width  * display_width_mul,
-                          st->codecpar->width  * track->video.display_height * display_height_mul,
-                          INT_MAX);
+                if (track->video.display_width && track->video.display_height &&
+                    st->codecpar->height  < INT64_MAX / track->video.display_width  / display_width_mul &&
+                    st->codecpar->width   < INT64_MAX / track->video.display_height / display_height_mul)
+                    av_reduce(&st->sample_aspect_ratio.num,
+                              &st->sample_aspect_ratio.den,
+                              st->codecpar->height * track->video.display_width  * display_width_mul,
+                              st->codecpar->width  * track->video.display_height * display_height_mul,
+                              INT_MAX);
             }
             if (st->codecpar->codec_id != AV_CODEC_ID_HEVC)
                 sti->need_parsing = AVSTREAM_PARSE_HEADERS;
@@ -2947,10 +2950,10 @@ static int matroska_parse_tracks(AVFormatContext *s)
             st->codecpar->codec_tag   = fourcc;
             st->codecpar->sample_rate = track->audio.out_samplerate;
             // channel layout may be already set by codec private checks above
-            if (st->codecpar->ch_layout.order == AV_CHANNEL_ORDER_NATIVE &&
-                !st->codecpar->ch_layout.u.mask)
+            if (!av_channel_layout_check(&st->codecpar->ch_layout)) {
                 st->codecpar->ch_layout.order = AV_CHANNEL_ORDER_UNSPEC;
-            st->codecpar->ch_layout.nb_channels = track->audio.channels;
+                st->codecpar->ch_layout.nb_channels = track->audio.channels;
+            }
             if (!st->codecpar->bits_per_coded_sample)
                 st->codecpar->bits_per_coded_sample = track->audio.bitdepth;
             if (st->codecpar->codec_id == AV_CODEC_ID_MP3 ||

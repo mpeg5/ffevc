@@ -2356,6 +2356,8 @@ TOOLCHAIN_FEATURES="
 "
 
 TYPES_LIST="
+    DPI_AWARENESS_CONTEXT
+    IDXGIOutput5
     kCMVideoCodecType_HEVC
     kCMVideoCodecType_HEVCWithAlpha
     kCMVideoCodecType_VP9
@@ -3030,6 +3032,8 @@ av1_nvdec_hwaccel_deps="nvdec CUVIDAV1PICPARAMS"
 av1_nvdec_hwaccel_select="av1_decoder"
 av1_vaapi_hwaccel_deps="vaapi VADecPictureParameterBufferAV1_bit_depth_idx"
 av1_vaapi_hwaccel_select="av1_decoder"
+av1_vdpau_hwaccel_deps="vdpau VdpPictureInfoAV1"
+av1_vdpau_hwaccel_select="av1_decoder"
 h263_vaapi_hwaccel_deps="vaapi"
 h263_vaapi_hwaccel_select="h263_decoder"
 h263_videotoolbox_hwaccel_deps="videotoolbox"
@@ -3144,6 +3148,8 @@ qsvvpp_select="qsv"
 vaapi_encode_deps="vaapi"
 v4l2_m2m_deps="linux_videodev2_h sem_timedwait"
 
+chromakey_cuda_filter_deps="ffnvcodec"
+chromakey_cuda_filter_deps_any="cuda_nvcc cuda_llvm"
 hwupload_cuda_filter_deps="ffnvcodec"
 scale_npp_filter_deps="ffnvcodec libnpp"
 scale2ref_npp_filter_deps="ffnvcodec libnpp"
@@ -3155,6 +3161,8 @@ transpose_npp_filter_deps="ffnvcodec libnpp"
 overlay_cuda_filter_deps="ffnvcodec"
 overlay_cuda_filter_deps_any="cuda_nvcc cuda_llvm"
 sharpen_npp_filter_deps="ffnvcodec libnpp"
+
+ddagrab_filter_deps="d3d11va IDXGIOutput1"
 
 amf_deps_any="libdl LoadLibrary"
 nvenc_deps="ffnvcodec"
@@ -3329,6 +3337,7 @@ libcodec2_encoder_deps="libcodec2"
 libdav1d_decoder_deps="libdav1d"
 libdav1d_decoder_select="atsc_a53"
 libdavs2_decoder_deps="libdavs2"
+libdavs2_decoder_select="avs2_parser"
 libfdk_aac_decoder_deps="libfdk_aac"
 libfdk_aac_encoder_deps="libfdk_aac"
 libfdk_aac_encoder_select="audio_frame_queue"
@@ -3447,7 +3456,7 @@ mlp_demuxer_select="mlp_parser"
 mmf_muxer_select="riffenc"
 mov_demuxer_select="iso_media riffdec"
 mov_demuxer_suggest="zlib"
-mov_muxer_select="iso_media riffenc rtpenc_chain vp9_superframe_bsf aac_adtstoasc_bsf"
+mov_muxer_select="iso_media riffenc rtpenc_chain vp9_superframe_bsf aac_adtstoasc_bsf ac3_parser"
 mp3_demuxer_select="mpegaudio_parser"
 mp3_muxer_select="mpegaudioheader"
 mp4_muxer_select="mov_muxer"
@@ -3709,6 +3718,7 @@ prewitt_opencl_filter_deps="opencl"
 procamp_vaapi_filter_deps="vaapi"
 program_opencl_filter_deps="opencl"
 pullup_filter_deps="gpl"
+remap_opencl_filter_deps="opencl"
 removelogo_filter_deps="avcodec avformat swscale"
 repeatfields_filter_deps="gpl"
 roberts_opencl_filter_deps="opencl"
@@ -3815,7 +3825,7 @@ avfilter_extralibs="pthreads_extralibs"
 avutil_extralibs="d3d11va_extralibs nanosleep_extralibs pthreads_extralibs vaapi_drm_extralibs vaapi_x11_extralibs vdpau_x11_extralibs"
 
 # programs
-ffmpeg_deps="avcodec avfilter avformat"
+ffmpeg_deps="avcodec avfilter avformat threads"
 ffmpeg_select="aformat_filter anull_filter atrim_filter format_filter
                hflip_filter null_filter
                transpose_filter trim_filter vflip_filter"
@@ -6391,13 +6401,17 @@ check_struct "sys/time.h sys/resource.h" "struct rusage" ru_maxrss
 check_type "windows.h dxva.h" "DXVA_PicParams_AV1" -DWINAPI_FAMILY=WINAPI_FAMILY_DESKTOP_APP -D_CRT_BUILD_DESKTOP_APP=0
 check_type "windows.h dxva.h" "DXVA_PicParams_HEVC" -DWINAPI_FAMILY=WINAPI_FAMILY_DESKTOP_APP -D_CRT_BUILD_DESKTOP_APP=0
 check_type "windows.h dxva.h" "DXVA_PicParams_VP9" -DWINAPI_FAMILY=WINAPI_FAMILY_DESKTOP_APP -D_CRT_BUILD_DESKTOP_APP=0
+check_type "windows.h dxgi1_2.h" "IDXGIOutput1"
+check_type "windows.h dxgi1_5.h" "IDXGIOutput5"
 check_type "windows.h d3d11.h" "ID3D11VideoDecoder"
 check_type "windows.h d3d11.h" "ID3D11VideoContext"
+check_type "windows.h" "DPI_AWARENESS_CONTEXT" -D_WIN32_WINNT=0x0A00
 check_type "d3d9.h dxva2api.h" DXVA2_ConfigPictureDecode -D_WIN32_WINNT=0x0602
 check_func_headers mfapi.h MFCreateAlignedMemoryBuffer -lmfplat
 
 check_type "vdpau/vdpau.h" "VdpPictureInfoHEVC"
 check_type "vdpau/vdpau.h" "VdpPictureInfoVP9"
+check_type "vdpau/vdpau.h" "VdpPictureInfoAV1"
 
 if [ -z "$nvccflags" ]; then
     nvccflags=$nvccflags_default
@@ -6665,7 +6679,7 @@ enabled libvpx            && {
 enabled libwebp           && {
     enabled libwebp_encoder      && require_pkg_config libwebp "libwebp >= 0.2.0" webp/encode.h WebPGetEncoderVersion
     enabled libwebp_anim_encoder && check_pkg_config libwebp_anim_encoder "libwebpmux >= 0.4.0" webp/mux.h WebPAnimEncoderOptionsInit; }
-enabled libx264           && check_pkg_config libx264 x264 "stdint.h x264.h" x264_encoder_encode &&
+enabled libx264           && require_pkg_config libx264 x264 "stdint.h x264.h" x264_encoder_encode &&
                              require_cpp_condition libx264 x264.h "X264_BUILD >= 118" && {
                              [ "$toolchain" != "msvc" ] ||
                              require_cpp_condition libx264 x264.h "X264_BUILD >= 158"; } &&
@@ -6759,7 +6773,7 @@ if enabled sdl2; then
         sdl2_cflags=$("${SDL2_CONFIG}" --cflags)
         sdl2_extralibs=$("${SDL2_CONFIG}" --libs)
         test_cpp_condition SDL.h "(SDL_MAJOR_VERSION<<16 | SDL_MINOR_VERSION<<8 | SDL_PATCHLEVEL) >= 0x020001" $sdl2_cflags &&
-        test_cpp_condition SDL.h "(SDL_MAJOR_VERSION<<16 | SDL_MINOR_VERSION<<8 | SDL_PATCHLEVEL) < 0x020100" $sdl2_cflags &&
+        test_cpp_condition SDL.h "(SDL_MAJOR_VERSION<<16 | SDL_MINOR_VERSION<<8 | SDL_PATCHLEVEL) < 0x030000" $sdl2_cflags &&
         check_func_headers SDL_events.h SDL_PollEvent $sdl2_extralibs $sdl2_cflags &&
             enable sdl2
     fi

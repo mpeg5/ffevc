@@ -518,6 +518,21 @@ see @ref{time duration syntax,,the Time duration section in the ffmpeg-utils(1) 
 Like the @code{-ss} option but relative to the "end of file". That is negative
 values are earlier in the file, 0 is at EOF.
 
+@item -isync @var{input_index} (@emph{input})
+Assign an input as a sync source.
+
+This will take the difference between the start times of the target and reference inputs and
+offset the timestamps of the target file by that difference. The source timestamps of the two
+inputs should derive from the same clock source for expected results. If @code{copyts} is set
+then @code{start_at_zero} must also be set. If either of the inputs has no starting timestamp
+then no sync adjustment is made.
+
+Acceptable values are those that refer to a valid ffmpeg input index. If the sync reference is
+the target index itself or @var{-1}, then no adjustment is made to target timestamps. A sync
+reference may not itself be synced to any other input.
+
+Default value is @var{-1}.
+
 @item -itsoffset @var{offset} (@emph{input})
 Set the input time offset.
 
@@ -1749,7 +1764,23 @@ Default value is 0.
 @item -bitexact (@emph{input/output})
 Enable bitexact mode for (de)muxer and (de/en)coder
 @item -shortest (@emph{output})
-Finish encoding when the shortest input stream ends.
+Finish encoding when the shortest output stream ends.
+
+Note that this option may require buffering frames, which introduces extra
+latency. The maximum amount of this latency may be controlled with the
+@code{-shortest_buf_duration} option.
+
+@item -shortest_buf_duration @var{duration} (@emph{output})
+The @code{-shortest} option may require buffering potentially large amounts
+of data when at least one of the streams is "sparse" (i.e. has large gaps
+between frames – this is typically the case for subtitles).
+
+This option controls the maximum duration of buffered frames in seconds.
+Larger values may allow the @code{-shortest} option to produce more accurate
+results, but increase memory use and latency.
+
+The default value is 10 seconds.
+
 @item -dts_delta_threshold
 Timestamp discontinuity delta threshold.
 @item -dts_error_threshold @var{seconds}
@@ -1884,12 +1915,15 @@ to the @option{-ss} option is considered an actual timestamp, and is not
 offset by the start time of the file. This matters only for files which do
 not start from timestamp 0, such as transport streams.
 
-@item -thread_queue_size @var{size} (@emph{input})
-This option sets the maximum number of queued packets when reading from the
-file or device. With low latency / high rate live streams, packets may be
-discarded if they are not read in a timely manner; setting this value can
+@item -thread_queue_size @var{size} (@emph{input/output})
+For input, this option sets the maximum number of queued packets when reading
+from the file or device. With low latency / high rate live streams, packets may
+be discarded if they are not read in a timely manner; setting this value can
 force ffmpeg to use a separate input thread and read packets as soon as they
 arrive. By default ffmpeg only does this if multiple inputs are specified.
+
+For output, this option specified the maximum number of packets that may be
+queued to each muxing thread.
 
 @item -sdp_file @var{file} (@emph{global})
 Print sdp information for an output stream to @var{file}.

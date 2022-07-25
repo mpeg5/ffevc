@@ -287,7 +287,7 @@ static const FFCodecDefault qsv_enc_defaults[] = {
     { "refs",      "0"     },
     // same as the x264 default
     { "g",         "248"   },
-    { "bf",        "8"     },
+    { "bf",        "-1"    },
     { "qmin",      "-1"    },
     { "qmax",      "-1"    },
     { "trellis",   "-1"    },
@@ -315,7 +315,8 @@ const FFCodec ff_hevc_qsv_encoder = {
                                                     AV_PIX_FMT_NONE },
     .p.priv_class   = &class,
     .defaults       = qsv_enc_defaults,
-    .caps_internal  = FF_CODEC_CAP_INIT_CLEANUP,
+    .caps_internal  = FF_CODEC_CAP_NOT_INIT_THREADSAFE |
+                      FF_CODEC_CAP_INIT_CLEANUP,
     .p.wrapper_name = "qsv",
     .hw_configs     = ff_qsv_enc_hw_configs,
 };

@@ -208,10 +208,15 @@ int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size) {
     maxpixels = maxpixels_per_frame * maxiteration;
     maxsamples = maxsamples_per_frame * maxiteration;
     switch (c->p.id) {
+    case AV_CODEC_ID_AASC:        maxpixels  /= 1024;  break;
     case AV_CODEC_ID_AGM:         maxpixels  /= 1024;  break;
+    case AV_CODEC_ID_ANM:         maxpixels  /= 1024;  break;
     case AV_CODEC_ID_ARBC:        maxpixels  /= 1024;  break;
+    case AV_CODEC_ID_ARGO:        maxpixels  /= 1024;  break;
     case AV_CODEC_ID_BINKVIDEO:   maxpixels  /= 32;    break;
-    case AV_CODEC_ID_CFHD:        maxpixels  /= 128;   break;
+    case AV_CODEC_ID_CDTOONS:     maxpixels  /= 1024;  break;
+    case AV_CODEC_ID_CFHD:        maxpixels  /= 16384; break;
+    case AV_CODEC_ID_CINEPAK:     maxpixels  /= 128;   break;
     case AV_CODEC_ID_COOK:        maxsamples /= 1<<20; break;
     case AV_CODEC_ID_DFA:         maxpixels  /= 1024;  break;
     case AV_CODEC_ID_DIRAC:       maxpixels  /= 8192;  break;
@@ -222,6 +227,7 @@ int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size) {
     case AV_CODEC_ID_DXV:         maxpixels  /= 32;    break;
     case AV_CODEC_ID_FFWAVESYNTH: maxsamples /= 16384; break;
     case AV_CODEC_ID_FLAC:        maxsamples /= 1024;  break;
+    case AV_CODEC_ID_FLIC:        maxpixels  /= 1024;  break;
     case AV_CODEC_ID_FLV1:        maxpixels  /= 1024;  break;
     case AV_CODEC_ID_G2M:         maxpixels  /= 1024;  break;
     case AV_CODEC_ID_GEM:         maxpixels  /= 512;   break;
@@ -237,14 +243,18 @@ int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size) {
     case AV_CODEC_ID_INTERPLAY_ACM: maxsamples /= 16384;  break;
     case AV_CODEC_ID_JPEG2000:    maxpixels  /= 16;    break;
     case AV_CODEC_ID_LAGARITH:    maxpixels  /= 1024;  break;
+    case AV_CODEC_ID_LOCO:        maxpixels  /= 1024;  break;
     case AV_CODEC_ID_VORBIS:      maxsamples /= 1024;  break;
     case AV_CODEC_ID_LSCR:        maxpixels  /= 16;    break;
+    case AV_CODEC_ID_MMVIDEO:     maxpixels  /= 256;   break;
     case AV_CODEC_ID_MOTIONPIXELS:maxpixels  /= 256;   break;
     case AV_CODEC_ID_MP4ALS:      maxsamples /= 65536; break;
     case AV_CODEC_ID_MSA1:        maxpixels  /= 16384; break;
     case AV_CODEC_ID_MSRLE:       maxpixels  /= 16;    break;
     case AV_CODEC_ID_MSS2:        maxpixels  /= 16384; break;
     case AV_CODEC_ID_MSZH:        maxpixels  /= 128;   break;
+    case AV_CODEC_ID_MVC2:        maxpixels  /= 128;   break;
+    case AV_CODEC_ID_MWSC:        maxpixels  /= 256;   break;
     case AV_CODEC_ID_MXPEG:       maxpixels  /= 128;   break;
     case AV_CODEC_ID_OPUS:        maxsamples /= 16384; break;
     case AV_CODEC_ID_PNG:         maxpixels  /= 128;   break;
@@ -256,6 +266,8 @@ int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size) {
     case AV_CODEC_ID_SANM:        maxpixels  /= 16;    break;
     case AV_CODEC_ID_SCPR:        maxpixels  /= 32;    break;
     case AV_CODEC_ID_SCREENPRESSO:maxpixels  /= 64;    break;
+    case AV_CODEC_ID_SIMBIOSIS_IMX:maxpixels /= 16384; break;
+    case AV_CODEC_ID_SMACKAUDIO:  maxsamples /= 4096;  break;
     case AV_CODEC_ID_SMACKVIDEO:  maxpixels  /= 64;    break;
     case AV_CODEC_ID_SNOW:        maxpixels  /= 128;   break;
     case AV_CODEC_ID_TARGA:       maxpixels  /= 128;   break;
@@ -275,11 +287,13 @@ int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size) {
     case AV_CODEC_ID_VP7:         maxpixels  /= 256;   break;
     case AV_CODEC_ID_VP9:         maxpixels  /= 4096;  break;
     case AV_CODEC_ID_WAVPACK:     maxsamples /= 1024;  break;
+    case AV_CODEC_ID_WCMV:        maxpixels  /= 1024;  break;
     case AV_CODEC_ID_WMV3IMAGE:   maxpixels  /= 8192;  break;
     case AV_CODEC_ID_WMV2:        maxpixels  /= 1024;  break;
     case AV_CODEC_ID_WMV3:        maxpixels  /= 1024;  break;
     case AV_CODEC_ID_WS_VQA:      maxpixels  /= 16384; break;
     case AV_CODEC_ID_WMALOSSLESS: maxsamples /= 1024;  break;
+    case AV_CODEC_ID_YLC:         maxpixels  /= 1024;  break;
     case AV_CODEC_ID_ZEROCODEC:   maxpixels  /= 128;   break;
     }
 

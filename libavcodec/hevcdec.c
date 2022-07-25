@@ -26,6 +26,7 @@
 #include "config_components.h"
 
 #include "libavutil/attributes.h"
+#include "libavutil/avstring.h"
 #include "libavutil/common.h"
 #include "libavutil/display.h"
 #include "libavutil/film_grain_params.h"
@@ -3374,26 +3375,18 @@ fail:
     return ret;
 }
 
-static void print_md5(void *log_ctx, int level, uint8_t md5[16])
-{
-    int i;
-    for (i = 0; i < 16; i++)
-        av_log(log_ctx, level, "%02"PRIx8, md5[i]);
-}
-
 static int verify_md5(HEVCContext *s, AVFrame *frame)
 {
     const AVPixFmtDescriptor *desc = av_pix_fmt_desc_get(frame->format);
+    char msg_buf[4 * (50 + 2 * 2 * 16 /* MD5-size */)];
     int pixel_shift;
+    int err = 0;
     int i, j;
 
     if (!desc)
         return AVERROR(EINVAL);
 
     pixel_shift = desc->comp[0].depth > 8;
-
-    av_log(s->avctx, AV_LOG_DEBUG, "Verifying checksum for frame with POC %d: ",
-           s->poc);
 
     /* the checksums are LE, so we have to byteswap for >8bpp formats
      * on BE arches */
@@ -3407,6 +3400,7 @@ static int verify_md5(HEVCContext *s, AVFrame *frame)
     }
 #endif
 
+    msg_buf[0] = '\0';
     for (i = 0; frame->data[i]; i++) {
         int width  = s->avctx->coded_width;
         int height = s->avctx->coded_height;
@@ -3428,23 +3422,26 @@ static int verify_md5(HEVCContext *s, AVFrame *frame)
         }
         av_md5_final(s->md5_ctx, md5);
 
+#define MD5_PRI "%016" PRIx64 "%016" PRIx64
+#define MD5_PRI_ARG(buf) AV_RB64(buf), AV_RB64((const uint8_t*)(buf) + 8)
+
         if (!memcmp(md5, s->sei.picture_hash.md5[i], 16)) {
-            av_log   (s->avctx, AV_LOG_DEBUG, "plane %d - correct ", i);
-            print_md5(s->avctx, AV_LOG_DEBUG, md5);
-            av_log   (s->avctx, AV_LOG_DEBUG, "; ");
+            av_strlcatf(msg_buf, sizeof(msg_buf),
+                        "plane %d - correct " MD5_PRI "; ",
+                        i, MD5_PRI_ARG(md5));
         } else {
-            av_log   (s->avctx, AV_LOG_ERROR, "mismatching checksum of plane %d - ", i);
-            print_md5(s->avctx, AV_LOG_ERROR, md5);
-            av_log   (s->avctx, AV_LOG_ERROR, " != ");
-            print_md5(s->avctx, AV_LOG_ERROR, s->sei.picture_hash.md5[i]);
-            av_log   (s->avctx, AV_LOG_ERROR, "\n");
-            return AVERROR_INVALIDDATA;
+            av_strlcatf(msg_buf, sizeof(msg_buf),
+                       "mismatching checksum of plane %d - " MD5_PRI " != " MD5_PRI "; ",
+                        i, MD5_PRI_ARG(md5), MD5_PRI_ARG(s->sei.picture_hash.md5[i]));
+            err = AVERROR_INVALIDDATA;
         }
     }
 
-    av_log(s->avctx, AV_LOG_DEBUG, "\n");
+    av_log(s->avctx, err < 0 ? AV_LOG_ERROR : AV_LOG_DEBUG,
+           "Verifying checksum for frame with POC %d: %s\n",
+           s->poc, msg_buf);
 
-    return 0;
+    return err;
 }
 
 static int hevc_decode_extradata(HEVCContext *s, uint8_t *buf, int length, int first)
@@ -3647,48 +3644,43 @@ static av_cold int hevc_init_context(AVCodecContext *avctx)
     s->HEVClcList = av_mallocz(sizeof(HEVCLocalContext*) * s->threads_number);
     s->sList = av_mallocz(sizeof(HEVCContext*) * s->threads_number);
     if (!s->HEVClc || !s->HEVClcList || !s->sList)
-        goto fail;
+        return AVERROR(ENOMEM);
     s->HEVClcList[0] = s->HEVClc;
     s->sList[0] = s;
 
     s->cabac_state = av_malloc(HEVC_CONTEXTS);
     if (!s->cabac_state)
-        goto fail;
+        return AVERROR(ENOMEM);
 
     s->output_frame = av_frame_alloc();
     if (!s->output_frame)
-        goto fail;
+        return AVERROR(ENOMEM);
 
     for (i = 0; i < FF_ARRAY_ELEMS(s->DPB); i++) {
         s->DPB[i].frame = av_frame_alloc();
         if (!s->DPB[i].frame)
-            goto fail;
+            return AVERROR(ENOMEM);
         s->DPB[i].tf.f = s->DPB[i].frame;
 
         s->DPB[i].frame_grain = av_frame_alloc();
         if (!s->DPB[i].frame_grain)
-            goto fail;
+            return AVERROR(ENOMEM);
     }
 
     s->max_ra = INT_MAX;
 
     s->md5_ctx = av_md5_alloc();
     if (!s->md5_ctx)
-        goto fail;
+        return AVERROR(ENOMEM);
 
     ff_bswapdsp_init(&s->bdsp);
 
     s->dovi_ctx.logctx = avctx;
-    s->context_initialized = 1;
     s->eos = 0;
 
     ff_hevc_reset_sei(&s->sei);
 
     return 0;
-
-fail:
-    hevc_decode_free(avctx);
-    return AVERROR(ENOMEM);
 }
 
 #if HAVE_THREADS
@@ -3698,12 +3690,6 @@ static int hevc_update_thread_context(AVCodecContext *dst,
     HEVCContext *s  = dst->priv_data;
     HEVCContext *s0 = src->priv_data;
     int i, ret;
-
-    if (!s->context_initialized) {
-        ret = hevc_init_context(dst);
-        if (ret < 0)
-            return ret;
-    }
 
     for (i = 0; i < FF_ARRAY_ELEMS(s->DPB); i++) {
         ff_hevc_unref_frame(s, &s->DPB[i], ~0);
@@ -3814,9 +3800,12 @@ static av_cold int hevc_decode_init(AVCodecContext *avctx)
     HEVCContext *s = avctx->priv_data;
     int ret;
 
-    if(avctx->active_thread_type & FF_THREAD_SLICE)
+    if (avctx->active_thread_type & FF_THREAD_SLICE) {
         s->threads_number = avctx->thread_count;
-    else
+        ret = ff_slice_thread_init_progress(avctx);
+        if (ret < 0)
+            return ret;
+    } else
         s->threads_number = 1;
 
     if((avctx->active_thread_type & FF_THREAD_FRAME) && avctx->thread_count > 1)
@@ -3889,7 +3878,7 @@ const FFCodec ff_hevc_decoder = {
     .update_thread_context = ONLY_IF_THREADS_ENABLED(hevc_update_thread_context),
     .p.capabilities        = AV_CODEC_CAP_DR1 | AV_CODEC_CAP_DELAY |
                              AV_CODEC_CAP_SLICE_THREADS | AV_CODEC_CAP_FRAME_THREADS,
-    .caps_internal         = FF_CODEC_CAP_INIT_THREADSAFE | FF_CODEC_CAP_EXPORTS_CROPPING |
+    .caps_internal         = FF_CODEC_CAP_EXPORTS_CROPPING |
                              FF_CODEC_CAP_ALLOCATE_PROGRESS | FF_CODEC_CAP_INIT_CLEANUP,
     .p.profiles            = NULL_IF_CONFIG_SMALL(ff_hevc_profiles),
     .hw_configs            = (const AVCodecHWConfigInternal *const []) {

@@ -344,7 +344,7 @@ static IMFSample *mf_v_avframe_to_sample(AVCodecContext *avctx, const AVFrame *f
         return NULL;
     }
 
-    IMFSample_SetSampleDuration(sample, mf_to_mf_time(avctx, frame->pkt_duration));
+    IMFSample_SetSampleDuration(sample, mf_to_mf_time(avctx, frame->duration));
 
     return sample;
 }
@@ -1239,8 +1239,7 @@ static int mf_init(AVCodecContext *avctx)
         FF_CODEC_RECEIVE_PACKET_CB(mf_receive_packet),                         \
         FMTS                                                                   \
         CAPS                                                                   \
-        .caps_internal  = FF_CODEC_CAP_INIT_THREADSAFE |                       \
-                          FF_CODEC_CAP_INIT_CLEANUP,                           \
+        .caps_internal  = FF_CODEC_CAP_INIT_CLEANUP,                           \
     };
 
 #define AFMTS \

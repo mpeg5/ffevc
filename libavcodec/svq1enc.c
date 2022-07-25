@@ -91,7 +91,7 @@ static int ssd_int8_vs_int16_c(const int8_t *pix1, const int16_t *pix2,
 }
 
 static int encode_block(SVQ1EncContext *s, uint8_t *src, uint8_t *ref,
-                        uint8_t *decoded, int stride, int level,
+                        uint8_t *decoded, int stride, unsigned level,
                         int threshold, int lambda, int intra)
 {
     int count, y, x, i, j, split, best_mean, best_score, best_count;
@@ -689,5 +689,5 @@ const FFCodec ff_svq1_encoder = {
     .close          = svq1_encode_end,
     .p.pix_fmts     = (const enum AVPixelFormat[]) { AV_PIX_FMT_YUV410P,
                                                      AV_PIX_FMT_NONE },
-    .caps_internal  = FF_CODEC_CAP_INIT_THREADSAFE | FF_CODEC_CAP_INIT_CLEANUP,
+    .caps_internal  = FF_CODEC_CAP_INIT_CLEANUP,
 };

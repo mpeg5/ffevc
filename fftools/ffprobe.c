@@ -901,7 +901,7 @@ static void writer_print_ts(WriterContext *wctx, const char *key, int64_t ts, in
 }
 
 static void writer_print_data(WriterContext *wctx, const char *name,
-                              uint8_t *data, int size)
+                              const uint8_t *data, int size)
 {
     AVBPrint bp;
     int offset = 0, l, i;
@@ -929,7 +929,7 @@ static void writer_print_data(WriterContext *wctx, const char *name,
 }
 
 static void writer_print_data_hash(WriterContext *wctx, const char *name,
-                                   uint8_t *data, int size)
+                                   const uint8_t *data, int size)
 {
     char *p, buf[AV_HASH_MAX_SIZE * 2 + 64] = { 0 };
 
@@ -2361,6 +2361,8 @@ static void print_pkt_side_data(WriterContext *w,
             if (do_show_data)
                 writer_print_data(w, "data", sd->data, sd->size);
             writer_print_data_hash(w, "data_hash", sd->data, sd->size);
+        } else if (sd->type == AV_PKT_DATA_AFD && sd->size > 0) {
+            print_int("active_format", *sd->data);
         }
         writer_print_section_footer(w);
     }
@@ -2568,8 +2570,14 @@ static void show_frame(WriterContext *w, AVFrame *frame, AVStream *stream,
     print_time("pkt_dts_time",          frame->pkt_dts, &stream->time_base);
     print_ts  ("best_effort_timestamp", frame->best_effort_timestamp);
     print_time("best_effort_timestamp_time", frame->best_effort_timestamp, &stream->time_base);
+#if LIBAVUTIL_VERSION_MAJOR < 58
+    AV_NOWARN_DEPRECATED(
     print_duration_ts  ("pkt_duration",      frame->pkt_duration);
     print_duration_time("pkt_duration_time", frame->pkt_duration, &stream->time_base);
+    )
+#endif
+    print_duration_ts  ("duration",          frame->duration);
+    print_duration_time("duration_time",     frame->duration, &stream->time_base);
     if (frame->pkt_pos != -1) print_fmt    ("pkt_pos", "%"PRId64, frame->pkt_pos);
     else                      print_str_opt("pkt_pos", "N/A");
     if (frame->pkt_size != -1) print_val    ("pkt_size", frame->pkt_size, unit_byte_str);
@@ -2633,6 +2641,8 @@ static void show_frame(WriterContext *w, AVFrame *frame, AVStream *stream,
             if (sd->type == AV_FRAME_DATA_DISPLAYMATRIX && sd->size >= 9*4) {
                 writer_print_integers(w, "displaymatrix", sd->data, 9, " %11d", 3, 4, 1);
                 print_int("rotation", av_display_rotation_get((int32_t *)sd->data));
+            } else if (sd->type == AV_FRAME_DATA_AFD && sd->size > 0) {
+                print_int("active_format", *sd->data);
             } else if (sd->type == AV_FRAME_DATA_GOP_TIMECODE && sd->size >= 8) {
                 char tcbuf[AV_TIMECODE_STR_SIZE];
                 av_timecode_make_mpeg_tc_string(tcbuf, *(int64_t *)(sd->data));

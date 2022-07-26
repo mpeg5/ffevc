@@ -2930,7 +2930,7 @@ invoke the command  @code{xeve_app --help} or consult the libxeve documentation.
 @table @option
 @item b (@emph{bitrate})
 Set target video bitrate in bits/s.
-Note that FFmpeg’s b option is expressed in bits/s, while xeve’s bitrate is in kilobits/s.
+Note that FFmpeg's b option is expressed in bits/s, while xeve's bitrate is in kilobits/s.
 
 @item bf (@emph{bframes})
 Set the maximum number of B frames (1,3,7,15).

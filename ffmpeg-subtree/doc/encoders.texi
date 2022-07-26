@@ -2895,6 +2895,7 @@ ffmpeg -i input -c:v libxavs2 -xavs2-params RdoqLevel=0 output.avs2
 @section libxeve
 
 eXtra-fast Essential Video Encoder (XEVE) MPEG-5 EVC encoder wrapper.
+The xeve-equivalent options or values are listed in parentheses for easy migration.
 
 This encoder requires the presence of the libxeve headers and library
 during configuration. You need to explicitly configure the build with
@@ -2949,7 +2950,7 @@ Set the encoder profile [0: baselie; 1: main]
 
 @item crf (@emph{crf})
 Set the quality for constant quality mode.
-Constant rate factor <-1..51> [default: 32]
+Constant rate factor <10..49> [default: 32]
 
 @item qp (@emph{qp})
 Set constant quantization rate control method parameter.
@@ -2980,27 +2981,6 @@ Embed the picture signature (HASH) for conformance checking in decoding, (0: Off
 
 @item vbv-bufsize
 Set the VBV buffer size: Kbits(none,K,k), Mbits(M,m)
-
-@item rc-type
-Set the rate control type, (0: OFF, 1: ABR, 2: CRF)
-
-@item bframes
-Set the maximum number of B frames (1,3,7,15)
-
-@item profile
-Set the PROFILE (main, baseline)
-
-@item preset
-Set the encoder PRESET (fast, medium, slow, placebo)
-
-@item tune
-Set the encoder TUNE (psnr, zerolatency)
-
-@item bitrate
-Set the Bitrate in terms of kilo-bits per second: Kbps(none,K,k), Mbps(M,m)
-
-@item qp
-Set the QP value (0~51)
 
 @end table
 

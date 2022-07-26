@@ -1,5 +1,5 @@
 /*
- * EVC AVC format parser
+ * EVC format parser
  *
  * Copyright (C) 2021 Dawid Kozinski <d.kozinski@samsung.com>
  *

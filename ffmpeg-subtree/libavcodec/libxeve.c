@@ -302,10 +302,9 @@ static int get_conf(AVCodecContext *avctx, XEVE_CDSC *cdsc)
         cdsc->param.fps = (int)(((float)avctx->framerate.num / avctx->framerate.den) + 0.5);
     }
 
-    if (avctx->gop_size >= 0) { // GOP size (key-frame interval, I-picture period)
+    if (avctx->gop_size >= 0) // GOP size (key-frame interval, I-picture period)
         cdsc->param.keyint = avctx->gop_size; // 0: only one I-frame at the first time; 1: every frame is coded in I-frame
-    }
-
+    
     if (avctx->max_b_frames == 0 || avctx->max_b_frames == 1 || avctx->max_b_frames == 3 ||
         avctx->max_b_frames == 7 || avctx->max_b_frames == 15)   // number of b-frames
         cdsc->param.bframes = avctx->max_b_frames;
@@ -331,7 +330,7 @@ static int get_conf(AVCodecContext *avctx, XEVE_CDSC *cdsc)
         cdsc->param.rc_type = XEVE_RC_ABR;
     }
 
-    if (xectx->op_crf >= 0) {
+    if (xectx->op_crf >= 10 && xectx->op_crf < 50) {
         cdsc->param.crf = xectx->op_crf;
         cdsc->param.rc_type = XEVE_RC_CRF;
     }
@@ -705,7 +704,7 @@ static const AVOption xeve_options[] = {
     { "preset", "Encoding preset for setting encoding speed [fast, medium, slow, placebo]", OFFSET(op_preset), AV_OPT_TYPE_STRING, { .str = "medium" }, 0, 0, VE },
     { "tune", "Tuneing parameter for special purpose operation [psnr, zerolatency]", OFFSET(op_tune), AV_OPT_TYPE_STRING, { 0 }, 0, 0, VE},
     { "qp", "quantization parameter qp <0..51> [default: 32]", OFFSET(op_qp), AV_OPT_TYPE_INT, { .i64 = 32 }, 0, 51, VE },
-    { "crf", "constant rate factor <-1..51> [default: 32]", OFFSET(op_crf), AV_OPT_TYPE_INT, { .i64 = -1 }, -1, 51, VE },
+    { "crf", "constant rate factor <10..49> [default: 32]", OFFSET(op_crf), AV_OPT_TYPE_INT, { .i64 = 32 }, 10, 49, VE },
     { "xeve-params", "override the xeve configuration using a : separated list of key=value parameters", OFFSET(xeve_params), AV_OPT_TYPE_DICT,   { 0 }, 0, 0, VE },
     { NULL }
 };
@@ -722,9 +721,9 @@ static const AVClass xeve_class = {
  *  @see https://www.ffmpeg.org/ffmpeg-codecs.html#Codec-Options
  */
 static const FFCodecDefault xeve_defaults[] = {
-    { "b", "0" },       // bitrate
+    { "b", "0" },       // bitrate in terms of kilo-bits per second
     { "g", "0" },       // gop_size (key-frame interval 0: only one I-frame at the first time; 1: every frame is coded in I-frame)
-    { "bf", "15"},      // bframes (0: no B-frames)
+    { "bf", "15"},      // maximum number of B frames (0: no B-frames, 1,3,7,15)
     { "profile", "0"},  // encoder codec profile (0: baselie; 1: main)
     { "threads", "0"},  // number of threads to be used (0: automatically select the number of threads to set)
     { NULL },

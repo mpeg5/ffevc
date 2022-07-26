@@ -159,9 +159,8 @@ static uint32_t read_nal_unit_length(const uint8_t *bits, int bits_size, AVCodec
         int t = 0;
         unsigned char *p = (unsigned char *)bits;
 
-        for(int i=0; i<EVC_NAL_UNIT_LENGTH_BYTE; i++) {
+        for(int i = 0; i < EVC_NAL_UNIT_LENGTH_BYTE; i++)
             t = (t << 8) | p[i];
-        }
 
         nalu_len = t;
         if(nalu_len == 0) {
@@ -395,9 +394,9 @@ static int evc_find_frame_end(AVCodecParserContext *s, const uint8_t *buf,
             return next;
         else
             return END_NOT_FOUND;
-    } else if(ev->to_read > buf_size) {
+    } else if(ev->to_read > buf_size)
         return END_NOT_FOUND;
-    } else {
+    else {
         if(ev->incomplete_nalu_prefix_read  == 1) {
             EVCParserContext *ev = s->priv_data;
             ParseContext *pc = &ev->pc;

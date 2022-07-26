@@ -92,9 +92,9 @@ static int get_conf(AVCodecContext *avctx, XEVD_CDSC *cdsc)
     memset(cdsc, 0, sizeof(XEVD_CDSC));
 
     /* init XEVD_CDSC */
-    if(avctx->thread_count <= 0)
+    if (avctx->thread_count <= 0)
         cdsc->threads = (cpu_count < XEVD_MAX_TASK_CNT) ? cpu_count : XEVD_MAX_TASK_CNT;
-    else if(avctx->thread_count > XEVD_MAX_TASK_CNT)
+    else if (avctx->thread_count > XEVD_MAX_TASK_CNT)
         cdsc->threads = XEVD_MAX_TASK_CNT;
     else
         cdsc->threads = avctx->thread_count;
@@ -113,14 +113,14 @@ static uint32_t read_nal_unit_length(const uint8_t *bs, int bs_size, AVCodecCont
     XEVD_INFO info;
     int ret;
 
-    if(bs_size == XEVD_NAL_UNIT_LENGTH_BYTE) {
+    if (bs_size == XEVD_NAL_UNIT_LENGTH_BYTE) {
         ret = xevd_info((void *)bs, XEVD_NAL_UNIT_LENGTH_BYTE, 1, &info);
         if (XEVD_FAILED(ret)) {
             av_log(avctx, AV_LOG_ERROR, "Cannot get bitstream information\n");
             return 0;
         }
         len = info.nalu_len;
-        if(len == 0) {
+        if (len == 0) {
             av_log(avctx, AV_LOG_ERROR, "Invalid bitstream size! [%d]\n", bs_size);
             return 0;
         }
@@ -229,7 +229,7 @@ static av_cold int libxevd_init(AVCodecContext *avctx)
 
     /* create decoder */
     xectx->id = xevd_create(&(xectx->cdsc), NULL);
-    if(xectx->id == NULL) {
+    if (xectx->id == NULL) {
         av_log(avctx, AV_LOG_ERROR, "Cannot create XEVD encoder\n");
         return AVERROR_EXTERNAL;
     }
@@ -253,7 +253,7 @@ static av_cold int libxevd_init(AVCodecContext *avctx)
   * @return amount of bytes read from the packet on success, negative error
   *         code on failure
   */
- static int libxevd_decode(struct AVCodecContext *avctx, struct AVFrame *frame, int *got_frame_ptr, AVPacket *avpkt)
+static int libxevd_decode(struct AVCodecContext *avctx, struct AVFrame *frame, int *got_frame_ptr, AVPacket *avpkt)
 {
     XevdContext *xectx = NULL;
     XEVD_IMGB *imgb = NULL;
@@ -262,17 +262,17 @@ static av_cold int libxevd_init(AVCodecContext *avctx)
     int xevd_ret, nalu_size, bs_read_pos;
     int ret = 0;
 
-    if(avctx == NULL) {
+    if (avctx == NULL) {
         av_log(avctx, AV_LOG_ERROR, "Invalid input parameter: AVCodecContext\n");
         return AVERROR(EINVAL);
     }
     xectx = avctx->priv_data;
-    if(xectx == NULL) {
+    if (xectx == NULL) {
         av_log(avctx, AV_LOG_ERROR, "Invalid XEVD context\n");
         return AVERROR(EINVAL);
     }
 
-    if(avpkt->size > 0) {
+    if (avpkt->size > 0) {
         bs_read_pos = 0;
         imgb = NULL;
         while(avpkt->size > (bs_read_pos + XEVD_NAL_UNIT_LENGTH_BYTE)) {
@@ -281,7 +281,7 @@ static av_cold int libxevd_init(AVCodecContext *avctx)
             memset(&bitb, 0, sizeof(XEVD_BITB));
 
             nalu_size = read_nal_unit_length(avpkt->data + bs_read_pos, XEVD_NAL_UNIT_LENGTH_BYTE, avctx);
-            if(nalu_size == 0) {
+            if (nalu_size == 0) {
                 av_log(avctx, AV_LOG_ERROR, "Invalid bitstream\n");
                 ret = AVERROR_INVALIDDATA;
                 goto ERR;
@@ -293,7 +293,7 @@ static av_cold int libxevd_init(AVCodecContext *avctx)
 
             /* main decoding block */
             xevd_ret = xevd_decode(xectx->id, &bitb, &stat);
-            if(XEVD_FAILED(xevd_ret)) {
+            if (XEVD_FAILED(xevd_ret)) {
                 av_log(avctx, AV_LOG_ERROR, "Failed to decode bitstream\n");
                 ret = AVERROR_EXTERNAL;
                 goto ERR;
@@ -301,14 +301,14 @@ static av_cold int libxevd_init(AVCodecContext *avctx)
 
             bs_read_pos += nalu_size;
 
-            if(stat.nalu_type == XEVD_NUT_SPS) { // EVC stream parameters changed
-                if((ret = export_stream_params(xectx, avctx)) != 0)
+            if (stat.nalu_type == XEVD_NUT_SPS) { // EVC stream parameters changed
+                if ((ret = export_stream_params(xectx, avctx)) != 0)
                     goto ERR;
             }
 
-            if(stat.read != nalu_size)
+            if (stat.read != nalu_size)
                 av_log(avctx, AV_LOG_INFO, "Different reading of bitstream (in:%d, read:%d)\n,", nalu_size, stat.read);
-            if(stat.fnum >= 0) {
+            if (stat.fnum >= 0) {
                 // already has a decoded image
                 if (imgb) {
                     // xevd_pull uses pool of objects of type XEVD_IMGB.
@@ -317,12 +317,12 @@ static av_cold int libxevd_init(AVCodecContext *avctx)
                     imgb = NULL;
                 }
                 xevd_ret = xevd_pull(xectx->id, &imgb);
-                if(XEVD_FAILED(xevd_ret)) {
+                if (XEVD_FAILED(xevd_ret)) {
                     av_log(avctx, AV_LOG_ERROR, "Failed to pull the decoded image (xevd error code: %d, frame#=%d)\n", xevd_ret, stat.fnum);
                     ret = AVERROR_EXTERNAL;
                     goto ERR;
                 } else if (xevd_ret == XEVD_OK_FRM_DELAYED) {
-                    if(imgb) {
+                    if (imgb) {
                         // xevd_pull uses pool of objects of type XEVD_IMGB.
                         // The pool size is equal MAX_PB_SIZE (26), so release object when it is no more needed
                         imgb->release(imgb);
@@ -333,26 +333,26 @@ static av_cold int libxevd_init(AVCodecContext *avctx)
         }
     } else { // bumping
         xevd_ret = xevd_pull(xectx->id, &(imgb));
-        if(xevd_ret == XEVD_ERR_UNEXPECTED) { // bumping process completed
+        if (xevd_ret == XEVD_ERR_UNEXPECTED) { // bumping process completed
             *got_frame_ptr = 0;
             return 0;
-        } else if(XEVD_FAILED(xevd_ret)) {
+        } else if (XEVD_FAILED(xevd_ret)) {
             av_log(avctx, AV_LOG_ERROR, "Failed to pull the decoded image (xevd error code: %d)\n", xevd_ret);
             ret = AVERROR_EXTERNAL;
             goto ERR;
         }
     }
 
-    if(imgb) {
+    if (imgb) {
         // @todo supports other color space and bit depth
-        if(imgb->cs != XEVD_CS_YCBCR420_10LE) {
+        if (imgb->cs != XEVD_CS_YCBCR420_10LE) {
             av_log(avctx, AV_LOG_ERROR, "Not supported pixel format: %s\n", av_get_pix_fmt_name(avctx->pix_fmt));
             ret = AVERROR_INVALIDDATA;
             goto ERR;
         }
 
         if (imgb->w[0] != avctx->width || imgb->h[0] != avctx->height) { // stream resolution changed
-            if(ff_set_dimensions(avctx, imgb->w[0], imgb->h[0]) < 0) {
+            if (ff_set_dimensions(avctx, imgb->w[0], imgb->h[0]) < 0) {
                 av_log(avctx, AV_LOG_ERROR, "Cannot set new dimension\n");
                 ret = AVERROR_INVALIDDATA;
                 goto ERR;
@@ -390,7 +390,7 @@ static av_cold int libxevd_init(AVCodecContext *avctx)
     return avpkt->size;
 
 ERR:
-    if(imgb) {
+    if (imgb) {
         imgb->release(imgb);
         imgb = NULL;
     }
@@ -408,7 +408,7 @@ ERR:
 static av_cold int libxevd_close(AVCodecContext *avctx)
 {
     XevdContext *xectx = avctx->priv_data;
-    if(xectx->id) {
+    if (xectx->id) {
         xevd_delete(xectx->id);
         xectx->id = NULL;
     }

@@ -469,7 +469,6 @@ static int libxeve_encode(AVCodecContext *avctx, AVPacket *avpkt,
 {
     XeveContext *xectx =  avctx->priv_data;
     int  ret = -1;
-    int xeve_cs;
 
     if (xectx->state == STATE_SKIPPING && frame ) {
         xectx->state = STATE_ENCODING; // Entering encoding process
@@ -488,13 +487,6 @@ static int libxeve_encode(AVCodecContext *avctx, AVPacket *avpkt,
             av_log(avctx, AV_LOG_ERROR, "Invalid pixel format descriptor for pixel format: %s\n", av_get_pix_fmt_name(avctx->pix_fmt));
             return AVERROR_INVALIDDATA;
         }
-
-        xeve_cs = libxeve_color_space(avctx->pix_fmt);
-        if (xeve_cs != XEVE_CS_YCBCR420 && xeve_cs != XEVE_CS_YCBCR420_10LE) {
-            av_log(avctx, AV_LOG_ERROR, "Invalid pixel format: %s\n", av_get_pix_fmt_name(avctx->pix_fmt));
-            return AVERROR_INVALIDDATA;
-        }
-
         {
             int i;
             XEVE_IMGB *imgb = NULL;

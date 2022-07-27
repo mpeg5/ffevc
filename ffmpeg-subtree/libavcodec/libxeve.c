@@ -255,36 +255,21 @@ static int get_conf(AVCodecContext *avctx, XEVE_CDSC *cdsc)
         cdsc->param.vbv_bufsize = (int)(avctx->rc_buffer_size / 1000);
 
     // rc_type:  Rate control type [ 0(CQP) / 1(ABR) / 2(CRF) ]
-    //
-    // CQP - Constant QP
-    //       The Quantization Parameter controls the amount of compression for every macroblock in a frame.
-    //       Large values mean higher quantization, more compression, and lower quality.
-    //       Lower values mean the opposite.
-    //       QP ranges from 0 to 51
-    //
-    // ABR - Average Bitrate
-    //       Here we give the encoder a target bitrate and expect it to figure out how to reach that bitrate
-    //
-    // CRF - Constant Rate Factor
-    //       Constant quality throughout your encoding process.
-    //       CRF ranges from 10 to 49.
-
-    if (avctx->bit_rate > 0) {
-        av_log(avctx, AV_LOG_ERROR, "BITRATE %ld000\n", avctx->bit_rate);
+    if (avctx->bit_rate) {
         if (avctx->bit_rate / 1000 > INT_MAX || avctx->rc_max_rate / 1000 > INT_MAX) {
             av_log(avctx, AV_LOG_ERROR, "Not supported bitrate bit_rate and rc_max_rate > %d000\n", INT_MAX);
             return AVERROR_INVALIDDATA;
         }
         cdsc->param.bitrate = (int)(avctx->bit_rate / 1000);
         cdsc->param.rc_type = XEVE_RC_ABR;
-    }
-
-    if (xectx->op_crf >= 10 && xectx->op_crf < 50) {
-        cdsc->param.crf = xectx->op_crf;
-        cdsc->param.rc_type = XEVE_RC_CRF;
-    } else if (xectx->op_qp > 0) {
-        cdsc->param.qp = xectx->op_qp;
-        cdsc->param.rc_type = XEVE_RC_CQP;
+    } else {
+        if (xectx->op_crf >= 10 && xectx->op_crf < 50) {
+            cdsc->param.crf = xectx->op_crf;
+            cdsc->param.rc_type = XEVE_RC_CRF;
+        } else if (xectx->op_qp > 0) {
+            cdsc->param.qp = xectx->op_qp;
+            cdsc->param.rc_type = XEVE_RC_CQP;
+        }
     }
 
     if (avctx->thread_count <= 0) {

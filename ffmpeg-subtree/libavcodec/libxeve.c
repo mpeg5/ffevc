@@ -482,36 +482,24 @@ static int libxeve_encode(AVCodecContext *avctx, AVPacket *avpkt,
     }
 
     if (xectx->state == STATE_ENCODING) {
-        const AVPixFmtDescriptor *pixel_fmt_desc = av_pix_fmt_desc_get (frame->format);
-        if (!pixel_fmt_desc) {
-            av_log(avctx, AV_LOG_ERROR, "Invalid pixel format descriptor for pixel format: %s\n", av_get_pix_fmt_name(avctx->pix_fmt));
-            return AVERROR_INVALIDDATA;
+        int i;
+        XEVE_IMGB *imgb = NULL;
+
+        imgb = &xectx->imgb;
+
+        for (i = 0; i < imgb->np; i++) {
+            imgb->a[i] = frame->data[i];
+            imgb->s[i] = frame->linesize[i];
         }
-        {
-            int i;
-            XEVE_IMGB *imgb = NULL;
 
-            imgb = &xectx->imgb;
+        imgb->ts[0] = frame->pts;
+        imgb->ts[1] = 0;
 
-            for (i = 0; i < imgb->np; i++) {
-                imgb->a[i] = frame->data[i];
-                imgb->s[i] = frame->linesize[i];
-            }
-
-            if (xectx->id == NULL) {
-                av_log(avctx, AV_LOG_ERROR, "Invalid XEVE encoder\n");
-                return AVERROR_INVALIDDATA;
-            }
-
-            imgb->ts[0] = frame->pts;
-            imgb->ts[1] = 0;
-
-            /* push image to encoder */
-            ret = xeve_push(xectx->id, imgb);
-            if (XEVE_FAILED(ret)) {
-                av_log(avctx, AV_LOG_ERROR, "xeve_push() failed\n");
-                return AVERROR_EXTERNAL;
-            }
+        /* push image to encoder */
+        ret = xeve_push(xectx->id, imgb);
+        if (XEVE_FAILED(ret)) {
+            av_log(avctx, AV_LOG_ERROR, "xeve_push() failed\n");
+            return AVERROR_EXTERNAL;
         }
     }
     if (xectx->state == STATE_ENCODING || xectx->state == STATE_BUMPING) {

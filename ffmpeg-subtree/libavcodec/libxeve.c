@@ -340,11 +340,7 @@ static int get_conf(AVCodecContext *avctx, XEVE_CDSC *cdsc)
 
     libxeve_color_fmt(avctx->pix_fmt, &xectx->color_format);
 
-#if AV_HAVE_BIGENDIAN
-    cdsc->param.cs = XEVE_CS_SET(xectx->color_format, cdsc->param.codec_bit_depth, 1);
-#else
-    cdsc->param.cs = XEVE_CS_SET(xectx->color_format, cdsc->param.codec_bit_depth, 0);
-#endif
+    cdsc->param.cs = XEVE_CS_SET(xectx->color_format, cdsc->param.codec_bit_depth, AV_HAVE_BIGENDIAN);
 
     cdsc->max_bs_buf_size = MAX_BS_BUF;
 

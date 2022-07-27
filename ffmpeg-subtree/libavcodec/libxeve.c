@@ -255,18 +255,21 @@ static int get_conf(AVCodecContext *avctx, XEVE_CDSC *cdsc)
         cdsc->param.vbv_bufsize = (int)(avctx->rc_buffer_size / 1000);
 
     // rc_type:  Rate control type [ 0(CQP) / 1(ABR) / 2(CRF) ]
-    if (avctx->bit_rate > 0) {
+    if (avctx->bit_rate) {
         if (avctx->bit_rate / 1000 > INT_MAX || avctx->rc_max_rate / 1000 > INT_MAX) {
             av_log(avctx, AV_LOG_ERROR, "Not supported bitrate bit_rate and rc_max_rate > %d000\n", INT_MAX);
             return AVERROR_INVALIDDATA;
         }
         cdsc->param.bitrate = (int)(avctx->bit_rate / 1000);
         cdsc->param.rc_type = XEVE_RC_ABR;
-    }
-
-    if (xectx->op_crf >= 10 && xectx->op_crf < 50) {
-        cdsc->param.crf = xectx->op_crf;
-        cdsc->param.rc_type = XEVE_RC_CRF;
+    } else {
+        if (xectx->op_crf >= 10 && xectx->op_crf < 50) {
+            cdsc->param.crf = xectx->op_crf;
+            cdsc->param.rc_type = XEVE_RC_CRF;
+        } else if (xectx->op_qp > 0) {
+            cdsc->param.qp = xectx->op_qp;
+            cdsc->param.rc_type = XEVE_RC_CQP;
+        }
     }
 
     if (avctx->thread_count <= 0) {
@@ -614,7 +617,7 @@ static const AVOption libxeve_options[] = {
     { "preset", "Encoding preset for setting encoding speed [fast, medium, slow, placebo]", OFFSET(op_preset), AV_OPT_TYPE_STRING, { .str = "medium" }, 0, 0, VE },
     { "tune", "Tuneing parameter for special purpose operation [psnr, zerolatency]", OFFSET(op_tune), AV_OPT_TYPE_STRING, { 0 }, 0, 0, VE},
     { "qp", "quantization parameter qp <0..51> [default: 32]", OFFSET(op_qp), AV_OPT_TYPE_INT, { .i64 = 32 }, 0, 51, VE },
-    { "crf", "constant rate factor <10..49> [default: 32]", OFFSET(op_crf), AV_OPT_TYPE_INT, { .i64 = 32 }, 10, 49, VE },
+    { "crf", "constant rate factor <10..49> [default: -1]", OFFSET(op_crf), AV_OPT_TYPE_INT, { .i64 = -1 }, -1, 49, VE },
     { "hash", "embed picture signature (HASH) for conformance checking in decoding [0, 1] [default: 0]", OFFSET(op_hash), AV_OPT_TYPE_INT, { .i64 = 0 }, 0, 1, VE },
     { "sei_info", "embed SEI messages identifying encoder parameters and command line arguments [0, 1] [default: 0]", OFFSET(op_sei_info), AV_OPT_TYPE_INT, { .i64 = 0 }, 0, 1, VE },
     { NULL }

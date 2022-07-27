@@ -76,12 +76,6 @@ typedef struct XeveContext {
 
     State state;        // encoder state (skipping, encoding, bumping)
 
-    // Chroma subsampling
-    int width_luma;
-    int height_luma;
-    int width_chroma;
-    int height_chroma;
-
     int profile_id;     // encoder profile (main, baseline)
     int preset_id;      // preset of xeve ( fast, medium, slow, placebo)
     int tune_id;        // tune of xeve (psnr, zerolatency)
@@ -292,10 +286,10 @@ static int get_conf(AVCodecContext *avctx, XEVE_CDSC *cdsc)
 
     /* read options from AVCodecContext */
     if (avctx->width > 0)
-        cdsc->param.w = xectx->width_luma = avctx->width;
+        cdsc->param.w = avctx->width;
 
     if (avctx->height > 0)
-        cdsc->param.h = xectx->height_luma = avctx->height;
+        cdsc->param.h = avctx->height;
 
     if (avctx->framerate.num > 0) {
         // fps can be float number, but xeve API doesn't support it
@@ -304,7 +298,7 @@ static int get_conf(AVCodecContext *avctx, XEVE_CDSC *cdsc)
 
     if (avctx->gop_size >= 0) // GOP size (key-frame interval, I-picture period)
         cdsc->param.keyint = avctx->gop_size; // 0: only one I-frame at the first time; 1: every frame is coded in I-frame
-    
+
     if (avctx->max_b_frames == 0 || avctx->max_b_frames == 1 || avctx->max_b_frames == 3 ||
         avctx->max_b_frames == 7 || avctx->max_b_frames == 15)   // number of b-frames
         cdsc->param.bframes = avctx->max_b_frames;
@@ -472,6 +466,8 @@ static av_cold int libxeve_init(AVCodecContext *avctx)
     int i;
     int shift_h = 0;
     int shift_v = 0;
+    int width_chroma = 0;
+    int height_chroma = 0;
     XEVE_IMGB *imgb = NULL;
     int ret = 0;
 
@@ -514,13 +510,15 @@ static av_cold int libxeve_init(AVCodecContext *avctx)
         return AVERROR(EINVAL);
     }
 
+    // Chroma subsampling
+    //
     // YUV format explanation
     // shift_h == 1 && shift_v == 1 : YUV420
     // shift_h == 1 && shift_v == 0 : YUV422
     // shift_h == 0 && shift_v == 0 : YUV444
     //
-    xectx->width_chroma = AV_CEIL_RSHIFT(xectx->width_luma, shift_h);
-    xectx->height_chroma = AV_CEIL_RSHIFT(xectx->height_luma, shift_v);
+    width_chroma = AV_CEIL_RSHIFT(avctx->width, shift_h);
+    height_chroma = AV_CEIL_RSHIFT(avctx->height, shift_v);
 
     /* set default values for input image buffer */
     imgb = &xectx->imgb;
@@ -530,10 +528,10 @@ static av_cold int libxeve_init(AVCodecContext *avctx)
     for (i = 0; i < imgb->np; i++)
         imgb->x[i] = imgb->y[i] = 0;
 
-    imgb->w[0] = imgb->aw[0] = xectx->width_luma;
-    imgb->w[1] = imgb->w[2] = imgb->aw[1] = imgb->aw[2] = xectx->width_chroma;
-    imgb->h[0] = imgb->ah[0] = xectx->height_luma;
-    imgb->h[1] = imgb->h[2] = imgb->ah[1] = imgb->ah[2] = xectx->height_chroma;
+    imgb->w[0] = imgb->aw[0] = avctx->width; // width luma
+    imgb->w[1] = imgb->w[2] = imgb->aw[1] = imgb->aw[2] = width_chroma;
+    imgb->h[0] = imgb->ah[0] = avctx->height; // height luma
+    imgb->h[1] = imgb->h[2] = imgb->ah[1] = imgb->ah[2] = height_chroma;
 
     xectx->state = STATE_ENCODING;
 

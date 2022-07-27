@@ -81,17 +81,15 @@ typedef struct XeveContext {
     int tune_id;        // tune of xeve (psnr, zerolatency)
     int input_depth;    // input bit-depth: 8bit, 10bit
     int color_format;   // input data color format: currently only XEVE_CF_YCBCR420 is supported
-    int hash;           // embed picture signature (HASH) for conformance checking in decoding
 
     /* variables for input parameter */
     char *op_preset;
     char *op_tune;
     int op_qp;
     int op_crf;
+    int op_hash;         // embed picture signature (HASH) for conformance checking in decoding
+    int op_sei_info;     // embed Supplemental enhancement information while encoding
 
-    // configuration parameters
-    // xeve configuration read from a : separated list of key=value parameters
-    AVDictionary *xeve_params;
 } XeveContext;
 
 /**
@@ -187,61 +185,6 @@ static int libxeve_color_space(enum AVPixelFormat av_pix_fmt)
     return cs;
 }
 
-static int kbps_str_to_int(char *str)
-{
-    int kbps = 0;
-    char *saveptr = NULL;
-    if (strchr(str, 'K') || strchr(str, 'k')) {
-        char *tmp = av_strtok(str, "Kk ", &saveptr);
-        kbps = (int)(strtof(tmp, NULL));
-    } else if (strchr(str, 'M') || strchr(str, 'm')) {
-        char *tmp = av_strtok(str, "Mm ", &saveptr);
-        kbps = (int)(strtof(tmp, NULL) * 1000);
-    } else
-        kbps = strtol(str, NULL, 10);
-
-    return kbps;
-}
-
-/**
- * Parse : separated list of key=value parameters
- *
- * @param[in] avctx context for logger
- * @param[in] key
- * @param[in] value
- * @param[out] cdsc contains all Xeve MPEG-5 EVC encoder encoder parameters that
- *                  should be initialized before the encoder is use
- *
- * @return 0 on success, negative value on failure
- */
-static int parse_xeve_params(AVCodecContext *avctx, const char *key, const char *value, XEVE_CDSC *cdsc)
-{
-    XeveContext *xectx = NULL;
-    xectx = avctx->priv_data;
-
-    if (!key) {
-        av_log(avctx, AV_LOG_ERROR, "Ivalid argument: key string is NULL\n");
-        return XEVE_PARAM_BAD_VALUE;
-    }
-    if (!value) {
-        if (strcmp(key, "hash") == 0) {
-            xectx->hash = 1;
-            av_log(avctx, AV_LOG_INFO, "embedding signature is enabled\n");
-        } else {
-            av_log(avctx, AV_LOG_ERROR, "Ivalid argument: value string is NULL\n");
-            return XEVE_PARAM_BAD_VALUE;
-        }
-    } else if (strcmp(key, "vbv-bufsize") == 0 ) {
-        cdsc->param.vbv_bufsize = kbps_str_to_int((char *)value);
-        av_log(avctx, AV_LOG_INFO, "VBV buffer size: %dkbits\n", cdsc->param.vbv_bufsize);
-    } else {
-        av_log(avctx, AV_LOG_ERROR, "Unknown xeve codec option: %s\n", key);
-        return XEVE_PARAM_BAD_NAME;
-    }
-
-    return 0;
-}
-
 /**
  * The function returns a pointer to the object of the XEVE_CDSC type.
  * XEVE_CDSC contains all encoder parameters that should be initialized before the encoder is used.
@@ -256,9 +199,7 @@ static int parse_xeve_params(AVCodecContext *avctx, const char *key, const char 
  * 1) first, the fields of the AVCodecContext structure corresponding to the provided input options are processed,
  *    (i.e -pix_fmt yuv420p -s:v 1920x1080 -r 30 -profile:v 0)
  * 2) then xeve-specific options added as AVOption to the xeve AVCodec implementation
- *    (i.e -threads_cnt 3 -preset 0)
- * 3) finally, the options specified after the xeve-params option as the parameter list of type key value are processed
- *    (i.e -xeve-params "m=2:q=17")
+ *    (i.e -preset 0)
  *
  * Keep in mind that, there are options that can be set in different ways.
  * In this case, please follow the above-mentioned order of processing.
@@ -275,7 +216,6 @@ static int get_conf(AVCodecContext *avctx, XEVE_CDSC *cdsc)
     int ret;
 
     xectx = avctx->priv_data;
-    xectx->hash = 0;
 
     /* initialize xeve_param struct with default values */
     ret = xeve_param_default(&cdsc->param);
@@ -366,27 +306,6 @@ static int get_conf(AVCodecContext *avctx, XEVE_CDSC *cdsc)
         return AVERROR_EXTERNAL;
     }
 
-    /* parse : separated list of key=value parameters and set values for created descriptor (XEVE_CDSC) */
-    {
-        const AVDictionaryEntry *en = NULL;
-
-        // Start to parse xeve_params
-        while ((en = av_dict_get(xectx->xeve_params, "", en, AV_DICT_IGNORE_SUFFIX))) {
-            int parse_ret = parse_xeve_params(avctx, en->key, en->value, cdsc);
-
-            switch (parse_ret) {
-            case XEVE_PARAM_BAD_NAME:
-                av_log(avctx, AV_LOG_WARNING, "Unknown option: %s.\n", en->key);
-                break;
-            case XEVE_PARAM_BAD_VALUE:
-                av_log(avctx, AV_LOG_WARNING, "Invalid value for %s: %s.\n", en->key, en->value);
-                break;
-            default:
-                break;
-            }
-        }
-    }
-
     return 0;
 }
 
@@ -401,7 +320,7 @@ static int get_conf(AVCodecContext *avctx, XEVE_CDSC *cdsc)
  */
 static int set_extra_config(AVCodecContext *avctx, XEVE id, XeveContext *ctx)
 {
-    int ret, size, value;
+    int ret, size;
     size = 4;
 
     // embed SEI messages identifying encoder parameters and command line arguments
@@ -414,19 +333,16 @@ static int set_extra_config(AVCodecContext *avctx, XEVE id, XeveContext *ctx)
     // and for output timing decoder conformance.
     // @see ISO_IEC_23094-1_2020 7.4.3.5
     // @see ISO_IEC_23094-1_2020 Annex D
-    ret = xeve_config(id, XEVE_CFG_SET_SEI_CMD, &value, &size); // sei_cmd_info
+    ret = xeve_config(id, XEVE_CFG_SET_SEI_CMD, &ctx->op_sei_info, &size); // sei_cmd_info
     if (XEVE_FAILED(ret)) {
         av_log(avctx, AV_LOG_ERROR, "Failed to set config for sei command info messages\n");
         return AVERROR_EXTERNAL;
     }
 
-    if (ctx->hash) {
-        value = 1;
-        ret = xeve_config(id, XEVE_CFG_SET_USE_PIC_SIGNATURE, &value, &size);
-        if (XEVE_FAILED(ret)) {
-            av_log(avctx, AV_LOG_ERROR, "Failed to set config for picture signature\n");
-            return AVERROR_EXTERNAL;
-        }
+    ret = xeve_config(id, XEVE_CFG_SET_USE_PIC_SIGNATURE, &ctx->op_hash, &size);
+    if (XEVE_FAILED(ret)) {
+        av_log(avctx, AV_LOG_ERROR, "Failed to set config for picture signature\n");
+        return AVERROR_EXTERNAL;
     }
 
     return 0;
@@ -699,7 +615,8 @@ static const AVOption libxeve_options[] = {
     { "tune", "Tuneing parameter for special purpose operation [psnr, zerolatency]", OFFSET(op_tune), AV_OPT_TYPE_STRING, { 0 }, 0, 0, VE},
     { "qp", "quantization parameter qp <0..51> [default: 32]", OFFSET(op_qp), AV_OPT_TYPE_INT, { .i64 = 32 }, 0, 51, VE },
     { "crf", "constant rate factor <10..49> [default: 32]", OFFSET(op_crf), AV_OPT_TYPE_INT, { .i64 = 32 }, 10, 49, VE },
-    { "xeve-params", "override the xeve configuration using a : separated list of key=value parameters", OFFSET(xeve_params), AV_OPT_TYPE_DICT,   { 0 }, 0, 0, VE },
+    { "hash", "embed picture signature (HASH) for conformance checking in decoding [0, 1] [default: 0]", OFFSET(op_hash), AV_OPT_TYPE_INT, { .i64 = 0 }, 0, 1, VE },
+    { "sei_info", "embed SEI messages identifying encoder parameters and command line arguments [0, 1] [default: 0]", OFFSET(op_sei_info), AV_OPT_TYPE_INT, { .i64 = 0 }, 0, 1, VE },
     { NULL }
 };
 

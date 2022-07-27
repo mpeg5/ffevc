@@ -55,10 +55,6 @@ typedef struct XevdContext {
 
     int decod_frames;   // number of decoded frames
     int packet_count;   // number of packets created by decoder
-
-    // configuration parameters
-    AVDictionary *xevd_opts; // xevd configuration read from a : separated list of key=value parameters
-
 } XevdContext;
 
 /**
@@ -419,7 +415,7 @@ static av_cold int libxevd_close(AVCodecContext *avctx)
 #define OFFSET(x) offsetof(XevdContext, x)
 #define VD AV_OPT_FLAG_VIDEO_PARAM | AV_OPT_FLAG_DECODING_PARAM
 
-static const AVClass xevd_class = {
+static const AVClass libxevd_class = {
     .class_name = "libxevd",
     .item_name  = av_default_item_name,
     .version    = LIBAVUTIL_VERSION_INT,
@@ -434,7 +430,7 @@ const FFCodec ff_libxevd_decoder = {
     FF_CODEC_DECODE_CB(libxevd_decode),
     .close              = libxevd_close,
     .priv_data_size     = sizeof(XevdContext),
-    .p.priv_class       = &xevd_class,
+    .p.priv_class       = &libxevd_class,
     .p.capabilities     = AV_CODEC_CAP_DELAY | AV_CODEC_CAP_AUTO_THREADS | AV_CODEC_CAP_AVOID_PROBING | AV_CODEC_CAP_DR1,
     .p.wrapper_name     = "libxevd",
 };

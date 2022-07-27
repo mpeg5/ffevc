@@ -138,7 +138,7 @@ static int get_tune_id(const char *tune)
  *
  * @return 0 on success, negative value on failure
  */
-static int xeve_color_fmt(enum AVPixelFormat av_pix_fmt, int *xeve_col_fmt)
+static int libxeve_color_fmt(enum AVPixelFormat av_pix_fmt, int *xeve_col_fmt)
 {
     switch (av_pix_fmt) {
     case AV_PIX_FMT_YUV420P:
@@ -162,7 +162,7 @@ static int xeve_color_fmt(enum AVPixelFormat av_pix_fmt, int *xeve_col_fmt)
  *
  * @return XEVE pre-defined color space (@see xeve.h) on success, XEVE_CF_UNKNOWN on failure
  */
-static int xeve_color_space(enum AVPixelFormat av_pix_fmt)
+static int libxeve_color_space(enum AVPixelFormat av_pix_fmt)
 {
     /* color space of input image */
     int cs = XEVE_CF_UNKNOWN;
@@ -338,7 +338,7 @@ static int get_conf(AVCodecContext *avctx, XEVE_CDSC *cdsc)
         cdsc->param.threads = avctx->thread_count;
 
 
-    xeve_color_fmt(avctx->pix_fmt, &xectx->color_format);
+    libxeve_color_fmt(avctx->pix_fmt, &xectx->color_format);
 
 #if AV_HAVE_BIGENDIAN
     cdsc->param.cs = XEVE_CS_SET(xectx->color_format, cdsc->param.codec_bit_depth, 1);
@@ -522,7 +522,7 @@ static av_cold int libxeve_init(AVCodecContext *avctx)
 
     /* set default values for input image buffer */
     imgb = &xectx->imgb;
-    imgb->cs = xeve_color_space(avctx->pix_fmt);
+    imgb->cs = libxeve_color_space(avctx->pix_fmt);
     imgb->np = 3; /* only for yuv420p, yuv420ple */
 
     for (i = 0; i < imgb->np; i++)
@@ -574,7 +574,7 @@ static int libxeve_encode(AVCodecContext *avctx, AVPacket *avpkt,
             return AVERROR_INVALIDDATA;
         }
 
-        xeve_cs = xeve_color_space(avctx->pix_fmt);
+        xeve_cs = libxeve_color_space(avctx->pix_fmt);
         if (xeve_cs != XEVE_CS_YCBCR420 && xeve_cs != XEVE_CS_YCBCR420_10LE) {
             av_log(avctx, AV_LOG_ERROR, "Invalid pixel format: %s\n", av_get_pix_fmt_name(avctx->pix_fmt));
             return AVERROR_INVALIDDATA;
@@ -698,7 +698,7 @@ static const enum AVPixelFormat supported_pixel_formats[] = {
 // Example of using: ./ffmpeg -xeve-params "m=2:q=17"
 // Consider using following options (./ffmpeg --help encoder=libxeve)
 //
-static const AVOption xeve_options[] = {
+static const AVOption libxeve_options[] = {
     { "preset", "Encoding preset for setting encoding speed [fast, medium, slow, placebo]", OFFSET(op_preset), AV_OPT_TYPE_STRING, { .str = "medium" }, 0, 0, VE },
     { "tune", "Tuneing parameter for special purpose operation [psnr, zerolatency]", OFFSET(op_tune), AV_OPT_TYPE_STRING, { 0 }, 0, 0, VE},
     { "qp", "quantization parameter qp <0..51> [default: 32]", OFFSET(op_qp), AV_OPT_TYPE_INT, { .i64 = 32 }, 0, 51, VE },
@@ -707,10 +707,10 @@ static const AVOption xeve_options[] = {
     { NULL }
 };
 
-static const AVClass xeve_class = {
+static const AVClass libxeve_class = {
     .class_name = "libxeve",
     .item_name  = av_default_item_name,
-    .option     = xeve_options,
+    .option     = libxeve_options,
     .version    = LIBAVUTIL_VERSION_INT,
 };
 
@@ -718,7 +718,7 @@ static const AVClass xeve_class = {
  *  libavcodec generic global options, which can be set on all the encoders and decoders
  *  @see https://www.ffmpeg.org/ffmpeg-codecs.html#Codec-Options
  */
-static const FFCodecDefault xeve_defaults[] = {
+static const FFCodecDefault libxeve_defaults[] = {
     { "b", "0" },       // bitrate in terms of kilo-bits per second
     { "g", "0" },       // gop_size (key-frame interval 0: only one I-frame at the first time; 1: every frame is coded in I-frame)
     { "bf", "15"},      // maximum number of B frames (0: no B-frames, 1,3,7,15)
@@ -736,8 +736,8 @@ const FFCodec ff_libxeve_encoder = {
     FF_CODEC_ENCODE_CB(libxeve_encode),
     .close              = libxeve_close,
     .priv_data_size     = sizeof(XeveContext),
-    .p.priv_class       = &xeve_class,
-    .defaults           = xeve_defaults,
+    .p.priv_class       = &libxeve_class,
+    .defaults           = libxeve_defaults,
     .p.capabilities     = FF_CODEC_CAP_INIT_CLEANUP | AV_CODEC_CAP_DELAY | AV_CODEC_CAP_AUTO_THREADS | AV_CODEC_CAP_DR1,
     .p.wrapper_name     = "libxeve",
     .p.pix_fmts         = supported_pixel_formats,

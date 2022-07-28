@@ -553,17 +553,17 @@ static const AVOption libxeve_options[] = {
     { "medium",  NULL, 0, AV_OPT_TYPE_CONST, { .i64 = XEVE_PRESET_MEDIUM },  INT_MIN, INT_MAX, VE, "preset" },
     { "slow",    NULL, 0, AV_OPT_TYPE_CONST, { .i64 = XEVE_PRESET_SLOW },    INT_MIN, INT_MAX, VE, "preset" },
     { "placebo", NULL, 0, AV_OPT_TYPE_CONST, { .i64 = XEVE_PRESET_PLACEBO }, INT_MIN, INT_MAX, VE, "preset" },
-    { "tune", "Tuneing parameter for special purpose operation", OFFSET(op_tune), AV_OPT_TYPE_INT, { .i64 = XEVE_TUNE_NONE }, XEVE_TUNE_NONE, XEVE_TUNE_PSNR, VE, "tune"},
+    { "tune", "Tuning parameter for special purpose operation", OFFSET(op_tune), AV_OPT_TYPE_INT, { .i64 = XEVE_TUNE_NONE }, XEVE_TUNE_NONE, XEVE_TUNE_PSNR, VE, "tune"},
     { "none",        NULL, 0, AV_OPT_TYPE_CONST, { .i64 = XEVE_TUNE_NONE },        INT_MIN, INT_MAX, VE, "tune" },
     { "zerolatency", NULL, 0, AV_OPT_TYPE_CONST, { .i64 = XEVE_TUNE_ZEROLATENCY }, INT_MIN, INT_MAX, VE, "tune" },
     { "psnr",        NULL, 0, AV_OPT_TYPE_CONST, { .i64 = XEVE_TUNE_PSNR },        INT_MIN, INT_MAX, VE, "tune" },
     { "profile", "Encoding profile", OFFSET(op_profile), AV_OPT_TYPE_INT, { .i64 = XEVE_PROFILE_BASELINE }, XEVE_PROFILE_BASELINE,  XEVE_PROFILE_MAIN, VE, "profile" },
     { "baseline", NULL, 0, AV_OPT_TYPE_CONST, { .i64 = XEVE_PROFILE_BASELINE }, INT_MIN, INT_MAX, VE, "profile" },
     { "main",     NULL, 0, AV_OPT_TYPE_CONST, { .i64 = XEVE_PROFILE_MAIN },    INT_MIN, INT_MAX, VE, "profile" },
-    { "qp", "quantization parameter qp <0..51> [default: 32]", OFFSET(op_qp), AV_OPT_TYPE_INT, { .i64 = 32 }, 0, 51, VE },
-    { "crf", "constant rate factor <10..49> [default: 18]", OFFSET(op_crf), AV_OPT_TYPE_INT, { .i64 = -1 }, -1, 49, VE },
-    { "hash", "embed picture signature (HASH) for conformance checking in decoding [0, 1] [default: 0]", OFFSET(op_hash), AV_OPT_TYPE_INT, { .i64 = 0 }, 0, 1, VE },
-    { "sei_info", "embed SEI messages identifying encoder parameters and command line arguments [0, 1] [default: 0]", OFFSET(op_sei_info), AV_OPT_TYPE_INT, { .i64 = 0 }, 0, 1, VE },
+    { "qp", "quantization parameter qp <0..51>", OFFSET(op_qp), AV_OPT_TYPE_INT, { .i64 = 32 }, 0, 51, VE },
+    { "crf", "constant rate factor <10..49>", OFFSET(op_crf), AV_OPT_TYPE_INT, { .i64 = -1 }, -1, 49, VE },
+    { "hash", "embed picture signature (HASH) for conformance checking in decoding", OFFSET(op_hash), AV_OPT_TYPE_INT, { .i64 = 0 }, 0, 1, VE },
+    { "sei_info", "embed SEI messages identifying encoder parameters and command line arguments", OFFSET(op_sei_info), AV_OPT_TYPE_INT, { .i64 = 0 }, 0, 1, VE },
     { NULL }
 };
 

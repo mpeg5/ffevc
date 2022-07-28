@@ -414,8 +414,8 @@ static int libxeve_encode(AVCodecContext *avctx, AVPacket *avpkt,
     XeveContext *xectx =  avctx->priv_data;
     int  ret = -1;
 
-    // No more input frames are available but encoder still can have some data to process
-    // and some frames to dump
+    // No more input frames are available but encoder still can have some data in its internal buffer to process
+    // and some frames to dump.
     if (xectx->state == STATE_ENCODING && frame == NULL) {
         if (setup_bumping(xectx->id) == 0)
             xectx->state = STATE_BUMPING;  // Entering bumping process

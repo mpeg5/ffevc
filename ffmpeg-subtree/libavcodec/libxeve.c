@@ -81,6 +81,7 @@ typedef struct XeveContext {
     int tune_id;        // tune of xeve (psnr, zerolatency)
 
     // variables for rate control modes
+    int rc_mode;        // Rate control mode [ 0(CQP) / 1(ABR) / 2(CRF) ]
     int qp;             // quantization parameter (QP) [0,51]
     int crf;            // constant rate factor (CRF) [10,49]
 
@@ -213,25 +214,22 @@ static int get_conf(AVCodecContext *avctx, XEVE_CDSC *cdsc)
     if (avctx->level >= 0)
         cdsc->param.level_idc = avctx->level;
 
-    if (avctx->rc_buffer_size > 0)   // VBV buf size
+    if (avctx->rc_buffer_size)   // VBV buf size
         cdsc->param.vbv_bufsize = (int)(avctx->rc_buffer_size / 1000);
 
     // rc_type:  Rate control type [ 0(CQP) / 1(ABR) / 2(CRF) ]
-    if (avctx->bit_rate) {
+    cdsc->param.rc_type = xectx->rc_mode;
+
+    if (xectx->rc_mode == XEVE_RC_CQP) {
+        cdsc->param.qp = xectx->qp;
+    } else if (xectx->rc_mode == XEVE_RC_ABR) {
         if (avctx->bit_rate / 1000 > INT_MAX || avctx->rc_max_rate / 1000 > INT_MAX) {
             av_log(avctx, AV_LOG_ERROR, "Not supported bitrate bit_rate and rc_max_rate > %d000\n", INT_MAX);
             return AVERROR_INVALIDDATA;
         }
         cdsc->param.bitrate = (int)(avctx->bit_rate / 1000);
-        cdsc->param.rc_type = XEVE_RC_ABR;
     } else {
-        if (xectx->crf >= 10 && xectx->crf <= 49) {
-            cdsc->param.crf = xectx->crf;
-            cdsc->param.rc_type = XEVE_RC_CRF;
-        } else if (xectx->qp > 0) {
-            cdsc->param.qp = xectx->qp;
-            cdsc->param.rc_type = XEVE_RC_CQP;
-        }
+        cdsc->param.crf = xectx->crf;
     }
 
     if (avctx->thread_count <= 0) {
@@ -553,10 +551,14 @@ static const AVOption libxeve_options[] = {
     { "profile", "Encoding profile", OFFSET(profile_id), AV_OPT_TYPE_INT, { .i64 = XEVE_PROFILE_BASELINE }, XEVE_PROFILE_BASELINE,  XEVE_PROFILE_MAIN, VE, "profile" },
     { "baseline", NULL, 0, AV_OPT_TYPE_CONST, { .i64 = XEVE_PROFILE_BASELINE }, INT_MIN, INT_MAX, VE, "profile" },
     { "main",     NULL, 0, AV_OPT_TYPE_CONST, { .i64 = XEVE_PROFILE_MAIN },    INT_MIN, INT_MAX, VE, "profile" },
-    { "qp", "quantization parameter qp <0..51>", OFFSET(qp), AV_OPT_TYPE_INT, { .i64 = 17 }, 0, 51, VE },
-    { "crf", "constant rate factor <10..49>", OFFSET(crf), AV_OPT_TYPE_INT, { .i64 = -1 }, -1, 49, VE },
-    { "hash", "embed picture signature (HASH) for conformance checking in decoding", OFFSET(hash), AV_OPT_TYPE_INT, { .i64 = 0 }, 0, 1, VE },
-    { "sei_info", "embed SEI messages identifying encoder parameters and command line arguments", OFFSET(sei_info), AV_OPT_TYPE_INT, { .i64 = 0 }, 0, 1, VE },
+    { "rc_mode", "Rate control mode", OFFSET(rc_mode), AV_OPT_TYPE_INT, { .i64 = XEVE_RC_CQP }, XEVE_RC_CQP,  XEVE_RC_CRF, VE, "rc_mode" },
+    { "CQP", NULL, 0, AV_OPT_TYPE_CONST, { .i64 = XEVE_RC_CQP }, INT_MIN, INT_MAX, VE, "rc_mode" },
+    { "ABR", NULL, 0, AV_OPT_TYPE_CONST, { .i64 = XEVE_RC_ABR }, INT_MIN, INT_MAX, VE, "rc_mode" },
+    { "CRF", NULL, 0, AV_OPT_TYPE_CONST, { .i64 = XEVE_RC_CRF }, INT_MIN, INT_MAX, VE, "rc_mode" },
+    { "qp", "Quantization parameter value for CQP rate control mode", OFFSET(qp), AV_OPT_TYPE_INT, { .i64 = 32 }, 0, 51, VE },
+    { "crf", "Constant rate factor value for CRF rate control mode", OFFSET(crf), AV_OPT_TYPE_INT, { .i64 = 32 }, 10, 49, VE },
+    { "hash", "Embed picture signature (HASH) for conformance checking in decoding", OFFSET(hash), AV_OPT_TYPE_INT, { .i64 = 0 }, 0, 1, VE },
+    { "sei_info", "Embed SEI messages identifying encoder parameters and command line arguments", OFFSET(sei_info), AV_OPT_TYPE_INT, { .i64 = 0 }, 0, 1, VE },
     { NULL }
 };
 

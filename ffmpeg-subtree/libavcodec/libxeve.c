@@ -54,12 +54,10 @@
  *
  * STATE_ENCODING - the encoder receives and processes input frames
  * STATE_BUMPING  - there are no more input frames, however the encoder still processes previously received data
- * STATE_SKIPPING - skipping input frames
  */
 typedef enum State {
     STATE_ENCODING,
     STATE_BUMPING,
-    STATE_SKIPPING
 } State;
 
 /**
@@ -416,14 +414,14 @@ static int libxeve_encode(AVCodecContext *avctx, AVPacket *avpkt,
     XeveContext *xectx =  avctx->priv_data;
     int  ret = -1;
 
-    if (xectx->state == STATE_SKIPPING && frame ) {
-        xectx->state = STATE_ENCODING; // Entering encoding process
-    } else if (xectx->state == STATE_ENCODING && frame == NULL) {
+    // No more input frames are available but encoder still can have some data in its internal buffer to process
+    // and some frames to dump.
+    if (xectx->state == STATE_ENCODING && frame == NULL) {
         if (setup_bumping(xectx->id) == 0)
             xectx->state = STATE_BUMPING;  // Entering bumping process
         else {
             av_log(avctx, AV_LOG_ERROR, "Failed to setup bumping\n");
-            xectx->state = STATE_SKIPPING;
+            return 0;
         }
     }
 
@@ -449,7 +447,6 @@ static int libxeve_encode(AVCodecContext *avctx, AVPacket *avpkt,
         }
     }
     if (xectx->state == STATE_ENCODING || xectx->state == STATE_BUMPING) {
-
         /* encoding */
         ret = xeve_encode(xectx->id, &(xectx->bitb), &(xectx->stat));
         if (XEVE_FAILED(ret)) {

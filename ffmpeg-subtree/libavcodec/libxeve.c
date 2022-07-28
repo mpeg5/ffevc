@@ -217,7 +217,6 @@ static int get_conf(AVCodecContext *avctx, XEVE_CDSC *cdsc)
     if (avctx->rc_buffer_size)   // VBV buf size
         cdsc->param.vbv_bufsize = (int)(avctx->rc_buffer_size / 1000);
 
-    // rc_type:  Rate control type [ 0(CQP) / 1(ABR) / 2(CRF) ]
     cdsc->param.rc_type = xectx->rc_mode;
 
     if (xectx->rc_mode == XEVE_RC_CQP) {
@@ -228,8 +227,11 @@ static int get_conf(AVCodecContext *avctx, XEVE_CDSC *cdsc)
             return AVERROR_INVALIDDATA;
         }
         cdsc->param.bitrate = (int)(avctx->bit_rate / 1000);
-    } else {
+    } else if (xectx->rc_mode == XEVE_RC_CRF) {
         cdsc->param.crf = xectx->crf;
+    } else {
+        av_log(avctx, AV_LOG_ERROR, "Not supported rate control type: %d\n", xectx->rc_mode);
+        return AVERROR_INVALIDDATA;
     }
 
     if (avctx->thread_count <= 0) {

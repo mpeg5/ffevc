@@ -79,18 +79,15 @@ typedef struct XeveContext {
     int profile_id;     // encoder profile (main, baseline)
     int preset_id;      // preset of xeve ( fast, medium, slow, placebo)
     int tune_id;        // tune of xeve (psnr, zerolatency)
-    int input_depth;    // input bit-depth: 8bit, 10bit
+
+    // variables for rate control modes
+    int qp;             // quantization parameter (QP) [0,51]
+    int crf;            // constant rate factor (CRF) [10,49]
+
+    int hash;           // embed picture signature (HASH) for conformance checking in decoding
+    int sei_info;       // embed Supplemental enhancement information while encoding
+
     int color_format;   // input data color format: currently only XEVE_CF_YCBCR420 is supported
-
-    /* variables for input parameter */
-    int op_preset;
-    int op_tune;
-    int op_profile;
-    int op_qp;
-    int op_crf;
-    int op_hash;         // embed picture signature (HASH) for conformance checking in decoding
-    int op_sei_info;     // embed Supplemental enhancement information while encoding
-
 } XeveContext;
 
 /**
@@ -228,11 +225,11 @@ static int get_conf(AVCodecContext *avctx, XEVE_CDSC *cdsc)
         cdsc->param.bitrate = (int)(avctx->bit_rate / 1000);
         cdsc->param.rc_type = XEVE_RC_ABR;
     } else {
-        if (xectx->op_crf >= 10 && xectx->op_crf < 50) {
-            cdsc->param.crf = xectx->op_crf;
+        if (xectx->crf >= 10 && xectx->crf <= 49) {
+            cdsc->param.crf = xectx->crf;
             cdsc->param.rc_type = XEVE_RC_CRF;
-        } else if (xectx->op_qp > 0) {
-            cdsc->param.qp = xectx->op_qp;
+        } else if (xectx->qp > 0) {
+            cdsc->param.qp = xectx->qp;
             cdsc->param.rc_type = XEVE_RC_CQP;
         }
     }
@@ -251,10 +248,6 @@ static int get_conf(AVCodecContext *avctx, XEVE_CDSC *cdsc)
     cdsc->param.cs = XEVE_CS_SET(xectx->color_format, cdsc->param.codec_bit_depth, AV_HAVE_BIGENDIAN);
 
     cdsc->max_bs_buf_size = MAX_BS_BUF;
-
-    xectx->profile_id = xectx->op_profile;
-    xectx->preset_id = xectx->op_preset;
-    xectx->tune_id = xectx->op_tune;
 
     ret = xeve_param_ppt(&cdsc->param, xectx->profile_id, xectx->preset_id, xectx->tune_id);
     if (XEVE_FAILED(ret)) {
@@ -289,13 +282,13 @@ static int set_extra_config(AVCodecContext *avctx, XEVE id, XeveContext *ctx)
     // and for output timing decoder conformance.
     // @see ISO_IEC_23094-1_2020 7.4.3.5
     // @see ISO_IEC_23094-1_2020 Annex D
-    ret = xeve_config(id, XEVE_CFG_SET_SEI_CMD, &ctx->op_sei_info, &size); // sei_cmd_info
+    ret = xeve_config(id, XEVE_CFG_SET_SEI_CMD, &ctx->sei_info, &size); // sei_cmd_info
     if (XEVE_FAILED(ret)) {
         av_log(avctx, AV_LOG_ERROR, "Failed to set config for sei command info messages\n");
         return AVERROR_EXTERNAL;
     }
 
-    ret = xeve_config(id, XEVE_CFG_SET_USE_PIC_SIGNATURE, &ctx->op_hash, &size);
+    ret = xeve_config(id, XEVE_CFG_SET_USE_PIC_SIGNATURE, &ctx->hash, &size);
     if (XEVE_FAILED(ret)) {
         av_log(avctx, AV_LOG_ERROR, "Failed to set config for picture signature\n");
         return AVERROR_EXTERNAL;
@@ -547,23 +540,23 @@ static const enum AVPixelFormat supported_pixel_formats[] = {
 // Consider using following options (./ffmpeg --help encoder=libxeve)
 //
 static const AVOption libxeve_options[] = {
-    { "preset", "Encoding preset for setting encoding speed", OFFSET(op_preset), AV_OPT_TYPE_INT, { .i64 = XEVE_PRESET_MEDIUM }, XEVE_PRESET_DEFAULT,  XEVE_PRESET_PLACEBO, VE, "preset" },
+    { "preset", "Encoding preset for setting encoding speed", OFFSET(preset_id), AV_OPT_TYPE_INT, { .i64 = XEVE_PRESET_MEDIUM }, XEVE_PRESET_DEFAULT,  XEVE_PRESET_PLACEBO, VE, "preset" },
     { "default", NULL, 0, AV_OPT_TYPE_CONST, { .i64 = XEVE_PRESET_DEFAULT }, INT_MIN, INT_MAX, VE, "preset" },
     { "fast",    NULL, 0, AV_OPT_TYPE_CONST, { .i64 = XEVE_PRESET_FAST },    INT_MIN, INT_MAX, VE, "preset" },
     { "medium",  NULL, 0, AV_OPT_TYPE_CONST, { .i64 = XEVE_PRESET_MEDIUM },  INT_MIN, INT_MAX, VE, "preset" },
     { "slow",    NULL, 0, AV_OPT_TYPE_CONST, { .i64 = XEVE_PRESET_SLOW },    INT_MIN, INT_MAX, VE, "preset" },
     { "placebo", NULL, 0, AV_OPT_TYPE_CONST, { .i64 = XEVE_PRESET_PLACEBO }, INT_MIN, INT_MAX, VE, "preset" },
-    { "tune", "Tuning parameter for special purpose operation", OFFSET(op_tune), AV_OPT_TYPE_INT, { .i64 = XEVE_TUNE_NONE }, XEVE_TUNE_NONE, XEVE_TUNE_PSNR, VE, "tune"},
+    { "tune", "Tuning parameter for special purpose operation", OFFSET(tune_id), AV_OPT_TYPE_INT, { .i64 = XEVE_TUNE_NONE }, XEVE_TUNE_NONE, XEVE_TUNE_PSNR, VE, "tune"},
     { "none",        NULL, 0, AV_OPT_TYPE_CONST, { .i64 = XEVE_TUNE_NONE },        INT_MIN, INT_MAX, VE, "tune" },
     { "zerolatency", NULL, 0, AV_OPT_TYPE_CONST, { .i64 = XEVE_TUNE_ZEROLATENCY }, INT_MIN, INT_MAX, VE, "tune" },
     { "psnr",        NULL, 0, AV_OPT_TYPE_CONST, { .i64 = XEVE_TUNE_PSNR },        INT_MIN, INT_MAX, VE, "tune" },
-    { "profile", "Encoding profile", OFFSET(op_profile), AV_OPT_TYPE_INT, { .i64 = XEVE_PROFILE_BASELINE }, XEVE_PROFILE_BASELINE,  XEVE_PROFILE_MAIN, VE, "profile" },
+    { "profile", "Encoding profile", OFFSET(profile_id), AV_OPT_TYPE_INT, { .i64 = XEVE_PROFILE_BASELINE }, XEVE_PROFILE_BASELINE,  XEVE_PROFILE_MAIN, VE, "profile" },
     { "baseline", NULL, 0, AV_OPT_TYPE_CONST, { .i64 = XEVE_PROFILE_BASELINE }, INT_MIN, INT_MAX, VE, "profile" },
     { "main",     NULL, 0, AV_OPT_TYPE_CONST, { .i64 = XEVE_PROFILE_MAIN },    INT_MIN, INT_MAX, VE, "profile" },
-    { "qp", "quantization parameter qp <0..51>", OFFSET(op_qp), AV_OPT_TYPE_INT, { .i64 = 32 }, 0, 51, VE },
-    { "crf", "constant rate factor <10..49>", OFFSET(op_crf), AV_OPT_TYPE_INT, { .i64 = -1 }, -1, 49, VE },
-    { "hash", "embed picture signature (HASH) for conformance checking in decoding", OFFSET(op_hash), AV_OPT_TYPE_INT, { .i64 = 0 }, 0, 1, VE },
-    { "sei_info", "embed SEI messages identifying encoder parameters and command line arguments", OFFSET(op_sei_info), AV_OPT_TYPE_INT, { .i64 = 0 }, 0, 1, VE },
+    { "qp", "quantization parameter qp <0..51>", OFFSET(qp), AV_OPT_TYPE_INT, { .i64 = 17 }, 0, 51, VE },
+    { "crf", "constant rate factor <10..49>", OFFSET(crf), AV_OPT_TYPE_INT, { .i64 = -1 }, -1, 49, VE },
+    { "hash", "embed picture signature (HASH) for conformance checking in decoding", OFFSET(hash), AV_OPT_TYPE_INT, { .i64 = 0 }, 0, 1, VE },
+    { "sei_info", "embed SEI messages identifying encoder parameters and command line arguments", OFFSET(sei_info), AV_OPT_TYPE_INT, { .i64 = 0 }, 0, 1, VE },
     { NULL }
 };
 
@@ -582,7 +575,6 @@ static const FFCodecDefault libxeve_defaults[] = {
     { "b", "0" },       // bitrate in terms of kilo-bits per second
     { "g", "0" },       // gop_size (key-frame interval 0: only one I-frame at the first time; 1: every frame is coded in I-frame)
     { "bf", "15"},      // maximum number of B frames (0: no B-frames, 1,3,7,15)
-    { "profile", "0"},  // encoder codec profile (0: baselie; 1: main)
     { "threads", "0"},  // number of threads to be used (0: automatically select the number of threads to set)
     { NULL },
 };

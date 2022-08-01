@@ -949,7 +949,7 @@ void ff_thread_report_progress(ThreadFrame *f, int progress, int field)
 {
 }
 
-void ff_thread_await_progress(ThreadFrame *f, int progress, int field)
+void ff_thread_await_progress(const ThreadFrame *f, int progress, int field)
 {
 }
 
@@ -963,13 +963,9 @@ int ff_slice_thread_init_progress(AVCodecContext *avctx)
     return 0;
 }
 
-int ff_alloc_entries(AVCodecContext *avctx, int count)
+int ff_slice_thread_allocz_entries(AVCodecContext *avctx, int count)
 {
     return 0;
-}
-
-void ff_reset_entries(AVCodecContext *avctx)
-{
 }
 
 void ff_thread_await_progress2(AVCodecContext *avctx, int field, int thread, int shift)

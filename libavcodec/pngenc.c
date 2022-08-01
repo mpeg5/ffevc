@@ -1056,7 +1056,7 @@ static int encode_apng(AVCodecContext *avctx, AVPacket *pkt,
         }
 
         av_frame_unref(s->last_frame);
-        ret = av_frame_ref(s->last_frame, (AVFrame*)pict);
+        ret = av_frame_ref(s->last_frame, pict);
         if (ret < 0)
             return ret;
 
@@ -1210,6 +1210,7 @@ const FFCodec ff_png_encoder = {
         AV_PIX_FMT_MONOBLACK, AV_PIX_FMT_NONE
     },
     .p.priv_class   = &pngenc_class,
+    .caps_internal  = FF_CODEC_CAP_ICC_PROFILES,
 };
 
 const FFCodec ff_apng_encoder = {
@@ -1231,4 +1232,5 @@ const FFCodec ff_apng_encoder = {
         AV_PIX_FMT_NONE
     },
     .p.priv_class   = &pngenc_class,
+    .caps_internal  = FF_CODEC_CAP_ICC_PROFILES,
 };

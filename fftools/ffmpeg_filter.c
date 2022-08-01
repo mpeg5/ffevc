@@ -52,8 +52,9 @@ static const enum AVPixelFormat *get_compliance_normal_pix_fmts(const AVCodec *c
     }
 }
 
-static enum AVPixelFormat choose_pixel_fmt(AVStream *st, AVCodecContext *enc_ctx,
-                                    const AVCodec *codec, enum AVPixelFormat target)
+static enum AVPixelFormat
+choose_pixel_fmt(const AVCodec *codec, enum AVPixelFormat target,
+                 int strict_std_compliance)
 {
     if (codec && codec->pix_fmts) {
         const enum AVPixelFormat *p = codec->pix_fmts;
@@ -62,7 +63,7 @@ static enum AVPixelFormat choose_pixel_fmt(AVStream *st, AVCodecContext *enc_ctx
         int has_alpha = desc ? desc->nb_components % 2 == 0 : 0;
         enum AVPixelFormat best= AV_PIX_FMT_NONE;
 
-        if (enc_ctx->strict_std_compliance > FF_COMPLIANCE_UNOFFICIAL) {
+        if (strict_std_compliance > FF_COMPLIANCE_UNOFFICIAL) {
             p = get_compliance_normal_pix_fmts(codec, p);
         }
         for (; *p != AV_PIX_FMT_NONE; p++) {
@@ -102,7 +103,8 @@ static const char *choose_pix_fmts(OutputFilter *ofilter, AVBPrint *bprint)
         return av_get_pix_fmt_name(ost->enc_ctx->pix_fmt);
     }
     if (ost->enc_ctx->pix_fmt != AV_PIX_FMT_NONE) {
-        return av_get_pix_fmt_name(choose_pixel_fmt(ost->st, ost->enc_ctx, ost->enc, ost->enc_ctx->pix_fmt));
+        return av_get_pix_fmt_name(choose_pixel_fmt(ost->enc, ost->enc_ctx->pix_fmt,
+                                                    ost->enc_ctx->strict_std_compliance));
     } else if (ost->enc && ost->enc->pix_fmts) {
         const enum AVPixelFormat *p;
 
@@ -558,6 +560,7 @@ static int configure_output_audio_filter(FilterGraph *fg, OutputFilter *ofilter,
     pad_idx = 0;                                                            \
 } while (0)
     av_bprint_init(&args, 0, AV_BPRINT_SIZE_UNLIMITED);
+#if FFMPEG_OPT_MAP_CHANNEL
     if (ost->audio_channels_mapped) {
         AVChannelLayout mapped_layout = { 0 };
         int i;
@@ -570,6 +573,7 @@ static int configure_output_audio_filter(FilterGraph *fg, OutputFilter *ofilter,
         AUTO_INSERT_FILTER("-map_channel", "pan", args.str);
         av_bprint_clear(&args);
     }
+#endif
 
     if (codec->ch_layout.order == AV_CHANNEL_ORDER_UNSPEC)
         av_channel_layout_default(&codec->ch_layout, codec->ch_layout.nb_channels);
@@ -896,29 +900,6 @@ static int configure_input_audio_filter(FilterGraph *fg, InputFilter *ifilter,
         if (!fg->reconfiguration)
             av_strlcatf(args, sizeof(args), ":first_pts=0");
         AUTO_INSERT_FILTER_INPUT("-async", "aresample", args);
-    }
-
-//     if (ost->audio_channels_mapped) {
-//         int i;
-//         AVBPrint pan_buf;
-//         av_bprint_init(&pan_buf, 256, 8192);
-//         av_bprintf(&pan_buf, "0x%"PRIx64,
-//                    av_get_default_channel_layout(ost->audio_channels_mapped));
-//         for (i = 0; i < ost->audio_channels_mapped; i++)
-//             if (ost->audio_channels_map[i] != -1)
-//                 av_bprintf(&pan_buf, ":c%d=c%d", i, ost->audio_channels_map[i]);
-//         AUTO_INSERT_FILTER_INPUT("-map_channel", "pan", pan_buf.str);
-//         av_bprint_finalize(&pan_buf, NULL);
-//     }
-
-    if (audio_volume != 256) {
-        char args[256];
-
-        av_log(NULL, AV_LOG_WARNING, "-vol has been deprecated. Use the volume "
-               "audio filter instead.\n");
-
-        snprintf(args, sizeof(args), "%f", audio_volume / 256.);
-        AUTO_INSERT_FILTER_INPUT("-vol", "volume", args);
     }
 
     snprintf(name, sizeof(name), "trim for input stream %d:%d",

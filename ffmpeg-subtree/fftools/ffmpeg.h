@@ -49,6 +49,10 @@
 
 #include "libswresample/swresample.h"
 
+// deprecated features
+#define FFMPEG_OPT_PSNR 1
+#define FFMPEG_OPT_MAP_CHANNEL 1
+
 enum VideoSyncMethod {
     VSYNC_AUTO = -1,
     VSYNC_PASSTHROUGH,
@@ -82,10 +86,12 @@ typedef struct StreamMap {
     char *linklabel;       /* name of an output link, for mapping lavfi outputs */
 } StreamMap;
 
+#if FFMPEG_OPT_MAP_CHANNEL
 typedef struct {
     int  file_idx,  stream_idx,  channel_idx; // input
     int ofile_idx, ostream_idx;               // output
 } AudioChannelMap;
+#endif
 
 typedef struct OptionsContext {
     OptionGroup *g;
@@ -138,8 +144,10 @@ typedef struct OptionsContext {
     /* output options */
     StreamMap *stream_maps;
     int     nb_stream_maps;
+#if FFMPEG_OPT_MAP_CHANNEL
     AudioChannelMap *audio_channel_maps; /* one info entry per -map_channel */
     int           nb_audio_channel_maps; /* number of (valid) -map_channel settings */
+#endif
     int metadata_global_manual;
     int metadata_streams_manual;
     int metadata_chapters_manual;
@@ -382,12 +390,8 @@ typedef struct InputStream {
     char  *hwaccel_device;
     enum AVPixelFormat hwaccel_output_format;
 
-    /* hwaccel context */
-    void  *hwaccel_ctx;
-    void (*hwaccel_uninit)(AVCodecContext *s);
     int  (*hwaccel_retrieve_data)(AVCodecContext *s, AVFrame *frame);
     enum AVPixelFormat hwaccel_pix_fmt;
-    enum AVPixelFormat hwaccel_retrieved_pix_fmt;
 
     /* stats */
     // combined size of all the packets read
@@ -481,7 +485,6 @@ typedef struct OutputStream {
     AVBSFContext            *bsf_ctx;
 
     AVCodecContext *enc_ctx;
-    AVCodecParameters *ref_par; /* associated input codec parameters with encoders options applied */
     const AVCodec *enc;
     int64_t max_frames;
     AVFrame *filtered_frame;
@@ -490,8 +493,6 @@ typedef struct OutputStream {
     AVPacket *pkt;
     int64_t last_dropped;
     int64_t last_nb0_frames[3];
-
-    void  *hwaccel_ctx;
 
     /* video only */
     AVRational frame_rate;
@@ -520,8 +521,10 @@ typedef struct OutputStream {
     int dropped_keyframe;
 
     /* audio only */
+#if FFMPEG_OPT_MAP_CHANNEL
     int *audio_channels_map;             /* list of the channels id to pick from the source stream */
     int audio_channels_mapped;           /* number of channels in audio_channels_map */
+#endif
 
     char *logfile_prefix;
     FILE *logfile;
@@ -671,8 +674,6 @@ void show_usage(void);
 
 void remove_avoptions(AVDictionary **a, AVDictionary *b);
 void assert_avoptions(AVDictionary *m);
-
-int guess_input_channel_layout(InputStream *ist);
 
 int configure_filtergraph(FilterGraph *fg);
 void check_filter_outputs(void);

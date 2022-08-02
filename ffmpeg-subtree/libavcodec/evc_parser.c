@@ -277,6 +277,9 @@ static int parse_nal_units(AVCodecParserContext *s, const uint8_t *bs,
     int bits_size = bs_size;
 
     avctx->codec_id = AV_CODEC_ID_EVC;
+    s->pict_type = AV_PICTURE_TYPE_NONE;
+    s->picture_structure = AV_PICTURE_STRUCTURE_FRAME;
+    s->key_frame = -1;
 
     nalu_size = read_nal_unit_length(bits, bits_size, avctx);
     if(nalu_size == 0) {
@@ -297,37 +300,33 @@ static int parse_nal_units(AVCodecParserContext *s, const uint8_t *bs,
 
         sps = parse_sps(bits, bits_size, ev);
 
-        avctx->coded_width         = sps->pic_width_in_luma_samples;
-        avctx->coded_height        = sps->pic_height_in_luma_samples;
-        avctx->width               = sps->pic_width_in_luma_samples;
-        avctx->height              = sps->pic_height_in_luma_samples;
+        s->coded_width         = sps->pic_width_in_luma_samples;
+        s->coded_height        = sps->pic_height_in_luma_samples;
+        s->width               = sps->pic_width_in_luma_samples;
+        s->height              = sps->pic_height_in_luma_samples;
 
-        if(sps->profile_idc == 0) avctx->profile = FF_PROFILE_EVC_BASELINE;
-        else if (sps->profile_idc == 1) avctx->profile = FF_PROFILE_EVC_MAIN;
-        else {
-            av_log(avctx, AV_LOG_ERROR, "Not supported profile (%d)\n", sps->profile_idc);
-            return -1;
-        }
+        if(sps->profile_idc == 1) avctx->profile = FF_PROFILE_EVC_MAIN;
+        else avctx->profile = FF_PROFILE_EVC_BASELINE;
 
         // Currently XEVD decoder supports ony YCBCR420_10LE chroma format for EVC stream
         switch(sps->chroma_format_idc) {
         case 0: /* YCBCR400_10LE */
             av_log(avctx, AV_LOG_ERROR, "YCBCR400_10LE: Not supported chroma format\n");
-            avctx->pix_fmt = AV_PIX_FMT_GRAY10LE;
+            s->format = AV_PIX_FMT_GRAY10LE;
             return -1;
         case 1: /* YCBCR420_10LE */
-            avctx->pix_fmt = AV_PIX_FMT_YUV420P10LE;
+            s->format = AV_PIX_FMT_YUV420P10LE;
             break;
         case 2: /* YCBCR422_10LE */
             av_log(avctx, AV_LOG_ERROR, "YCBCR422_10LE: Not supported chroma format\n");
-            avctx->pix_fmt = AV_PIX_FMT_YUV422P10LE;
+            s->format = AV_PIX_FMT_YUV422P10LE;
             return -1;
         case 3: /* YCBCR444_10LE */
             av_log(avctx, AV_LOG_ERROR, "YCBCR444_10LE: Not supported chroma format\n");
-            avctx->pix_fmt = AV_PIX_FMT_YUV444P10LE;
+            s->format = AV_PIX_FMT_YUV444P10LE;
             return -1;
         default:
-            avctx->pix_fmt = AV_PIX_FMT_NONE;
+            s->format = AV_PIX_FMT_NONE;
             av_log(avctx, AV_LOG_ERROR, "Unknown supported chroma format\n");
             return -1;
         }
@@ -351,8 +350,10 @@ static int parse_nal_units(AVCodecParserContext *s, const uint8_t *bs,
         ev->got_pps = 1;
     else if(nalu_type == EVC_NUT_SEI) // NAL unit type: SEI (Supplemental Enhancement Information)
         ev->got_sei = 1;
-    else if (nalu_type == EVC_NUT_IDR || nalu_type == EVC_NUT_NONIDR) // NAL Unit type: Coded slice of a IDR or non-IDR picture
+    else if (nalu_type == EVC_NUT_IDR || nalu_type == EVC_NUT_NONIDR) {// NAL Unit type: Coded slice of a IDR or non-IDR picture
         ev->got_slice++;
+        s->key_frame = (nalu_type == EVC_NUT_IDR) ? 1 : 0;
+    }
     else {
         av_log(avctx, AV_LOG_ERROR, "Invalid NAL unit type: %d\n", nalu_type);
         return -1;

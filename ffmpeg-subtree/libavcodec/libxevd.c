@@ -58,29 +58,14 @@ typedef struct XevdContext {
 } XevdContext;
 
 /**
- * The function returns a pointer to a variable of type XEVD_CDSC.
+ * The function populates the XEVD_CDSC structure.
  * XEVD_CDSC contains all decoder parameters that should be initialized before its use.
  *
- * The field values of the XEVD_CDSC structure are populated based on:
- * - the corresponding field values of the AvCodecConetxt structure,
- * - the xevd decoder specific option values,
- *   (the full list of options available for the xevd encoder is displayed after executing the command ./ffmpeg --help decoder = libxevd)
- * - and the xevd encoder options specified as a list of key-value pairs following the xevd-params option
- *
- * Order of input processing and populating the XEVD_CDSC structure
- * 1. first, the corresponding fields of the AVCodecContext structure are processed, (i.e -threads 4)
- * 2. then xevd-specific options are added as AVOption to the xevd AVCodec implementation (i.e -threads 3)
- * 3. finally, the options specified after the xevd-params option as the parameter list of type key value are processed (i.e -xevd-params "m=2")
- *
- * Some options can be set in different ways. In this case, please follow the above-mentioned order of processing.
- * The most recent assignments overwrite the previous values.
- *
  * @param[in] avctx codec context
- * @param[out] cdsc contains all encoder parameters that should be initialized before its use
+ * @param[out] cdsc contains all decoder parameters that should be initialized before its use
  *
- * @return 0 on success, negative error code on failure
  */
-static int get_conf(AVCodecContext *avctx, XEVD_CDSC *cdsc)
+static void get_conf(AVCodecContext *avctx, XEVD_CDSC *cdsc)
 {
     int cpu_count = av_cpu_count();
 
@@ -94,8 +79,6 @@ static int get_conf(AVCodecContext *avctx, XEVD_CDSC *cdsc)
         cdsc->threads = XEVD_MAX_TASK_CNT;
     else
         cdsc->threads = avctx->thread_count;
-
-    return 0;
 }
 
 /**
@@ -213,15 +196,10 @@ static int export_stream_params(const XevdContext *xectx, AVCodecContext *avctx)
 static av_cold int libxevd_init(AVCodecContext *avctx)
 {
     XevdContext *xectx = avctx->priv_data;
-    int ret = 0;
     XEVD_CDSC *cdsc = &(xectx->cdsc);
 
     /* read configurations and set values for created descriptor (XEVD_CDSC) */
-    ret = get_conf(avctx, cdsc);
-    if (ret != 0) {
-        av_log(avctx, AV_LOG_ERROR, "Cannot get configuration\n");
-        return AVERROR_INVALIDDATA;
-    }
+    get_conf(avctx, cdsc);
 
     /* create decoder */
     xectx->id = xevd_create(&(xectx->cdsc), NULL);
@@ -263,10 +241,6 @@ static int libxevd_decode(struct AVCodecContext *avctx, struct AVFrame *frame, i
         return AVERROR(EINVAL);
     }
     xectx = avctx->priv_data;
-    if (xectx == NULL) {
-        av_log(avctx, AV_LOG_ERROR, "Invalid XEVD context\n");
-        return AVERROR(EINVAL);
-    }
 
     if (avpkt->size > 0) {
         bs_read_pos = 0;

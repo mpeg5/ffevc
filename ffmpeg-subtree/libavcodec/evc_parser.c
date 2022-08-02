@@ -139,7 +139,6 @@ static int get_nalu_type(const uint8_t *bits, int bits_size, AVCodecContext *avc
         unsigned char *p = (unsigned char *)bits;
         // forbidden_zero_bit
         if ((p[0] & 0x80) != 0) {
-            av_log(avctx, AV_LOG_ERROR, "Cannot get bitstream information. Malformed bitstream.\n");
             return -1;
         }
 
@@ -164,7 +163,6 @@ static uint32_t read_nal_unit_length(const uint8_t *bits, int bits_size, AVCodec
 
         nalu_len = t;
         if(nalu_len == 0) {
-            av_log(avctx, AV_LOG_ERROR, "Invalid bitstream size!\n");
             return 0;
         }
     }

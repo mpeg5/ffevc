@@ -60,8 +60,7 @@
 #define MAX_NUM_REF_PICS                (21)
 
 // rpl structure
-typedef struct RefPicListStruct
-{
+typedef struct RefPicListStruct {
     int poc;
     int tid;
     int ref_pic_num;
@@ -143,12 +142,12 @@ typedef struct EVCParserSPS {
     int picture_crop_top_offset;    // ue(v)
     int picture_crop_bottom_offset; // ue(v)
 
-    // NOTE
+    // @note
     // Currently the structure does not reflect the entire SPS RBSP layout.
     // It contains only the fields that are necessary to read from the NAL unit all the values
     // necessary for the correct initialization of the AVCodecContext structure.
 
-    // TODO
+    // @note
     // If necessary, add the missing fields to the structure to reflect
     // the contents of the entire NAL unit of the SPS type
 
@@ -199,12 +198,12 @@ typedef struct EVCParserSliceHeader {
 
     int slice_type;                                                     // ue(v)
 
-    // NOTE
+    // @note
     // Currently the structure does not reflect the entire Slice Header RBSP layout.
     // It contains only the fields that are necessary to read from the NAL unit all the values
     // necessary for the correct initialization of the AVCodecContext structure.
 
-    // TODO
+    // @note
     // If necessary, add the missing fields to the structure to reflect
     // the contents of the entire NAL unit of the SPS type
 
@@ -226,12 +225,11 @@ static int get_nalu_type(const uint8_t *bits, int bits_size, AVCodecContext *avc
 {
     int unit_type_plus1 = 0;
 
-    if(bits_size >= EVC_NAL_HEADER_SIZE) {
+    if (bits_size >= EVC_NAL_HEADER_SIZE) {
         unsigned char *p = (unsigned char *)bits;
         // forbidden_zero_bit
-        if ((p[0] & 0x80) != 0) {
+        if ((p[0] & 0x80) != 0)
             return -1;
-        }
 
         // nal_unit_type
         unit_type_plus1 = (p[0] >> 1) & 0x3F;
@@ -244,18 +242,17 @@ static uint32_t read_nal_unit_length(const uint8_t *bits, int bits_size, AVCodec
 {
     uint32_t nalu_len = 0;
 
-    if(bits_size >= EVC_NAL_UNIT_LENGTH_BYTE) {
+    if (bits_size >= EVC_NAL_UNIT_LENGTH_BYTE) {
 
         int t = 0;
         unsigned char *p = (unsigned char *)bits;
 
-        for(int i = 0; i < EVC_NAL_UNIT_LENGTH_BYTE; i++)
+        for (int i = 0; i < EVC_NAL_UNIT_LENGTH_BYTE; i++)
             t = (t << 8) | p[i];
 
         nalu_len = t;
-        if(nalu_len == 0) {
+        if (nalu_len == 0)
             return 0;
-        }
     }
 
     return nalu_len;
@@ -268,12 +265,12 @@ static EVCParserSPS *parse_sps(const uint8_t *bs, int bs_size, EVCParserContext 
     EVCParserSPS *sps;
     int sps_seq_parameter_set_id;
 
-    if(init_get_bits8(&gb, bs, bs_size) < 0)
+    if (init_get_bits8(&gb, bs, bs_size) < 0)
         return NULL;
 
     sps_seq_parameter_set_id = get_ue_golomb(&gb);
 
-    if(sps_seq_parameter_set_id >= MAX_SPS_CNT)
+    if (sps_seq_parameter_set_id >= MAX_SPS_CNT)
         return NULL;
 
     sps = &ev->sps[sps_seq_parameter_set_id];
@@ -301,7 +298,7 @@ static EVCParserSPS *parse_sps(const uint8_t *bs, int bs_size, EVCParserContext 
     sps->bit_depth_chroma_minus8 = get_ue_golomb(&gb);
 
     sps->sps_btt_flag = get_bits(&gb, 1);
-    if(sps->sps_btt_flag) {
+    if (sps->sps_btt_flag) {
         sps->log2_ctu_size_minus5 = get_ue_golomb(&gb);
         sps->log2_min_cb_size_minus2 = get_ue_golomb(&gb);
         sps->log2_diff_ctu_max_14_cb_size = get_ue_golomb(&gb);
@@ -310,13 +307,13 @@ static EVCParserSPS *parse_sps(const uint8_t *bs, int bs_size, EVCParserContext 
     }
 
     sps->sps_suco_flag = get_bits(&gb, 1);
-    if(sps->sps_suco_flag) {
+    if (sps->sps_suco_flag) {
         sps->log2_diff_ctu_size_max_suco_cb_size = get_ue_golomb(&gb);
         sps->log2_diff_max_suco_min_suco_cb_size = get_ue_golomb(&gb);
     }
 
     sps->sps_admvp_flag = get_bits(&gb, 1);
-    if(sps->sps_admvp_flag) {
+    if (sps->sps_admvp_flag) {
         sps->sps_affine_flag = get_bits(&gb, 1);
         sps->sps_amvr_flag = get_bits(&gb, 1);
         sps->sps_dmvr_flag = get_bits(&gb, 1);
@@ -325,18 +322,18 @@ static EVCParserSPS *parse_sps(const uint8_t *bs, int bs_size, EVCParserContext 
     }
 
     sps->sps_eipd_flag =  get_bits(&gb, 1);
-    if(sps->sps_eipd_flag) {
+    if (sps->sps_eipd_flag) {
         sps->sps_ibc_flag = get_bits(&gb, 1);
-        if(sps->sps_ibc_flag)
+        if (sps->sps_ibc_flag)
             sps->log2_max_ibc_cand_size_minus2 = get_ue_golomb(&gb);
     }
 
     sps->sps_cm_init_flag = get_bits(&gb, 1);
-    if(sps->sps_cm_init_flag)
+    if (sps->sps_cm_init_flag)
         sps->sps_adcc_flag = get_bits(&gb, 1);
 
     sps->sps_iqt_flag = get_bits(&gb, 1);
-    if(sps->sps_iqt_flag)
+    if (sps->sps_iqt_flag)
         sps->sps_ats_flag = get_bits(&gb, 1);
 
     sps->sps_addb_flag = get_bits(&gb, 1);
@@ -347,16 +344,16 @@ static EVCParserSPS *parse_sps(const uint8_t *bs, int bs_size, EVCParserContext 
     sps->sps_dquant_flag = get_bits(&gb, 1);
     sps->sps_dra_flag = get_bits(&gb, 1);
 
-    if(sps->sps_pocs_flag)
+    if (sps->sps_pocs_flag)
         sps->log2_max_pic_order_cnt_lsb_minus4 = get_ue_golomb(&gb);
 
-    if(!sps->sps_pocs_flag || !sps->sps_rpl_flag) {
+    if (!sps->sps_pocs_flag || !sps->sps_rpl_flag) {
         sps->log2_sub_gop_length = get_ue_golomb(&gb);
-        if(sps->log2_sub_gop_length == 0)
+        if (sps->log2_sub_gop_length == 0)
             sps->log2_ref_pic_gap_length = get_ue_golomb(&gb);
     }
 
-    // TODO
+    // @note
     // If necessary, add the missing fields to the EVCParserSPS structure
     // and then extend parser implementation
 
@@ -371,11 +368,11 @@ static EVCParserPPS *parse_pps(const uint8_t *bs, int bs_size, EVCParserContext 
 
     int pps_pic_parameter_set_id;
 
-    if(init_get_bits8(&gb, bs, bs_size) < 0)
+    if (init_get_bits8(&gb, bs, bs_size) < 0)
         return NULL;
 
     pps_pic_parameter_set_id = get_ue_golomb(&gb);
-    if(pps_pic_parameter_set_id > MAX_PPS_CNT)
+    if (pps_pic_parameter_set_id > MAX_PPS_CNT)
         return NULL;
 
     pps = &ev->pps[pps_pic_parameter_set_id];
@@ -383,28 +380,26 @@ static EVCParserPPS *parse_pps(const uint8_t *bs, int bs_size, EVCParserContext 
     pps->pps_pic_parameter_set_id = pps_pic_parameter_set_id;
 
     pps->pps_seq_parameter_set_id = get_ue_golomb(&gb);
-    if(pps->pps_seq_parameter_set_id >= MAX_SPS_CNT)
+    if (pps->pps_seq_parameter_set_id >= MAX_SPS_CNT)
         return NULL;
 
     pps->num_ref_idx_default_active_minus1[0] = get_ue_golomb(&gb);
-    pps->num_ref_idx_default_active_minus1[0] = get_ue_golomb(&gb);
+    pps->num_ref_idx_default_active_minus1[1] = get_ue_golomb(&gb);
     pps->additional_lt_poc_lsb_len = get_ue_golomb(&gb);
     pps->rpl1_idx_present_flag = get_bits(&gb, 1);
     pps->single_tile_in_pic_flag = get_bits(&gb, 1);
 
-    if( !pps->single_tile_in_pic_flag ) {
+    if (!pps->single_tile_in_pic_flag) {
         pps->num_tile_columns_minus1 = get_ue_golomb(&gb);
         pps->num_tile_rows_minus1 = get_ue_golomb(&gb);
         pps->uniform_tile_spacing_flag = get_bits(&gb, 1);
 
-        if( !pps->uniform_tile_spacing_flag) {
-            for(int i=0;i < pps->num_tile_columns_minus1; i++) {
+        if (!pps->uniform_tile_spacing_flag) {
+            for (int i = 0; i < pps->num_tile_columns_minus1; i++)
                 pps->tile_column_width_minus1[i] = get_ue_golomb(&gb);
-            }
 
-            for(int i=0;i < pps->num_tile_rows_minus1; i++) {
+            for (int i = 0; i < pps->num_tile_rows_minus1; i++)
                 pps->tile_row_height_minus1[i] = get_ue_golomb(&gb);
-            }
         }
         pps->loop_filter_across_tiles_enabled_flag = get_bits(&gb, 1);
         pps->tile_offset_len_minus1 = get_ue_golomb(&gb);
@@ -413,11 +408,10 @@ static EVCParserPPS *parse_pps(const uint8_t *bs, int bs_size, EVCParserContext 
     pps->tile_id_len_minus1 = get_ue_golomb(&gb);
     pps->explicit_tile_id_flag = get_bits(&gb, 1);
 
-    if(pps->explicit_tile_id_flag ) {
-        for(int i = 0; i <= pps->num_tile_rows_minus1; i++) {
-             for(int j = 0; j <= pps->num_tile_columns_minus1; j++) {
+    if (pps->explicit_tile_id_flag) {
+        for (int i = 0; i <= pps->num_tile_rows_minus1; i++) {
+            for (int j = 0; j <= pps->num_tile_columns_minus1; j++)
                 pps->tile_id_val[i][j] = get_bits(&gb, pps->tile_id_len_minus1 + 1);
-             }
         }
     }
 
@@ -425,20 +419,14 @@ static EVCParserPPS *parse_pps(const uint8_t *bs, int bs_size, EVCParserContext 
     pps->pic_dra_enabled_flag = get_bits(&gb, 1);
 
     if (pps->pic_dra_enabled_flag)
-    {
         pps->pic_dra_aps_id = get_bits(&gb, 5);
-    }
 
     pps->arbitrary_slice_present_flag = get_bits(&gb, 1);
     pps->constrained_intra_pred_flag = get_bits(&gb, 1);
     pps->cu_qp_delta_enabled_flag = get_bits(&gb, 1);
 
-    if(pps->cu_qp_delta_enabled_flag)
-    {
+    if (pps->cu_qp_delta_enabled_flag)
         pps->log2_cu_qp_delta_area_minus6 = get_ue_golomb(&gb);
-    }
-
-    // rbsp_trailing_bits()
 
     return pps;
 }
@@ -448,16 +436,16 @@ static EVCParserSliceHeader *parse_slice_header(const uint8_t *bs, int bs_size, 
 {
     GetBitContext gb;
     EVCParserSliceHeader *sh;
-    EVCParserPPS* pps;
+    EVCParserPPS *pps;
     int num_tiles_in_slice = 0;
     int slice_pic_parameter_set_id;
 
-    if(init_get_bits8(&gb, bs, bs_size) < 0)
+    if (init_get_bits8(&gb, bs, bs_size) < 0)
         return NULL;
 
     slice_pic_parameter_set_id = get_ue_golomb(&gb);
 
-    if(slice_pic_parameter_set_id < 0 || slice_pic_parameter_set_id >= MAX_PPS_CNT)
+    if (slice_pic_parameter_set_id < 0 || slice_pic_parameter_set_id >= MAX_PPS_CNT)
         return NULL;
 
     sh = &ev->slice_header[slice_pic_parameter_set_id];
@@ -468,30 +456,26 @@ static EVCParserSliceHeader *parse_slice_header(const uint8_t *bs, int bs_size, 
     if (!pps->single_tile_in_pic_flag) {
         sh->single_tile_in_slice_flag = get_bits(&gb, 1);
         sh->first_tile_id = get_bits(&gb, pps->tile_id_len_minus1 + 1);
-    }
-    else {
+    } else
         sh->single_tile_in_slice_flag = 1;
-    }
 
     if (!sh->single_tile_in_slice_flag) {
-        if (pps->arbitrary_slice_present_flag) {
+        if (pps->arbitrary_slice_present_flag)
             sh->arbitrary_slice_flag = get_bits(&gb, 1);
-        }
 
-        if (!sh->arbitrary_slice_flag) {
+        if (!sh->arbitrary_slice_flag)
             sh->last_tile_id = get_bits(&gb, pps->tile_id_len_minus1 + 1);
-        } else {
+        else {
             sh->num_remaining_tiles_in_slice_minus1 = get_ue_golomb(&gb);
             num_tiles_in_slice = sh->num_remaining_tiles_in_slice_minus1 + 2;
-            for (int i = 0; i < num_tiles_in_slice - 1; ++i) {
+            for (int i = 0; i < num_tiles_in_slice - 1; ++i)
                 sh->delta_tile_id_minus1[i] = get_ue_golomb(&gb);
-            }
         }
     }
 
     sh->slice_type = get_ue_golomb(&gb);
 
-    // TODO
+    // @note
     // If necessary, add the missing fields to the EVCParserSliceHeader structure
     // and then extend parser implementation
 
@@ -512,7 +496,7 @@ static int parse_nal_units(AVCodecParserContext *s, const uint8_t *bs,
     s->key_frame = -1;
 
     nalu_size = read_nal_unit_length(bits, bits_size, avctx);
-    if(nalu_size == 0) {
+    if (nalu_size == 0) {
         av_log(avctx, AV_LOG_ERROR, "Invalid NAL unit size: (%d)\n", nalu_size);
         return -1;
     }
@@ -529,7 +513,7 @@ static int parse_nal_units(AVCodecParserContext *s, const uint8_t *bs,
         EVCParserSPS *sps;
 
         sps = parse_sps(bits, bits_size, ev);
-        if(!sps) {
+        if (!sps) {
             av_log(avctx, AV_LOG_ERROR, "SPS parsing error\n");
             return -1;
         }
@@ -539,11 +523,11 @@ static int parse_nal_units(AVCodecParserContext *s, const uint8_t *bs,
         s->width               = sps->pic_width_in_luma_samples;
         s->height              = sps->pic_height_in_luma_samples;
 
-        if(sps->profile_idc == 1) avctx->profile = FF_PROFILE_EVC_MAIN;
+        if (sps->profile_idc == 1) avctx->profile = FF_PROFILE_EVC_MAIN;
         else avctx->profile = FF_PROFILE_EVC_BASELINE;
 
         // Currently XEVD decoder supports ony YCBCR420_10LE chroma format for EVC stream
-        switch(sps->chroma_format_idc) {
+        switch (sps->chroma_format_idc) {
         case 0: /* YCBCR400_10LE */
             av_log(avctx, AV_LOG_ERROR, "YCBCR400_10LE: Not supported chroma format\n");
             s->format = AV_PIX_FMT_GRAY10LE;
@@ -581,41 +565,39 @@ static int parse_nal_units(AVCodecParserContext *s, const uint8_t *bs,
         EVCParserPPS *pps;
 
         pps = parse_pps(bits, bits_size, ev);
-        if(!pps) {
+        if (!pps) {
             av_log(avctx, AV_LOG_ERROR, "PPS parsing error\n");
             return -1;
         }
-    }
-    else if(nalu_type == EVC_NUT_SEI) // NAL unit type: SEI (Supplemental Enhancement Information)
+    } else if (nalu_type == EVC_NUT_SEI) // NAL unit type: SEI (Supplemental Enhancement Information)
         return 0;
     else if (nalu_type == EVC_NUT_IDR || nalu_type == EVC_NUT_NONIDR) { // NAL Unit type: Coded slice of a IDR or non-IDR picture
         EVCParserSliceHeader *sh;
 
         sh = parse_slice_header(bits, bits_size, ev);
-        if(!sh) {
+        if (!sh) {
             av_log(avctx, AV_LOG_ERROR, "Slice header parsing error\n");
             return -1;
         }
-        switch(sh->slice_type) {
-            case SLICE_TYPE_B: {
-                s->pict_type =  AV_PICTURE_TYPE_B;
-                break;
-            }
-            case SLICE_TYPE_P: {
-                s->pict_type =  AV_PICTURE_TYPE_P;
-                break;
-            }
-            case SLICE_TYPE_I: {
-                s->pict_type =  AV_PICTURE_TYPE_I;
-                break;
-            }
-            default: {
-                s->pict_type =  AV_PICTURE_TYPE_NONE;
-            }
+        switch (sh->slice_type) {
+        case SLICE_TYPE_B: {
+            s->pict_type =  AV_PICTURE_TYPE_B;
+            break;
+        }
+        case SLICE_TYPE_P: {
+            s->pict_type =  AV_PICTURE_TYPE_P;
+            break;
+        }
+        case SLICE_TYPE_I: {
+            s->pict_type =  AV_PICTURE_TYPE_I;
+            break;
+        }
+        default: {
+            s->pict_type =  AV_PICTURE_TYPE_NONE;
+        }
         }
         s->key_frame = (nalu_type == EVC_NUT_IDR) ? 1 : 0;
-    }
-    else {
+    } else {
         av_log(avctx, AV_LOG_ERROR, "Invalid NAL unit type: %d\n", nalu_type);
         return -1;
     }
@@ -632,12 +614,12 @@ static int evc_find_frame_end(AVCodecParserContext *s, const uint8_t *buf,
 {
     EVCParserContext *ev = s->priv_data;
 
-    if(!ev->to_read) {
+    if (!ev->to_read) {
         int nal_unit_size = 0;
         int next = END_NOT_FOUND;
 
         // This is the case when buffer size is not enough for buffer to store NAL unit length
-        if(buf_size < EVC_NAL_UNIT_LENGTH_BYTE) {
+        if (buf_size < EVC_NAL_UNIT_LENGTH_BYTE) {
             ev->to_read = EVC_NAL_UNIT_LENGTH_BYTE;
             ev->nal_length_size = buf_size;
             ev->incomplete_nalu_prefix_read  = 1;
@@ -650,14 +632,14 @@ static int evc_find_frame_end(AVCodecParserContext *s, const uint8_t *buf,
 
         next = nal_unit_size + EVC_NAL_UNIT_LENGTH_BYTE;
         ev->to_read = next;
-        if(next < buf_size)
+        if (next < buf_size)
             return next;
         else
             return END_NOT_FOUND;
-    } else if(ev->to_read > buf_size)
+    } else if (ev->to_read > buf_size)
         return END_NOT_FOUND;
     else {
-        if(ev->incomplete_nalu_prefix_read  == 1) {
+        if (ev->incomplete_nalu_prefix_read  == 1) {
             EVCParserContext *ev = s->priv_data;
             ParseContext *pc = &ev->pc;
             uint8_t nalu_len[EVC_NAL_UNIT_LENGTH_BYTE] = {0};
@@ -693,8 +675,8 @@ static int evc_find_frame_end(AVCodecParserContext *s, const uint8_t *buf,
             // |  0x00 |  0x00 |  0x3C |  0xXX |  0xXX | ... |  0xXX |
             // -------------------------------------------------------
             //
-            for(int i = 0; i < EVC_NAL_UNIT_LENGTH_BYTE; i++) {
-                if(i < pc->index)
+            for (int i = 0; i < EVC_NAL_UNIT_LENGTH_BYTE; i++) {
+                if (i < pc->index)
                     nalu_len[i] = pc->buffer[i];
                 else
                     nalu_len[i] = buf[i - pc->index];
@@ -718,7 +700,7 @@ static int evc_find_frame_end(AVCodecParserContext *s, const uint8_t *buf,
 
             ev->incomplete_nalu_prefix_read = 0;
 
-            if(ev->to_read > buf_size)
+            if (ev->to_read > buf_size)
                 return END_NOT_FOUND;
             else
                 return ev->to_read;

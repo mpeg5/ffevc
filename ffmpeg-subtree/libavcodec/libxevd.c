@@ -52,9 +52,6 @@ typedef struct XevdContext {
 
     XEVD id;            // XEVD instance identifier @see xevd.h
     XEVD_CDSC cdsc;     // decoding parameters @see xevd.h
-
-    int decod_frames;   // number of decoded frames
-    int packet_count;   // number of packets created by decoder
 } XevdContext;
 
 /**
@@ -208,9 +205,6 @@ static av_cold int libxevd_init(AVCodecContext *avctx)
         return AVERROR_EXTERNAL;
     }
 
-    xectx->packet_count = 0;
-    xectx->decod_frames = 0;
-
     return 0;
 }
 
@@ -329,13 +323,7 @@ static int libxevd_decode(struct AVCodecContext *avctx, struct AVFrame *frame, i
             }
         }
 
-        frame->coded_picture_number++;
-        frame->display_picture_number++;
-        frame->format = AV_PIX_FMT_YUV420P10LE;
-
-        if (ff_get_buffer(avctx, frame, 0) < 0) {
-            av_log(avctx, AV_LOG_ERROR, "Cannot get AV buffer\n");
-            ret = AVERROR(ENOMEM);
+        if (ret = ff_get_buffer(avctx, frame, 0) < 0) {
             goto ERR;
         }
 
@@ -345,7 +333,6 @@ static int libxevd_decode(struct AVCodecContext *avctx, struct AVFrame *frame, i
                       imgb->s, avctx->pix_fmt,
                       imgb->w[0], imgb->h[0]);
 
-        xectx->decod_frames++;
         *got_frame_ptr = 1;
 
         // xevd_pull uses pool of objects of type XEVD_IMGB.
@@ -354,8 +341,6 @@ static int libxevd_decode(struct AVCodecContext *avctx, struct AVFrame *frame, i
         imgb = NULL;
     } else
         *got_frame_ptr = 0;
-
-    xectx->packet_count++;
 
     return avpkt->size;
 
@@ -405,6 +390,6 @@ const FFCodec ff_libxevd_decoder = {
     .close              = libxevd_close,
     .priv_data_size     = sizeof(XevdContext),
     .p.priv_class       = &libxevd_class,
-    .p.capabilities     = AV_CODEC_CAP_DELAY | AV_CODEC_CAP_AUTO_THREADS | AV_CODEC_CAP_AVOID_PROBING | AV_CODEC_CAP_DR1,
+    .p.capabilities     = AV_CODEC_CAP_DELAY | AV_CODEC_CAP_OTHER_THREADS | AV_CODEC_CAP_AVOID_PROBING | AV_CODEC_CAP_DR1,
     .p.wrapper_name     = "libxevd",
 };

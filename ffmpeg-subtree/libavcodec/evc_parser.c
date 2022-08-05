@@ -549,18 +549,11 @@ static int parse_nal_units(AVCodecParserContext *s, const uint8_t *bs,
             return -1;
         }
 
-        // The current implementation of parse_sps function doesn't handle VUI parameters parsing,
-        // so at the moment it's impossible to initialize has_b_frames and max_b_frames AVCodecContex fields here.
-        // Currently, initialization of has_b_frames and max_b_frames AVCodecContex fields have been moved to
-        // libxevd_decode function where we can use xevd_config function being a part of xevd library API
-        // to get the needed information.
-        // However, if it will be needed, parse_sps function should be extended to handle VUI parameters parsing
-        // and the following lines should be used to initialize has_b_frames and max_b_frames fields of the AVCodecContex.
-        //
-        // sps->vui_parameters.num_reorder_pics
-        // if (sps->bitstream_restriction_flag && sps->vui_parameters.num_reorder_pics) {
-        //     avctx->has_b_frames = sps->vui_parameters.num_reorder_pics;
-        // }
+        // @note
+        // The current implementation of parse_sps function doesn't handle VUI parameters parsing.
+        // If it will be needed, parse_sps function could be extended to handle VUI parameters parsing
+        // to initialize fields of the AVCodecContex i.e. color_primaries, color_trc,color_range
+
     } else if (nalu_type == EVC_NUT_PPS) { // NAL Unit type: PPS (Video Parameter Set)
         EVCParserPPS *pps;
 
@@ -748,6 +741,7 @@ static int evc_parse(AVCodecParserContext *s, AVCodecContext *avctx,
     if (!is_dummy_buf)
         parse_nal_units(s, buf, buf_size, avctx);
 
+    // poutbuf contains just one NAL unit
     *poutbuf      = buf;
     *poutbuf_size = buf_size;
     ev->to_read -= next;

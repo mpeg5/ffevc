@@ -230,17 +230,18 @@ static int libxevd_decode(struct AVCodecContext *avctx, struct AVFrame *frame, i
     int xevd_ret, nalu_size, bs_read_pos;
     int ret = 0;
 
-    if (avctx == NULL) {
-        av_log(avctx, AV_LOG_ERROR, "Invalid input parameter: AVCodecContext\n");
-        return AVERROR(EINVAL);
-    }
     xectx = avctx->priv_data;
 
     if (avpkt->size > 0) {
         bs_read_pos = 0;
         imgb = NULL;
-        while(avpkt->size > (bs_read_pos + XEVD_NAL_UNIT_LENGTH_BYTE)) {
 
+        // evc_parser prepares data in such a way that packet always has one NAL unit
+        // @todo check whether the following while is still needed
+        int counter = 0;
+        while(avpkt->size > (bs_read_pos + XEVD_NAL_UNIT_LENGTH_BYTE)) {
+            // av_log(avctx, AV_LOG_ERROR, "WHILE: %d\n", counter);
+            counter++;
             memset(&stat, 0, sizeof(XEVD_STAT));
             memset(&bitb, 0, sizeof(XEVD_BITB));
 

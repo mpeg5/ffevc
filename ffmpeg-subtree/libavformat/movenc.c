@@ -35,6 +35,7 @@
 #include "isom.h"
 #include "av1.h"
 #include "avc.h"
+#include "evc.h"
 #include "libavcodec/ac3_parser_internal.h"
 #include "libavcodec/dnxhddata.h"
 #include "libavcodec/flac.h"
@@ -1398,6 +1399,11 @@ static int mov_write_evcc_tag(AVIOContext *pb, MOVTrack *track)
 
     avio_wb32(pb, 0);
     ffio_wfourcc(pb, "evcC");
+
+    if (track->tag == MKTAG('e','v','c','1'))
+        ff_isom_write_evcc(pb, track->vos_data, track->vos_len, 1);
+    else
+        ff_isom_write_evcc(pb, track->vos_data, track->vos_len, 0);
 
     return update_size(pb, pos);
 }

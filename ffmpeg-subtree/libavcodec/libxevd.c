@@ -236,11 +236,8 @@ static int libxevd_decode(struct AVCodecContext *avctx, struct AVFrame *frame, i
         bs_read_pos = 0;
         imgb = NULL;
 
-        // evc_parser prepares data in such a way that packet always has one NAL unit
-        // @todo check whether the following while is still needed
         int counter = 0;
         while(avpkt->size > (bs_read_pos + XEVD_NAL_UNIT_LENGTH_BYTE)) {
-            // av_log(avctx, AV_LOG_ERROR, "WHILE: %d\n", counter);
             counter++;
             memset(&stat, 0, sizeof(XEVD_STAT));
             memset(&bitb, 0, sizeof(XEVD_BITB));

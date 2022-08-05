@@ -1,6 +1,6 @@
 /*
  * EVC helper functions for muxers
- * Copyright (c) 2021 Dawid Kozinski <d.kozinski@samsung.com>
+ * Copyright (c) 2022 Dawid Kozinski <d.kozinski@samsung.com>
  *
  * This file is part of FFmpeg.
  *
@@ -240,7 +240,7 @@ static int evcc_array_add_nal_unit(uint8_t *nal_buf, uint32_t nal_size,
     array->numNalus++;
 
     /*
-     * When the sample entry name is ‘evc1’, the default and mandatory value of
+     * When the sample entry name is 'evc1', the default and mandatory value of
      * array_completeness is 1 for arrays of all types of parameter sets, and 0
      * for all other arrays.
      */
@@ -314,7 +314,7 @@ static int evcc_write(AVIOContext *pb, EVCDecoderConfigurationRecord *evcc)
     }
 
     /*
-     * We need at least one of each: VPS, SPS and PPS.
+     * We need at least one SPS.
      */
     for (i = 0; i < evcc->num_of_arrays; i++)
         switch (evcc->array[i].NAL_unit_type) {
@@ -330,9 +330,7 @@ static int evcc_write(AVIOContext *pb, EVCDecoderConfigurationRecord *evcc)
         default:
             break;
         }
-    if (// !aps_count || aps_count > EVC_MAX_APS_COUNT ||
-        !sps_count || sps_count > EVC_MAX_SPS_COUNT ||
-        !pps_count || pps_count > EVC_MAX_PPS_COUNT)
+    if (!sps_count || sps_count > EVC_MAX_SPS_COUNT)
         return AVERROR_INVALIDDATA;
 
     /* unsigned int(8) configurationVersion = 1; */
@@ -366,7 +364,7 @@ static int evcc_write(AVIOContext *pb, EVCDecoderConfigurationRecord *evcc)
     avio_wb16(pb, evcc->pic_height_in_luma_samples);
 
     /*
-     * bit(6) reserved = ‘111111’b;
+     * bit(6) reserved = '111111'b;
      * unsigned int(2) chromaFormat;
      */
     avio_w8(pb, evcc->lengthSizeMinusOne | 0xfc);

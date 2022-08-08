@@ -857,7 +857,9 @@ static const AVCodec *find_codec_or_die(const char *name, enum AVMediaType type,
     return codec;
 }
 
-static const AVCodec *choose_decoder(OptionsContext *o, AVFormatContext *s, AVStream *st)
+static const AVCodec *choose_decoder(OptionsContext *o, AVFormatContext *s, AVStream *st,
+                                     enum HWAccelID hwaccel_id, enum AVHWDeviceType hwaccel_device_type)
+
 {
     char *codec_name = NULL;
 
@@ -868,8 +870,32 @@ static const AVCodec *choose_decoder(OptionsContext *o, AVFormatContext *s, AVSt
         if (recast_media && st->codecpar->codec_type != codec->type)
             st->codecpar->codec_type = codec->type;
         return codec;
-    } else
+    } else {
+        if (st->codecpar->codec_type == AVMEDIA_TYPE_VIDEO &&
+            hwaccel_id == HWACCEL_GENERIC &&
+            hwaccel_device_type != AV_HWDEVICE_TYPE_NONE) {
+            const AVCodec *c;
+            void *i = NULL;
+
+            while ((c = av_codec_iterate(&i))) {
+                const AVCodecHWConfig *config;
+
+                if (c->id != st->codecpar->codec_id ||
+                    !av_codec_is_decoder(c))
+                    continue;
+
+                for (int j = 0; config = avcodec_get_hw_config(c, j); j++) {
+                    if (config->device_type == hwaccel_device_type) {
+                        av_log(NULL, AV_LOG_VERBOSE, "Selecting decoder '%s' because of requested hwaccel method %s\n",
+                               c->name, av_hwdevice_get_type_name(hwaccel_device_type));
+                        return c;
+                    }
+                }
+            }
+        }
+
         return avcodec_find_decoder(st->codecpar->codec_id);
+    }
 }
 
 static int guess_input_channel_layout(InputStream *ist)
@@ -935,72 +961,7 @@ static void add_input_streams(OptionsContext *o, AVFormatContext *ic)
             st->codecpar->codec_tag = tag;
         }
 
-        ist->dec = choose_decoder(o, ic, st);
-        ist->decoder_opts = filter_codec_opts(o->g->codec_opts, ist->st->codecpar->codec_id, ic, st, ist->dec);
-
-        ist->reinit_filters = -1;
-        MATCH_PER_STREAM_OPT(reinit_filters, i, ist->reinit_filters, ic, st);
-
-        MATCH_PER_STREAM_OPT(discard, str, discard_str, ic, st);
-        ist->user_set_discard = AVDISCARD_NONE;
-
-        if ((o->video_disable && ist->st->codecpar->codec_type == AVMEDIA_TYPE_VIDEO) ||
-            (o->audio_disable && ist->st->codecpar->codec_type == AVMEDIA_TYPE_AUDIO) ||
-            (o->subtitle_disable && ist->st->codecpar->codec_type == AVMEDIA_TYPE_SUBTITLE) ||
-            (o->data_disable && ist->st->codecpar->codec_type == AVMEDIA_TYPE_DATA))
-                ist->user_set_discard = AVDISCARD_ALL;
-
-        if (discard_str && av_opt_eval_int(&cc, discard_opt, discard_str, &ist->user_set_discard) < 0) {
-            av_log(NULL, AV_LOG_ERROR, "Error parsing discard %s.\n",
-                    discard_str);
-            exit_program(1);
-        }
-
-        ist->filter_in_rescale_delta_last = AV_NOPTS_VALUE;
-        ist->prev_pkt_pts = AV_NOPTS_VALUE;
-
-        ist->dec_ctx = avcodec_alloc_context3(ist->dec);
-        if (!ist->dec_ctx) {
-            av_log(NULL, AV_LOG_ERROR, "Error allocating the decoder context.\n");
-            exit_program(1);
-        }
-
-        ret = avcodec_parameters_to_context(ist->dec_ctx, par);
-        if (ret < 0) {
-            av_log(NULL, AV_LOG_ERROR, "Error initializing the decoder context.\n");
-            exit_program(1);
-        }
-
-        ist->decoded_frame = av_frame_alloc();
-        if (!ist->decoded_frame)
-            exit_program(1);
-
-        ist->pkt = av_packet_alloc();
-        if (!ist->pkt)
-            exit_program(1);
-
-        if (o->bitexact)
-            ist->dec_ctx->flags |= AV_CODEC_FLAG_BITEXACT;
-
-        switch (par->codec_type) {
-        case AVMEDIA_TYPE_VIDEO:
-            if(!ist->dec)
-                ist->dec = avcodec_find_decoder(par->codec_id);
-
-            // avformat_find_stream_info() doesn't set this for us anymore.
-            ist->dec_ctx->framerate = st->avg_frame_rate;
-
-            MATCH_PER_STREAM_OPT(frame_rates, str, framerate, ic, st);
-            if (framerate && av_parse_video_rate(&ist->framerate,
-                                                 framerate) < 0) {
-                av_log(NULL, AV_LOG_ERROR, "Error parsing framerate %s.\n",
-                       framerate);
-                exit_program(1);
-            }
-
-            ist->top_field_first = -1;
-            MATCH_PER_STREAM_OPT(top_field_first, i, ist->top_field_first, ic, st);
-
+        if (st->codecpar->codec_type == AVMEDIA_TYPE_VIDEO) {
             MATCH_PER_STREAM_OPT(hwaccels, str, hwaccel, ic, st);
             MATCH_PER_STREAM_OPT(hwaccel_output_formats, str,
                                  hwaccel_output_format, ic, st);
@@ -1066,6 +1027,73 @@ static void add_input_streams(OptionsContext *o, AVFormatContext *ic)
             }
 
             ist->hwaccel_pix_fmt = AV_PIX_FMT_NONE;
+        }
+
+        ist->dec = choose_decoder(o, ic, st, ist->hwaccel_id, ist->hwaccel_device_type);
+        ist->decoder_opts = filter_codec_opts(o->g->codec_opts, ist->st->codecpar->codec_id, ic, st, ist->dec);
+
+        ist->reinit_filters = -1;
+        MATCH_PER_STREAM_OPT(reinit_filters, i, ist->reinit_filters, ic, st);
+
+        MATCH_PER_STREAM_OPT(discard, str, discard_str, ic, st);
+        ist->user_set_discard = AVDISCARD_NONE;
+
+        if ((o->video_disable && ist->st->codecpar->codec_type == AVMEDIA_TYPE_VIDEO) ||
+            (o->audio_disable && ist->st->codecpar->codec_type == AVMEDIA_TYPE_AUDIO) ||
+            (o->subtitle_disable && ist->st->codecpar->codec_type == AVMEDIA_TYPE_SUBTITLE) ||
+            (o->data_disable && ist->st->codecpar->codec_type == AVMEDIA_TYPE_DATA))
+                ist->user_set_discard = AVDISCARD_ALL;
+
+        if (discard_str && av_opt_eval_int(&cc, discard_opt, discard_str, &ist->user_set_discard) < 0) {
+            av_log(NULL, AV_LOG_ERROR, "Error parsing discard %s.\n",
+                    discard_str);
+            exit_program(1);
+        }
+
+        ist->filter_in_rescale_delta_last = AV_NOPTS_VALUE;
+        ist->prev_pkt_pts = AV_NOPTS_VALUE;
+
+        ist->dec_ctx = avcodec_alloc_context3(ist->dec);
+        if (!ist->dec_ctx) {
+            av_log(NULL, AV_LOG_ERROR, "Error allocating the decoder context.\n");
+            exit_program(1);
+        }
+
+        ret = avcodec_parameters_to_context(ist->dec_ctx, par);
+        if (ret < 0) {
+            av_log(NULL, AV_LOG_ERROR, "Error initializing the decoder context.\n");
+            exit_program(1);
+        }
+
+        ist->decoded_frame = av_frame_alloc();
+        if (!ist->decoded_frame)
+            exit_program(1);
+
+        ist->pkt = av_packet_alloc();
+        if (!ist->pkt)
+            exit_program(1);
+
+        if (o->bitexact)
+            ist->dec_ctx->flags |= AV_CODEC_FLAG_BITEXACT;
+
+        switch (par->codec_type) {
+        case AVMEDIA_TYPE_VIDEO:
+            if(!ist->dec)
+                ist->dec = avcodec_find_decoder(par->codec_id);
+
+            // avformat_find_stream_info() doesn't set this for us anymore.
+            ist->dec_ctx->framerate = st->avg_frame_rate;
+
+            MATCH_PER_STREAM_OPT(frame_rates, str, framerate, ic, st);
+            if (framerate && av_parse_video_rate(&ist->framerate,
+                                                 framerate) < 0) {
+                av_log(NULL, AV_LOG_ERROR, "Error parsing framerate %s.\n",
+                       framerate);
+                exit_program(1);
+            }
+
+            ist->top_field_first = -1;
+            MATCH_PER_STREAM_OPT(top_field_first, i, ist->top_field_first, ic, st);
 
             break;
         case AVMEDIA_TYPE_AUDIO:
@@ -1307,7 +1335,7 @@ static int open_input_file(OptionsContext *o, const char *filename)
 
     /* apply forced codec ids */
     for (i = 0; i < ic->nb_streams; i++)
-        choose_decoder(o, ic, ic->streams[i]);
+        choose_decoder(o, ic, ic->streams[i], HWACCEL_NONE, AV_HWDEVICE_TYPE_NONE);
 
     if (find_stream_info) {
         AVDictionary **opts = setup_find_stream_info_opts(ic, o->g->codec_opts);
@@ -1747,6 +1775,9 @@ static OutputStream *new_output_stream(OptionsContext *o, AVFormatContext *oc, e
     }
     ost->last_mux_dts = AV_NOPTS_VALUE;
     ost->last_filter_pts = AV_NOPTS_VALUE;
+
+    MATCH_PER_STREAM_OPT(copy_initial_nonkeyframes, i,
+                         ost->copy_initial_nonkeyframes, oc, st);
 
     return ost;
 }

@@ -97,6 +97,7 @@ typedef struct DdagrabContext {
     int        height;
     int        offset_x;
     int        offset_y;
+    int        out_fmt;
 } DdagrabContext;
 
 #define OFFSET(x) offsetof(DdagrabContext, x)
@@ -108,6 +109,12 @@ static const AVOption ddagrab_options[] = {
     { "video_size", "set video frame size",        OFFSET(width),      AV_OPT_TYPE_IMAGE_SIZE, { .str = NULL },       0,       0, FLAGS },
     { "offset_x",   "capture area x offset",       OFFSET(offset_x),   AV_OPT_TYPE_INT,        { .i64 = 0    }, INT_MIN, INT_MAX, FLAGS },
     { "offset_y",   "capture area y offset",       OFFSET(offset_y),   AV_OPT_TYPE_INT,        { .i64 = 0    }, INT_MIN, INT_MAX, FLAGS },
+    { "output_fmt", "desired output format",       OFFSET(out_fmt),    AV_OPT_TYPE_INT,        { .i64 = DXGI_FORMAT_B8G8R8A8_UNORM },    0, INT_MAX, FLAGS, "output_fmt" },
+    { "auto",       "let dda pick its preferred format", 0,            AV_OPT_TYPE_CONST,      { .i64 = 0 },                             0, INT_MAX, FLAGS, "output_fmt" },
+    { "8bit",       "only output default 8 Bit format",  0,            AV_OPT_TYPE_CONST,      { .i64 = DXGI_FORMAT_B8G8R8A8_UNORM },    0, INT_MAX, FLAGS, "output_fmt" },
+    { "bgra",       "only output 8 Bit BGRA",            0,            AV_OPT_TYPE_CONST,      { .i64 = DXGI_FORMAT_B8G8R8A8_UNORM },    0, INT_MAX, FLAGS, "output_fmt" },
+    { "10bit",      "only output default 10 Bit format", 0,            AV_OPT_TYPE_CONST,      { .i64 = DXGI_FORMAT_R10G10B10A2_UNORM }, 0, INT_MAX, FLAGS, "output_fmt" },
+    { "x2bgr10",    "only output 10 Bit X2BGR10",        0,            AV_OPT_TYPE_CONST,      { .i64 = DXGI_FORMAT_R10G10B10A2_UNORM }, 0, INT_MAX, FLAGS, "output_fmt" },
     { NULL }
 };
 
@@ -208,6 +215,16 @@ static av_cold int init_dxgi_dda(AVFilterContext *avctx)
             DXGI_FORMAT_R10G10B10A2_UNORM,
             DXGI_FORMAT_B8G8R8A8_UNORM
         };
+        int nb_formats = FF_ARRAY_ELEMS(formats);
+
+        if(dda->out_fmt == DXGI_FORMAT_B8G8R8A8_UNORM) {
+            formats[0] = DXGI_FORMAT_B8G8R8A8_UNORM;
+            nb_formats = 1;
+        } else if (dda->out_fmt) {
+            formats[0] = dda->out_fmt;
+            formats[1] = DXGI_FORMAT_B8G8R8A8_UNORM;
+            nb_formats = 2;
+        }
 
         IDXGIOutput_Release(dxgi_output);
         dxgi_output = NULL;
@@ -219,7 +236,7 @@ static av_cold int init_dxgi_dda(AVFilterContext *avctx)
         hr = IDXGIOutput5_DuplicateOutput1(dxgi_output5,
             (IUnknown*)dda->device_hwctx->device,
             0,
-            FF_ARRAY_ELEMS(formats),
+            nb_formats,
             formats,
             &dda->dxgi_outdupl);
         IDXGIOutput5_Release(dxgi_output5);
@@ -242,6 +259,11 @@ static av_cold int init_dxgi_dda(AVFilterContext *avctx)
 #else
     {
 #endif
+        if (dda->out_fmt && dda->out_fmt != DXGI_FORMAT_B8G8R8A8_UNORM) {
+            av_log(avctx, AV_LOG_ERROR, "Only 8 bit output supported with legacy API\n");
+            return AVERROR(ENOTSUP);
+        }
+
         hr = IDXGIOutput_QueryInterface(dxgi_output, &IID_IDXGIOutput1, (void**)&dxgi_output1);
         IDXGIOutput_Release(dxgi_output);
         dxgi_output = NULL;
@@ -389,62 +411,15 @@ static av_cold int init_render_resources(AVFilterContext *avctx)
 static av_cold int ddagrab_init(AVFilterContext *avctx)
 {
     DdagrabContext *dda = avctx->priv;
-    int ret = 0;
-
-    if (avctx->hw_device_ctx) {
-        dda->device_ctx = (AVHWDeviceContext*)avctx->hw_device_ctx->data;
-
-        if (dda->device_ctx->type != AV_HWDEVICE_TYPE_D3D11VA) {
-            av_log(avctx, AV_LOG_ERROR, "Non-D3D11VA input hw_device_ctx\n");
-            return AVERROR(EINVAL);
-        }
-
-        dda->device_ref = av_buffer_ref(avctx->hw_device_ctx);
-        if (!dda->device_ref)
-            return AVERROR(ENOMEM);
-
-        av_log(avctx, AV_LOG_VERBOSE, "Using provided hw_device_ctx\n");
-    } else {
-        ret = av_hwdevice_ctx_create(&dda->device_ref, AV_HWDEVICE_TYPE_D3D11VA, NULL, NULL, 0);
-        if (ret < 0) {
-            av_log(avctx, AV_LOG_ERROR, "Failed to create D3D11VA device.\n");
-            return ret;
-        }
-
-        dda->device_ctx = (AVHWDeviceContext*)dda->device_ref->data;
-
-        av_log(avctx, AV_LOG_VERBOSE, "Created internal hw_device_ctx\n");
-    }
-
-    dda->device_hwctx = (AVD3D11VADeviceContext*)dda->device_ctx->hwctx;
-
-    ret = init_dxgi_dda(avctx);
-    if (ret < 0)
-        goto fail;
-
-    dda->time_base  = av_inv_q(dda->framerate);
-    dda->time_frame = av_gettime_relative() / av_q2d(dda->time_base);
-    dda->time_timeout = av_rescale_q(1, dda->time_base, (AVRational) { 1, 1000 }) / 2;
 
     dda->last_frame = av_frame_alloc();
-    if (!dda->last_frame) {
-        ret = AVERROR(ENOMEM);
-        goto fail;
-    }
+    if (!dda->last_frame)
+        return AVERROR(ENOMEM);
 
     dda->mouse_x = -1;
     dda->mouse_y = -1;
 
-    if (dda->draw_mouse) {
-        ret = init_render_resources(avctx);
-        if (ret < 0)
-            goto fail;
-    }
-
     return 0;
-fail:
-    ddagrab_uninit(avctx);
-    return ret;
 }
 
 static int create_d3d11_pointer_tex(AVFilterContext *avctx,
@@ -716,12 +691,58 @@ static int ddagrab_config_props(AVFilterLink *outlink)
     DdagrabContext *dda = avctx->priv;
     int ret;
 
+    if (avctx->hw_device_ctx) {
+        dda->device_ctx = (AVHWDeviceContext*)avctx->hw_device_ctx->data;
+
+        if (dda->device_ctx->type != AV_HWDEVICE_TYPE_D3D11VA) {
+            av_log(avctx, AV_LOG_ERROR, "Non-D3D11VA input hw_device_ctx\n");
+            return AVERROR(EINVAL);
+        }
+
+        dda->device_ref = av_buffer_ref(avctx->hw_device_ctx);
+        if (!dda->device_ref)
+            return AVERROR(ENOMEM);
+
+        av_log(avctx, AV_LOG_VERBOSE, "Using provided hw_device_ctx\n");
+    } else {
+        ret = av_hwdevice_ctx_create(&dda->device_ref, AV_HWDEVICE_TYPE_D3D11VA, NULL, NULL, 0);
+        if (ret < 0) {
+            av_log(avctx, AV_LOG_ERROR, "Failed to create D3D11VA device.\n");
+            return ret;
+        }
+
+        dda->device_ctx = (AVHWDeviceContext*)dda->device_ref->data;
+
+        av_log(avctx, AV_LOG_VERBOSE, "Created internal hw_device_ctx\n");
+    }
+
+    dda->device_hwctx = (AVD3D11VADeviceContext*)dda->device_ctx->hwctx;
+
+    ret = init_dxgi_dda(avctx);
+    if (ret < 0)
+        return ret;
+
     ret = probe_output_format(avctx);
     if (ret < 0)
         return ret;
 
+    if (dda->out_fmt && dda->raw_format != dda->out_fmt) {
+        av_log(avctx, AV_LOG_ERROR, "Requested output format unavailable.\n");
+        return AVERROR(ENOTSUP);
+    }
+
     dda->width -= FFMAX(dda->width - dda->raw_width + dda->offset_x, 0);
     dda->height -= FFMAX(dda->height - dda->raw_height + dda->offset_y, 0);
+
+    dda->time_base  = av_inv_q(dda->framerate);
+    dda->time_frame = av_gettime_relative() / av_q2d(dda->time_base);
+    dda->time_timeout = av_rescale_q(1, dda->time_base, (AVRational) { 1, 1000 }) / 2;
+
+    if (dda->draw_mouse) {
+        ret = init_render_resources(avctx);
+        if (ret < 0)
+            return ret;
+    }
 
     ret = init_hwframes_ctx(avctx);
     if (ret < 0)
@@ -961,6 +982,18 @@ static int ddagrab_request_frame(AVFilterLink *outlink)
     }
 
     frame->sample_aspect_ratio = (AVRational){1, 1};
+
+    if (desc.Format == DXGI_FORMAT_B8G8R8A8_UNORM ||
+        desc.Format == DXGI_FORMAT_R10G10B10A2_UNORM) {
+        // According to MSDN, all integer formats contain sRGB image data
+        frame->color_range     = AVCOL_RANGE_JPEG;
+        frame->color_primaries = AVCOL_PRI_BT709;
+        frame->color_trc       = AVCOL_TRC_IEC61966_2_1;
+        frame->colorspace      = AVCOL_SPC_RGB;
+    } else {
+        ret = AVERROR_BUG;
+        goto fail;
+    }
 
     av_frame_unref(dda->last_frame);
     ret = av_frame_ref(dda->last_frame, frame);

@@ -31,13 +31,13 @@ static const uint8_t ff_hevc_mask_arr[16 * 2] __attribute__((aligned(0x40))) = {
 };
 
 static av_always_inline
-void hevc_hv_8t_8x2_lsx(uint8_t *src, int32_t src_stride, uint8_t *dst,
+void hevc_hv_8t_8x2_lsx(const uint8_t *src, int32_t src_stride, uint8_t *dst,
                         int32_t dst_stride, const int8_t *filter_x,
                         const int8_t *filter_y, int32_t height, int32_t weight,
                         int32_t offset, int32_t rnd_val, int32_t width)
 {
     uint32_t loop_cnt, cnt;
-    uint8_t *src_tmp;
+    const uint8_t *src_tmp;
     uint8_t *dst_tmp;
     const int32_t src_stride_2x = (src_stride << 1);
     const int32_t dst_stride_2x = (dst_stride << 1);
@@ -79,12 +79,12 @@ void hevc_hv_8t_8x2_lsx(uint8_t *src, int32_t src_stride, uint8_t *dst,
         dst_tmp = dst;
 
         src0 = __lsx_vld(src_tmp, 0);
-        DUP2_ARG2(__lsx_vldx, src_tmp, src_stride, src_tmp, src_stride_2x,
+        DUP2_ARG2(LSX_VLDX, src_tmp, src_stride, src_tmp, src_stride_2x,
                   src1, src2);
-        src3 = __lsx_vldx(src_tmp, src_stride_3x);
+        src3 = LSX_VLDX(src_tmp, src_stride_3x);
         src_tmp += src_stride_4x;
         src4 = __lsx_vld(src_tmp, 0);
-        DUP2_ARG2(__lsx_vldx, src_tmp, src_stride, src_tmp, src_stride_2x,
+        DUP2_ARG2(LSX_VLDX, src_tmp, src_stride, src_tmp, src_stride_2x,
                   src5, src6);
         src_tmp += src_stride_3x;
 
@@ -127,7 +127,7 @@ void hevc_hv_8t_8x2_lsx(uint8_t *src, int32_t src_stride, uint8_t *dst,
 
         for (loop_cnt = height >> 1; loop_cnt--;) {
             src7 = __lsx_vld(src_tmp, 0);
-            src8 = __lsx_vldx(src_tmp, src_stride);
+            src8 = LSX_VLDX(src_tmp, src_stride);
             src_tmp += src_stride_2x;
             DUP4_ARG3(__lsx_vshuf_b, src7, src7, mask0, src7, src7, mask1, src7,
                       src7, mask2, src7, src7, mask3, vec0, vec1, vec2, vec3);
@@ -207,7 +207,7 @@ void hevc_hv_8t_8x2_lsx(uint8_t *src, int32_t src_stride, uint8_t *dst,
 }
 
 static
-void hevc_hv_8t_8w_lsx(uint8_t *src, int32_t src_stride, uint8_t *dst,
+void hevc_hv_8t_8w_lsx(const uint8_t *src, int32_t src_stride, uint8_t *dst,
                        int32_t dst_stride, const int8_t *filter_x,
                        const int8_t *filter_y, int32_t height, int32_t weight,
                        int32_t offset, int32_t rnd_val)
@@ -217,7 +217,7 @@ void hevc_hv_8t_8w_lsx(uint8_t *src, int32_t src_stride, uint8_t *dst,
 }
 
 static
-void hevc_hv_8t_16w_lsx(uint8_t *src, int32_t src_stride, uint8_t *dst,
+void hevc_hv_8t_16w_lsx(const uint8_t *src, int32_t src_stride, uint8_t *dst,
                         int32_t dst_stride, const int8_t *filter_x,
                         const int8_t *filter_y, int32_t height, int32_t weight,
                         int32_t offset, int32_t rnd_val)
@@ -227,7 +227,7 @@ void hevc_hv_8t_16w_lsx(uint8_t *src, int32_t src_stride, uint8_t *dst,
 }
 
 static
-void hevc_hv_8t_24w_lsx(uint8_t *src, int32_t src_stride, uint8_t *dst,
+void hevc_hv_8t_24w_lsx(const uint8_t *src, int32_t src_stride, uint8_t *dst,
                         int32_t dst_stride, const int8_t *filter_x,
                         const int8_t *filter_y, int32_t height, int32_t weight,
                         int32_t offset, int32_t rnd_val)
@@ -237,7 +237,7 @@ void hevc_hv_8t_24w_lsx(uint8_t *src, int32_t src_stride, uint8_t *dst,
 }
 
 static
-void hevc_hv_8t_32w_lsx(uint8_t *src, int32_t src_stride, uint8_t *dst,
+void hevc_hv_8t_32w_lsx(const uint8_t *src, int32_t src_stride, uint8_t *dst,
                         int32_t dst_stride, const int8_t *filter_x,
                         const int8_t *filter_y, int32_t height, int32_t weight,
                         int32_t offset, int32_t rnd_val)
@@ -247,7 +247,7 @@ void hevc_hv_8t_32w_lsx(uint8_t *src, int32_t src_stride, uint8_t *dst,
 }
 
 static
-void hevc_hv_8t_48w_lsx(uint8_t *src, int32_t src_stride, uint8_t *dst,
+void hevc_hv_8t_48w_lsx(const uint8_t *src, int32_t src_stride, uint8_t *dst,
                         int32_t dst_stride, const int8_t *filter_x,
                         const int8_t *filter_y, int32_t height, int32_t weight,
                         int32_t offset, int32_t rnd_val)
@@ -257,7 +257,7 @@ void hevc_hv_8t_48w_lsx(uint8_t *src, int32_t src_stride, uint8_t *dst,
 }
 
 static
-void hevc_hv_8t_64w_lsx(uint8_t *src, int32_t src_stride, uint8_t *dst,
+void hevc_hv_8t_64w_lsx(const uint8_t *src, int32_t src_stride, uint8_t *dst,
                         int32_t dst_stride, const int8_t *filter_x,
                         const int8_t *filter_y, int32_t height, int32_t weight,
                         int32_t offset, int32_t rnd_val)
@@ -270,7 +270,7 @@ void hevc_hv_8t_64w_lsx(uint8_t *src, int32_t src_stride, uint8_t *dst,
 #define UNI_W_MC_HV(PEL, WIDTH, TAP)                                           \
 void ff_hevc_put_hevc_uni_w_##PEL##_hv##WIDTH##_8_lsx(uint8_t *dst,            \
                                                       ptrdiff_t dst_stride,    \
-                                                      uint8_t *src,            \
+                                                      const uint8_t *src,      \
                                                       ptrdiff_t src_stride,    \
                                                       int height,              \
                                                       int denom,               \

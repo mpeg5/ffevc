@@ -108,6 +108,14 @@ typedef struct AVCodecInternal {
     AVFrame *in_frame;
 
     /**
+     * When the AV_CODEC_FLAG_RECON_FRAME flag is used. the encoder should store
+     * here the reconstructed frame corresponding to the last returned packet.
+     *
+     * Not allocated in other cases.
+     */
+    AVFrame *recon_frame;
+
+    /**
      * If this is set, then FFCodec->close (if existing) needs to be called
      * for the parent AVCodecContext.
      */
@@ -217,8 +225,6 @@ int ff_get_buffer(AVCodecContext *avctx, AVFrame *frame, int flags);
  * if available.
  */
 int ff_reget_buffer(AVCodecContext *avctx, AVFrame *frame, int flags);
-
-int ff_thread_can_start_frame(AVCodecContext *avctx);
 
 int avpriv_h264_has_num_reorder_frames(AVCodecContext *avctx);
 

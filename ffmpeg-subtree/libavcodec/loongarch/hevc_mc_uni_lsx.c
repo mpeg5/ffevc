@@ -33,7 +33,7 @@ static const uint8_t ff_hevc_mask_arr[16 * 3] __attribute__((aligned(0x40))) = {
 };
 
 static av_always_inline
-void common_hz_8t_64w_lsx(uint8_t *src, int32_t src_stride,
+void common_hz_8t_64w_lsx(const uint8_t *src, int32_t src_stride,
                           uint8_t *dst, int32_t dst_stride,
                           const int8_t *filter, int32_t height)
 {
@@ -125,7 +125,7 @@ void common_hz_8t_64w_lsx(uint8_t *src, int32_t src_stride,
 }
 
 static av_always_inline
-void common_vt_8t_8w_lsx(uint8_t *src, int32_t src_stride,
+void common_vt_8t_8w_lsx(const uint8_t *src, int32_t src_stride,
                          uint8_t *dst, int32_t dst_stride,
                          const int8_t *filter, int32_t height)
 {
@@ -148,11 +148,11 @@ void common_vt_8t_8w_lsx(uint8_t *src, int32_t src_stride,
               filt0, filt1, filt2, filt3);
 
     src0 = __lsx_vld(src, 0);
-    DUP2_ARG2(__lsx_vldx, src, src_stride, src, src_stride_2x, src1, src2);
-    src3 = __lsx_vldx(src, src_stride_3x);
+    DUP2_ARG2(LSX_VLDX, src, src_stride, src, src_stride_2x, src1, src2);
+    src3 = LSX_VLDX(src, src_stride_3x);
     src += src_stride_4x;
     src4 = __lsx_vld(src, 0);
-    DUP2_ARG2(__lsx_vldx, src, src_stride, src, src_stride_2x, src5, src6);
+    DUP2_ARG2(LSX_VLDX, src, src_stride, src, src_stride_2x, src5, src6);
     src += src_stride_3x;
     DUP4_ARG2(__lsx_vilvl_b, src1, src0, src3, src2, src5, src4, src2, src1,
               src10_r, src32_r, src54_r, src21_r);
@@ -160,8 +160,8 @@ void common_vt_8t_8w_lsx(uint8_t *src, int32_t src_stride,
 
     for (loop_cnt = (height >> 2); loop_cnt--;) {
         src7 = __lsx_vld(src, 0);
-        DUP2_ARG2(__lsx_vldx, src, src_stride, src, src_stride_2x, src8, src9);
-        src10 = __lsx_vldx(src, src_stride_3x);
+        DUP2_ARG2(LSX_VLDX, src, src_stride, src, src_stride_2x, src8, src9);
+        src10 = LSX_VLDX(src, src_stride_3x);
         src += src_stride_4x;
 
         DUP4_ARG2(__lsx_vilvl_b, src7, src6, src8, src7, src9, src8, src10,
@@ -197,11 +197,11 @@ void common_vt_8t_8w_lsx(uint8_t *src, int32_t src_stride,
 }
 
 static av_always_inline
-void common_vt_8t_16w_lsx(uint8_t *src, int32_t src_stride, uint8_t *dst,
+void common_vt_8t_16w_lsx(const uint8_t *src, int32_t src_stride, uint8_t *dst,
                           int32_t dst_stride, const int8_t *filter,
                           int32_t height, int32_t width)
 {
-    uint8_t *src_tmp;
+    const uint8_t *src_tmp;
     uint8_t *dst_tmp;
     uint32_t loop_cnt, cnt;
     const int32_t src_stride_2x = (src_stride << 1);
@@ -228,12 +228,12 @@ void common_vt_8t_16w_lsx(uint8_t *src, int32_t src_stride, uint8_t *dst,
         dst_tmp = dst;
 
         src0 = __lsx_vld(src_tmp, 0);
-        DUP2_ARG2(__lsx_vldx, src_tmp, src_stride, src_tmp, src_stride_2x,
+        DUP2_ARG2(LSX_VLDX, src_tmp, src_stride, src_tmp, src_stride_2x,
                   src1, src2);
-        src3 = __lsx_vldx(src_tmp, src_stride_3x);
+        src3 = LSX_VLDX(src_tmp, src_stride_3x);
         src_tmp += src_stride_4x;
         src4 = __lsx_vld(src_tmp, 0);
-        DUP2_ARG2(__lsx_vldx, src_tmp, src_stride, src_tmp, src_stride_2x,
+        DUP2_ARG2(LSX_VLDX, src_tmp, src_stride, src_tmp, src_stride_2x,
                   src5, src6);
         src_tmp += src_stride_3x;
         DUP4_ARG2(__lsx_vilvl_b, src1, src0, src3, src2, src5, src4, src2, src1,
@@ -245,9 +245,9 @@ void common_vt_8t_16w_lsx(uint8_t *src, int32_t src_stride, uint8_t *dst,
 
         for (loop_cnt = (height >> 2); loop_cnt--;) {
             src7 = __lsx_vld(src_tmp, 0);
-            DUP2_ARG2(__lsx_vldx, src_tmp, src_stride, src_tmp, src_stride_2x,
+            DUP2_ARG2(LSX_VLDX, src_tmp, src_stride, src_tmp, src_stride_2x,
                       src8, src9);
-            src10 = __lsx_vldx(src_tmp, src_stride_3x);
+            src10 = LSX_VLDX(src_tmp, src_stride_3x);
             src_tmp += src_stride_4x;
             DUP4_ARG2(__lsx_vilvl_b, src7, src6, src8, src7, src9, src8, src10,
                       src9, src76_r, src87_r, src98_r, src109_r);
@@ -304,7 +304,7 @@ void common_vt_8t_16w_lsx(uint8_t *src, int32_t src_stride, uint8_t *dst,
     }
 }
 
-static void common_vt_8t_24w_lsx(uint8_t *src, int32_t src_stride,
+static void common_vt_8t_24w_lsx(const uint8_t *src, int32_t src_stride,
                                  uint8_t *dst, int32_t dst_stride,
                                  const int8_t *filter, int32_t height)
 {
@@ -313,21 +313,21 @@ static void common_vt_8t_24w_lsx(uint8_t *src, int32_t src_stride,
                         height);
 }
 
-static void common_vt_8t_32w_lsx(uint8_t *src, int32_t src_stride,
+static void common_vt_8t_32w_lsx(const uint8_t *src, int32_t src_stride,
                                  uint8_t *dst, int32_t dst_stride,
                                  const int8_t *filter, int32_t height)
 {
     common_vt_8t_16w_lsx(src, src_stride, dst, dst_stride, filter, height, 32);
 }
 
-static void common_vt_8t_48w_lsx(uint8_t *src, int32_t src_stride,
+static void common_vt_8t_48w_lsx(const uint8_t *src, int32_t src_stride,
                                  uint8_t *dst, int32_t dst_stride,
                                  const int8_t *filter, int32_t height)
 {
     common_vt_8t_16w_lsx(src, src_stride, dst, dst_stride, filter, height, 48);
 }
 
-static void common_vt_8t_64w_lsx(uint8_t *src, int32_t src_stride,
+static void common_vt_8t_64w_lsx(const uint8_t *src, int32_t src_stride,
                                  uint8_t *dst, int32_t dst_stride,
                                  const int8_t *filter, int32_t height)
 {
@@ -335,12 +335,12 @@ static void common_vt_8t_64w_lsx(uint8_t *src, int32_t src_stride,
 }
 
 static av_always_inline
-void hevc_hv_8t_8x2_lsx(uint8_t *src, int32_t src_stride, uint8_t *dst,
+void hevc_hv_8t_8x2_lsx(const uint8_t *src, int32_t src_stride, uint8_t *dst,
                         int32_t dst_stride, const int8_t *filter_x,
                         const int8_t *filter_y, int32_t height, int32_t width)
 {
     uint32_t loop_cnt, cnt;
-    uint8_t *src_tmp;
+    const uint8_t *src_tmp;
     uint8_t *dst_tmp;
     const int32_t src_stride_2x = (src_stride << 1);
     const int32_t dst_stride_2x = (dst_stride << 1);
@@ -380,12 +380,12 @@ void hevc_hv_8t_8x2_lsx(uint8_t *src, int32_t src_stride, uint8_t *dst,
         dst_tmp = dst;
 
         src0 = __lsx_vld(src_tmp, 0);
-        DUP2_ARG2(__lsx_vldx, src_tmp, src_stride, src_tmp, src_stride_2x,
+        DUP2_ARG2(LSX_VLDX, src_tmp, src_stride, src_tmp, src_stride_2x,
                   src1, src2);
-        src3 = __lsx_vldx(src_tmp, src_stride_3x);
+        src3 = LSX_VLDX(src_tmp, src_stride_3x);
         src_tmp += src_stride_4x;
         src4 = __lsx_vld(src_tmp, 0);
-        DUP2_ARG2(__lsx_vldx, src_tmp, src_stride, src_tmp, src_stride_2x,
+        DUP2_ARG2(LSX_VLDX, src_tmp, src_stride, src_tmp, src_stride_2x,
                   src5, src6);
         src_tmp += src_stride_3x;
 
@@ -429,7 +429,7 @@ void hevc_hv_8t_8x2_lsx(uint8_t *src, int32_t src_stride, uint8_t *dst,
 
         for (loop_cnt = height >> 1; loop_cnt--;) {
             src7 = __lsx_vld(src_tmp, 0);
-            src8 = __lsx_vldx(src_tmp, src_stride);
+            src8 = LSX_VLDX(src_tmp, src_stride);
             src_tmp += src_stride_2x;
 
             DUP4_ARG3(__lsx_vshuf_b, src7, src7, mask0, src7, src7, mask1, src7,
@@ -496,7 +496,7 @@ void hevc_hv_8t_8x2_lsx(uint8_t *src, int32_t src_stride, uint8_t *dst,
     }
 }
 
-static void hevc_hv_8t_8w_lsx(uint8_t *src, int32_t src_stride, uint8_t *dst,
+static void hevc_hv_8t_8w_lsx(const uint8_t *src, int32_t src_stride, uint8_t *dst,
                               int32_t dst_stride, const int8_t *filter_x,
                               const int8_t *filter_y, int32_t height)
 {
@@ -504,7 +504,7 @@ static void hevc_hv_8t_8w_lsx(uint8_t *src, int32_t src_stride, uint8_t *dst,
                        filter_x, filter_y, height, 8);
 }
 
-static void hevc_hv_8t_16w_lsx(uint8_t *src, int32_t src_stride, uint8_t *dst,
+static void hevc_hv_8t_16w_lsx(const uint8_t *src, int32_t src_stride, uint8_t *dst,
                                int32_t dst_stride, const int8_t *filter_x,
                                const int8_t *filter_y, int32_t height)
 {
@@ -512,7 +512,7 @@ static void hevc_hv_8t_16w_lsx(uint8_t *src, int32_t src_stride, uint8_t *dst,
                       filter_x, filter_y, height, 16);
 }
 
-static void hevc_hv_8t_24w_lsx(uint8_t *src, int32_t src_stride, uint8_t *dst,
+static void hevc_hv_8t_24w_lsx(const uint8_t *src, int32_t src_stride, uint8_t *dst,
                                int32_t dst_stride, const int8_t *filter_x,
                                const int8_t *filter_y, int32_t height)
 {
@@ -520,7 +520,7 @@ static void hevc_hv_8t_24w_lsx(uint8_t *src, int32_t src_stride, uint8_t *dst,
                        filter_x, filter_y, height, 24);
 }
 
-static void hevc_hv_8t_32w_lsx(uint8_t *src, int32_t src_stride, uint8_t *dst,
+static void hevc_hv_8t_32w_lsx(const uint8_t *src, int32_t src_stride, uint8_t *dst,
                                int32_t dst_stride, const int8_t *filter_x,
                                const int8_t *filter_y, int32_t height)
 {
@@ -528,7 +528,7 @@ static void hevc_hv_8t_32w_lsx(uint8_t *src, int32_t src_stride, uint8_t *dst,
                        filter_x, filter_y, height, 32);
 }
 
-static void hevc_hv_8t_48w_lsx(uint8_t *src, int32_t src_stride, uint8_t *dst,
+static void hevc_hv_8t_48w_lsx(const uint8_t *src, int32_t src_stride, uint8_t *dst,
                                int32_t dst_stride, const int8_t *filter_x,
                                const int8_t *filter_y, int32_t height)
 {
@@ -536,7 +536,7 @@ static void hevc_hv_8t_48w_lsx(uint8_t *src, int32_t src_stride, uint8_t *dst,
                        filter_x, filter_y, height, 48);
 }
 
-static void hevc_hv_8t_64w_lsx(uint8_t *src, int32_t src_stride, uint8_t *dst,
+static void hevc_hv_8t_64w_lsx(const uint8_t *src, int32_t src_stride, uint8_t *dst,
                                int32_t dst_stride, const int8_t *filter_x,
                                const int8_t *filter_y, int32_t height)
 {
@@ -545,14 +545,14 @@ static void hevc_hv_8t_64w_lsx(uint8_t *src, int32_t src_stride, uint8_t *dst,
 }
 
 static av_always_inline
-void common_vt_4t_24w_lsx(uint8_t *src, int32_t src_stride,
+void common_vt_4t_24w_lsx(const uint8_t *src, int32_t src_stride,
                           uint8_t *dst, int32_t dst_stride,
                           const int8_t *filter, int32_t height)
 {
     uint32_t loop_cnt;
     int32_t src_stride_2x = (src_stride << 1);
     int32_t src_stride_3x = src_stride_2x + src_stride;
-    uint8_t *_src;
+    const uint8_t *_src;
 
     __m128i src0, src1, src2, src3, src4, src5, src6, src7, src8, src9, src10;
     __m128i src11, filt0, filt1;
@@ -567,13 +567,13 @@ void common_vt_4t_24w_lsx(uint8_t *src, int32_t src_stride,
 
     /* 16 width */
     src0 = __lsx_vld(src, 0);
-    DUP2_ARG2(__lsx_vldx, src, src_stride, src, src_stride_2x, src1, src2);
+    DUP2_ARG2(LSX_VLDX, src, src_stride, src, src_stride_2x, src1, src2);
     DUP2_ARG2(__lsx_vilvl_b, src1, src0, src2, src1, src10_r, src21_r);
     DUP2_ARG2(__lsx_vilvh_b, src1, src0, src2, src1, src10_l, src21_l);
 
     /* 8 width */
     src6 = __lsx_vld(_src, 0);
-    DUP2_ARG2(__lsx_vldx, _src, src_stride, _src, src_stride_2x, src7, src8);
+    DUP2_ARG2(LSX_VLDX, _src, src_stride, _src, src_stride_2x, src7, src8);
     src += src_stride_3x;
     _src += src_stride_3x;
     DUP2_ARG2(__lsx_vilvl_b, src7, src6, src8, src7, src76_r, src87_r);
@@ -581,7 +581,7 @@ void common_vt_4t_24w_lsx(uint8_t *src, int32_t src_stride,
     for (loop_cnt = 8; loop_cnt--;) {
         /* 16 width */
         DUP2_ARG2(__lsx_vld, src, 0, _src, 0, src3, src9);
-        DUP2_ARG2(__lsx_vldx, src, src_stride, _src, src_stride, src4, src10);
+        DUP2_ARG2(LSX_VLDX, src, src_stride, _src, src_stride, src4, src10);
         DUP2_ARG2(__lsx_vilvl_b, src3, src2, src4, src3, src32_r, src43_r);
         DUP2_ARG2(__lsx_vilvh_b, src3, src2, src4, src3, src32_l, src43_l);
 
@@ -615,7 +615,7 @@ void common_vt_4t_24w_lsx(uint8_t *src, int32_t src_stride,
 
         /* 16 width */
         DUP2_ARG2(__lsx_vld, src, 0, _src, 0, src5, src11);
-        DUP2_ARG2(__lsx_vldx, src, src_stride, _src, src_stride, src2, src8);
+        DUP2_ARG2(LSX_VLDX, src, src_stride, _src, src_stride, src2, src8);
         DUP2_ARG2(__lsx_vilvl_b, src5, src4, src2, src5, src10_r, src21_r);
         DUP2_ARG2(__lsx_vilvh_b, src5, src4, src2, src5, src10_l, src21_l);
 
@@ -651,7 +651,7 @@ void common_vt_4t_24w_lsx(uint8_t *src, int32_t src_stride,
 }
 
 static av_always_inline
-void common_vt_4t_32w_lsx(uint8_t *src, int32_t src_stride,
+void common_vt_4t_32w_lsx(const uint8_t *src, int32_t src_stride,
                           uint8_t *dst, int32_t dst_stride,
                           const int8_t *filter, int32_t height)
 {
@@ -659,7 +659,7 @@ void common_vt_4t_32w_lsx(uint8_t *src, int32_t src_stride,
     int32_t src_stride_2x = (src_stride << 1);
     int32_t dst_stride_2x = (dst_stride << 1);
     int32_t src_stride_3x = src_stride_2x + src_stride;
-    uint8_t *_src;
+    const uint8_t *_src;
 
     __m128i src0, src1, src2, src3, src4, src6, src7, src8, src9, src10;
     __m128i src10_r, src32_r, src76_r, src98_r;
@@ -676,14 +676,14 @@ void common_vt_4t_32w_lsx(uint8_t *src, int32_t src_stride,
 
     /* 16 width */
     src0 = __lsx_vld(src, 0);
-    DUP2_ARG2(__lsx_vldx, src, src_stride, src, src_stride_2x, src1, src2);
+    DUP2_ARG2(LSX_VLDX, src, src_stride, src, src_stride_2x, src1, src2);
 
     DUP2_ARG2(__lsx_vilvl_b, src1, src0, src2, src1, src10_r, src21_r);
     DUP2_ARG2(__lsx_vilvh_b, src1, src0, src2, src1, src10_l, src21_l);
 
     /* next 16 width */
     src6 = __lsx_vld(_src, 0);
-    DUP2_ARG2(__lsx_vldx, _src, src_stride, _src, src_stride_2x, src7, src8);
+    DUP2_ARG2(LSX_VLDX, _src, src_stride, _src, src_stride_2x, src7, src8);
     src += src_stride_3x;
     _src += src_stride_3x;
 
@@ -693,7 +693,7 @@ void common_vt_4t_32w_lsx(uint8_t *src, int32_t src_stride,
     for (loop_cnt = (height >> 1); loop_cnt--;) {
         /* 16 width */
         DUP2_ARG2(__lsx_vld, src, 0, _src, 0, src3, src9);
-        DUP2_ARG2(__lsx_vldx, src, src_stride, _src, src_stride, src4, src10);
+        DUP2_ARG2(LSX_VLDX, src, src_stride, _src, src_stride, src4, src10);
         DUP2_ARG2(__lsx_vilvl_b, src3, src2, src4, src3, src32_r, src43_r);
         DUP2_ARG2(__lsx_vilvh_b, src3, src2, src4, src3, src32_l, src43_l);
 
@@ -745,7 +745,7 @@ void common_vt_4t_32w_lsx(uint8_t *src, int32_t src_stride,
 }
 
 static av_always_inline
-void hevc_hv_4t_8x2_lsx(uint8_t *src, int32_t src_stride, uint8_t *dst,
+void hevc_hv_4t_8x2_lsx(const uint8_t *src, int32_t src_stride, uint8_t *dst,
                         int32_t dst_stride, const int8_t *filter_x,
                         const int8_t *filter_y)
 {
@@ -774,7 +774,7 @@ void hevc_hv_4t_8x2_lsx(uint8_t *src, int32_t src_stride, uint8_t *dst,
 
     mask1 = __lsx_vaddi_bu(mask0, 2);
     src0 = __lsx_vld(src, 0);
-    DUP4_ARG2(__lsx_vldx, src, src_stride, src, src_stride_2x, src,
+    DUP4_ARG2(LSX_VLDX, src, src_stride, src, src_stride_2x, src,
               src_stride_3x, src, src_stride_4x, src1, src2, src3, src4);
 
     DUP4_ARG3(__lsx_vshuf_b, src0, src0, mask0, src0, src0, mask1, src1, src1,
@@ -806,7 +806,7 @@ void hevc_hv_4t_8x2_lsx(uint8_t *src, int32_t src_stride, uint8_t *dst,
 }
 
 static av_always_inline
-void hevc_hv_4t_8multx4_lsx(uint8_t *src, int32_t src_stride, uint8_t *dst,
+void hevc_hv_4t_8multx4_lsx(const uint8_t *src, int32_t src_stride, uint8_t *dst,
                             int32_t dst_stride, const int8_t *filter_x,
                             const int8_t *filter_y, int32_t width8mult)
 {
@@ -838,11 +838,11 @@ void hevc_hv_4t_8multx4_lsx(uint8_t *src, int32_t src_stride, uint8_t *dst,
 
     for (cnt = width8mult; cnt--;) {
         src0 = __lsx_vld(src, 0);
-        DUP2_ARG2(__lsx_vldx, src, src_stride, src, src_stride_2x, src1, src2);
-        src3 = __lsx_vldx(src, src_stride_3x);
+        DUP2_ARG2(LSX_VLDX, src, src_stride, src, src_stride_2x, src1, src2);
+        src3 = LSX_VLDX(src, src_stride_3x);
         src += src_stride_4x;
         src4 = __lsx_vld(src, 0);
-        DUP2_ARG2(__lsx_vldx, src, src_stride, src, src_stride_2x, src5, src6);
+        DUP2_ARG2(LSX_VLDX, src, src_stride, src, src_stride_2x, src5, src6);
         src += (8 - src_stride_4x);
         DUP2_ARG3(__lsx_vshuf_b, src0, src0, mask0, src0, src0, mask1,
                   vec0, vec1);
@@ -902,7 +902,7 @@ void hevc_hv_4t_8multx4_lsx(uint8_t *src, int32_t src_stride, uint8_t *dst,
 }
 
 static av_always_inline
-void hevc_hv_4t_8x6_lsx(uint8_t *src, int32_t src_stride, uint8_t *dst,
+void hevc_hv_4t_8x6_lsx(const uint8_t *src, int32_t src_stride, uint8_t *dst,
                         int32_t dst_stride, const int8_t *filter_x,
                         const int8_t *filter_y)
 {
@@ -939,10 +939,10 @@ void hevc_hv_4t_8x6_lsx(uint8_t *src, int32_t src_stride, uint8_t *dst,
     mask1 = __lsx_vaddi_bu(mask0, 2);
 
     src0 = __lsx_vld(src, 0);
-    DUP4_ARG2(__lsx_vldx, src, src_stride, src, src_stride_2x,src,
+    DUP4_ARG2(LSX_VLDX, src, src_stride, src, src_stride_2x,src,
               src_stride_3x, src, src_stride_4x, src1, src2, src3, src4);
     src += src_stride_4x;
-    DUP4_ARG2(__lsx_vldx, src, src_stride, src, src_stride_2x,src,
+    DUP4_ARG2(LSX_VLDX, src, src_stride, src, src_stride_2x,src,
               src_stride_3x, src, src_stride_4x, src5, src6, src7, src8);
 
     DUP4_ARG3(__lsx_vshuf_b, src0, src0, mask0, src0, src0, mask1, src1, src1,
@@ -1009,13 +1009,13 @@ void hevc_hv_4t_8x6_lsx(uint8_t *src, int32_t src_stride, uint8_t *dst,
 }
 
 static av_always_inline
-void hevc_hv_4t_8multx4mult_lsx(uint8_t *src, int32_t src_stride, uint8_t *dst,
+void hevc_hv_4t_8multx4mult_lsx(const uint8_t *src, int32_t src_stride, uint8_t *dst,
                                 int32_t dst_stride, const int8_t *filter_x,
                                 const int8_t *filter_y, int32_t height,
                                 int32_t width8mult)
 {
     uint32_t loop_cnt, cnt;
-    uint8_t *src_tmp;
+    const uint8_t *src_tmp;
     uint8_t *dst_tmp;
     const int32_t src_stride_2x = (src_stride << 1);
     const int32_t dst_stride_2x = (dst_stride << 1);
@@ -1051,7 +1051,7 @@ void hevc_hv_4t_8multx4mult_lsx(uint8_t *src, int32_t src_stride, uint8_t *dst,
         dst_tmp = dst;
 
         src0 = __lsx_vld(src_tmp, 0);
-        DUP2_ARG2(__lsx_vldx, src_tmp, src_stride, src_tmp, src_stride_2x,
+        DUP2_ARG2(LSX_VLDX, src_tmp, src_stride, src_tmp, src_stride_2x,
                   src1, src2);
         src_tmp += src_stride_3x;
 
@@ -1073,9 +1073,9 @@ void hevc_hv_4t_8multx4mult_lsx(uint8_t *src, int32_t src_stride, uint8_t *dst,
 
         for (loop_cnt = (height >> 2); loop_cnt--;) {
             src3 = __lsx_vld(src_tmp, 0);
-            DUP2_ARG2(__lsx_vldx, src_tmp, src_stride, src_tmp, src_stride_2x,
+            DUP2_ARG2(LSX_VLDX, src_tmp, src_stride, src_tmp, src_stride_2x,
                       src4, src5);
-            src6 = __lsx_vldx(src_tmp, src_stride_3x);
+            src6 = LSX_VLDX(src_tmp, src_stride_3x);
             src_tmp += src_stride_4x;
 
             DUP4_ARG3(__lsx_vshuf_b, src3, src3, mask0, src3, src3, mask1, src4,
@@ -1128,7 +1128,7 @@ void hevc_hv_4t_8multx4mult_lsx(uint8_t *src, int32_t src_stride, uint8_t *dst,
 }
 
 static
-void hevc_hv_4t_8w_lsx(uint8_t *src, int32_t src_stride, uint8_t *dst,
+void hevc_hv_4t_8w_lsx(const uint8_t *src, int32_t src_stride, uint8_t *dst,
                        int32_t dst_stride, const int8_t *filter_x,
                        const int8_t *filter_y, int32_t height)
 {
@@ -1146,12 +1146,13 @@ void hevc_hv_4t_8w_lsx(uint8_t *src, int32_t src_stride, uint8_t *dst,
 }
 
 static av_always_inline
-void hevc_hv_4t_12w_lsx(uint8_t *src, int32_t src_stride, uint8_t *dst,
+void hevc_hv_4t_12w_lsx(const uint8_t *src, int32_t src_stride, uint8_t *dst,
                         int32_t dst_stride, const int8_t *filter_x,
                         const int8_t *filter_y, int32_t height)
 {
     uint32_t loop_cnt;
-    uint8_t *src_tmp, *dst_tmp;
+    const uint8_t *src_tmp;
+    uint8_t *dst_tmp;
     const int32_t src_stride_2x = (src_stride << 1);
     const int32_t dst_stride_2x = (dst_stride << 1);
     const int32_t src_stride_4x = (src_stride << 2);
@@ -1185,7 +1186,7 @@ void hevc_hv_4t_12w_lsx(uint8_t *src, int32_t src_stride, uint8_t *dst,
     dst_tmp = dst;
 
     src0 = __lsx_vld(src_tmp, 0);
-    DUP2_ARG2(__lsx_vldx, src_tmp, src_stride, src_tmp, src_stride_2x,
+    DUP2_ARG2(LSX_VLDX, src_tmp, src_stride, src_tmp, src_stride_2x,
               src1, src2);
     src_tmp += src_stride_3x;
 
@@ -1204,9 +1205,9 @@ void hevc_hv_4t_12w_lsx(uint8_t *src, int32_t src_stride, uint8_t *dst,
 
     for (loop_cnt = 4; loop_cnt--;) {
         src3 = __lsx_vld(src_tmp, 0);
-        DUP2_ARG2(__lsx_vldx, src_tmp, src_stride, src_tmp, src_stride_2x,
+        DUP2_ARG2(LSX_VLDX, src_tmp, src_stride, src_tmp, src_stride_2x,
                   src4, src5);
-        src6 = __lsx_vldx(src_tmp, src_stride_3x);
+        src6 = LSX_VLDX(src_tmp, src_stride_3x);
         src_tmp += src_stride_4x;
 
         DUP4_ARG3(__lsx_vshuf_b, src3, src3, mask0, src3, src3, mask1, src4,
@@ -1260,7 +1261,7 @@ void hevc_hv_4t_12w_lsx(uint8_t *src, int32_t src_stride, uint8_t *dst,
     mask3 = __lsx_vaddi_bu(mask2, 2);
 
     src0 = __lsx_vld(src, 0);
-    DUP2_ARG2(__lsx_vldx, src, src_stride, src, src_stride_2x, src1, src2);
+    DUP2_ARG2(LSX_VLDX, src, src_stride, src, src_stride_2x, src1, src2);
     src += src_stride_3x;
     DUP2_ARG3(__lsx_vshuf_b, src1, src0, mask2, src1, src0, mask3, vec0, vec1);
     DUP2_ARG3(__lsx_vshuf_b, src2, src1, mask2, src2, src1, mask3, vec2, vec3);
@@ -1275,12 +1276,12 @@ void hevc_hv_4t_12w_lsx(uint8_t *src, int32_t src_stride, uint8_t *dst,
 
     for (loop_cnt = 2; loop_cnt--;) {
         src3 = __lsx_vld(src, 0);
-        DUP2_ARG2(__lsx_vldx, src, src_stride, src, src_stride_2x, src4, src5);
-        src6 = __lsx_vldx(src, src_stride_3x);
+        DUP2_ARG2(LSX_VLDX, src, src_stride, src, src_stride_2x, src4, src5);
+        src6 = LSX_VLDX(src, src_stride_3x);
         src += src_stride_4x;
         src7 = __lsx_vld(src, 0);
-        DUP2_ARG2(__lsx_vldx, src, src_stride, src, src_stride_2x, src8, src9);
-        src10 = __lsx_vldx(src, src_stride_3x);
+        DUP2_ARG2(LSX_VLDX, src, src_stride, src, src_stride_2x, src8, src9);
+        src10 = LSX_VLDX(src, src_stride_3x);
         src += src_stride_4x;
         DUP4_ARG3(__lsx_vshuf_b, src7, src3, mask2, src7, src3, mask3, src8,
                   src4, mask2, src8, src4, mask3, vec0, vec1, vec2, vec3);
@@ -1333,7 +1334,7 @@ void hevc_hv_4t_12w_lsx(uint8_t *src, int32_t src_stride, uint8_t *dst,
     }
 }
 
-static void hevc_hv_4t_16w_lsx(uint8_t *src, int32_t src_stride, uint8_t *dst,
+static void hevc_hv_4t_16w_lsx(const uint8_t *src, int32_t src_stride, uint8_t *dst,
                                int32_t dst_stride, const int8_t *filter_x,
                                const int8_t *filter_y, int32_t height)
 {
@@ -1346,7 +1347,7 @@ static void hevc_hv_4t_16w_lsx(uint8_t *src, int32_t src_stride, uint8_t *dst,
     }
 }
 
-static void hevc_hv_4t_24w_lsx(uint8_t *src, int32_t src_stride, uint8_t *dst,
+static void hevc_hv_4t_24w_lsx(const uint8_t *src, int32_t src_stride, uint8_t *dst,
                                int32_t dst_stride, const int8_t *filter_x,
                                const int8_t *filter_y, int32_t height)
 {
@@ -1354,7 +1355,7 @@ static void hevc_hv_4t_24w_lsx(uint8_t *src, int32_t src_stride, uint8_t *dst,
                                filter_x, filter_y, height, 3);
 }
 
-static void hevc_hv_4t_32w_lsx(uint8_t *src, int32_t src_stride, uint8_t *dst,
+static void hevc_hv_4t_32w_lsx(const uint8_t *src, int32_t src_stride, uint8_t *dst,
                                int32_t dst_stride, const int8_t *filter_x,
                                const int8_t *filter_y, int32_t height)
 {
@@ -1365,7 +1366,7 @@ static void hevc_hv_4t_32w_lsx(uint8_t *src, int32_t src_stride, uint8_t *dst,
 #define UNI_MC(PEL, DIR, WIDTH, TAP, DIR1, FILT_DIR)                           \
 void ff_hevc_put_hevc_uni_##PEL##_##DIR##WIDTH##_8_lsx(uint8_t *dst,           \
                                                        ptrdiff_t dst_stride,   \
-                                                       uint8_t *src,           \
+                                                       const uint8_t *src,     \
                                                        ptrdiff_t src_stride,   \
                                                        int height,             \
                                                        intptr_t mx,            \
@@ -1393,7 +1394,7 @@ UNI_MC(epel, v, 32, 4, vt, my);
 #define UNI_MC_HV(PEL, WIDTH, TAP)                                         \
 void ff_hevc_put_hevc_uni_##PEL##_hv##WIDTH##_8_lsx(uint8_t *dst,          \
                                                     ptrdiff_t dst_stride,  \
-                                                    uint8_t *src,          \
+                                                    const uint8_t *src,    \
                                                     ptrdiff_t src_stride,  \
                                                     int height,            \
                                                     intptr_t mx,           \

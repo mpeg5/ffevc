@@ -2453,7 +2453,6 @@ CONFIG_EXTRA="
     faandct
     faanidct
     fdctdsp
-    flacdsp
     fmtconvert
     frame_thread_encoder
     g722dsp
@@ -2494,6 +2493,8 @@ CONFIG_EXTRA="
     mpegvideo
     mpegvideodec
     mpegvideoenc
+    msmpeg4dec
+    msmpeg4enc
     mss34dsp
     pixblockdsp
     qpeldsp
@@ -2737,7 +2738,7 @@ h264dsp_select="startcode"
 hevcparse_select="atsc_a53 golomb"
 frame_thread_encoder_deps="encoders threads"
 inflate_wrapper_deps="zlib"
-intrax8_select="blockdsp idctdsp"
+intrax8_select="blockdsp wmv2dsp"
 iso_media_select="mpeg4audio"
 mdct_select="fft"
 mdct15_select="fft"
@@ -2748,6 +2749,8 @@ mpegaudiodsp_select="dct"
 mpegvideo_select="blockdsp h264chroma hpeldsp idctdsp videodsp"
 mpegvideodec_select="mpegvideo mpeg_er"
 mpegvideoenc_select="aandcttables me_cmp mpegvideo pixblockdsp qpeldsp"
+msmpeg4dec_select="h263_decoder"
+msmpeg4enc_select="h263_encoder"
 vc1dsp_select="h264chroma qpeldsp startcode"
 rdft_select="fft"
 
@@ -2821,8 +2824,7 @@ ffv1_encoder_select="rangecoder"
 ffvhuff_decoder_select="huffyuv_decoder"
 ffvhuff_encoder_select="huffyuv_encoder"
 fic_decoder_select="golomb"
-flac_decoder_select="flacdsp"
-flac_encoder_select="bswapdsp flacdsp lpc"
+flac_encoder_select="bswapdsp lpc"
 flashsv2_decoder_select="inflate_wrapper"
 flashsv2_encoder_select="deflate_wrapper"
 flashsv_decoder_select="inflate_wrapper"
@@ -2897,11 +2899,11 @@ mpeg4_decoder_select="h263_decoder mpeg4video_parser"
 mpeg4_encoder_select="h263_encoder"
 msa1_decoder_select="mss34dsp"
 mscc_decoder_select="inflate_wrapper"
-msmpeg4v1_decoder_select="h263_decoder"
-msmpeg4v2_decoder_select="h263_decoder"
-msmpeg4v2_encoder_select="h263_encoder"
-msmpeg4v3_decoder_select="h263_decoder"
-msmpeg4v3_encoder_select="h263_encoder"
+msmpeg4v1_decoder_select="msmpeg4dec"
+msmpeg4v2_decoder_select="msmpeg4dec"
+msmpeg4v2_encoder_select="msmpeg4enc"
+msmpeg4v3_decoder_select="msmpeg4dec"
+msmpeg4v3_encoder_select="msmpeg4enc"
 mss2_decoder_select="mpegvideodec qpeldsp vc1_decoder"
 mts2_decoder_select="jpegtables mss34dsp"
 mv30_decoder_select="aandcttables blockdsp"
@@ -2972,7 +2974,7 @@ utvideo_encoder_select="bswapdsp huffman llvidencdsp"
 vble_decoder_select="llviddsp"
 vbn_decoder_select="texturedsp"
 vbn_encoder_select="texturedspenc"
-vc1_decoder_select="blockdsp h263_decoder h264qpel intrax8 mpegvideodec vc1dsp"
+vc1_decoder_select="blockdsp h264qpel intrax8 mpegvideodec msmpeg4dec vc1dsp"
 vc1image_decoder_select="vc1_decoder"
 vorbis_decoder_select="mdct"
 vorbis_encoder_select="audio_frame_queue mdct"
@@ -2994,10 +2996,10 @@ wmav1_encoder_select="mdct sinewin wma_freqs"
 wmav2_decoder_select="mdct sinewin wma_freqs"
 wmav2_encoder_select="mdct sinewin wma_freqs"
 wmavoice_decoder_select="lsp rdft dct mdct sinewin"
-wmv1_decoder_select="h263_decoder"
-wmv1_encoder_select="h263_encoder"
-wmv2_decoder_select="blockdsp error_resilience h263_decoder idctdsp intrax8 videodsp wmv2dsp"
-wmv2_encoder_select="h263_encoder wmv2dsp"
+wmv1_decoder_select="msmpeg4dec"
+wmv1_encoder_select="msmpeg4enc"
+wmv2_decoder_select="blockdsp error_resilience idctdsp intrax8 msmpeg4dec videodsp wmv2dsp"
+wmv2_encoder_select="msmpeg4enc wmv2dsp"
 wmv3_decoder_select="vc1_decoder"
 wmv3image_decoder_select="wmv3_decoder"
 xma1_decoder_select="wmapro_decoder"
@@ -6681,7 +6683,7 @@ enabled libwebp           && {
     enabled libwebp_encoder      && require_pkg_config libwebp "libwebp >= 0.2.0" webp/encode.h WebPGetEncoderVersion
     enabled libwebp_anim_encoder && check_pkg_config libwebp_anim_encoder "libwebpmux >= 0.4.0" webp/mux.h WebPAnimEncoderOptionsInit; }
 enabled libx264           && require_pkg_config libx264 x264 "stdint.h x264.h" x264_encoder_encode &&
-                             require_cpp_condition libx264 x264.h "X264_BUILD >= 118" && {
+                             require_cpp_condition libx264 x264.h "X264_BUILD >= 122" && {
                              [ "$toolchain" != "msvc" ] ||
                              require_cpp_condition libx264 x264.h "X264_BUILD >= 158"; } &&
                              check_cpp_condition libx262 x264.h "X264_MPEG2"

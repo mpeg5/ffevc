@@ -184,6 +184,40 @@ static int export_stream_params(const XevdContext *xectx, AVCodecContext *avctx)
 }
 
 /**
+ * @brief Copy image in imgb to frame.
+ *
+ * @param avctx codec context
+ * @param[in] imgb
+ * @param[out] frame
+ * @return 0 on success, negative value on failure
+ */
+static int libxevd_image_copy(struct AVCodecContext *avctx, XEVD_IMGB *imgb, struct AVFrame *frame)
+{
+    int ret;
+    if (imgb->cs != XEVD_CS_YCBCR420_10LE) {
+        av_log(avctx, AV_LOG_ERROR, "Not supported pixel format: %s\n", av_get_pix_fmt_name(avctx->pix_fmt));
+        return AVERROR_INVALIDDATA;
+    }
+
+    if (imgb->w[0] != avctx->width || imgb->h[0] != avctx->height) { // stream resolution changed
+        if (ff_set_dimensions(avctx, imgb->w[0], imgb->h[0]) < 0) {
+            av_log(avctx, AV_LOG_ERROR, "Cannot set new dimension\n");
+            return AVERROR_INVALIDDATA;
+        }
+    }
+
+    if (ret = ff_get_buffer(avctx, frame, 0) < 0) {
+        return ret;
+    }
+
+    av_image_copy(frame->data, frame->linesize, (const uint8_t **)imgb->a,
+                  imgb->s, avctx->pix_fmt,
+                  imgb->w[0], imgb->h[0]);
+
+    return 0;
+}
+
+/**
  * Initialize decoder
  * Create a decoder instance and allocate all the needed resources
  *
@@ -235,10 +269,7 @@ static int libxevd_decode(struct AVCodecContext *avctx, struct AVFrame *frame, i
     if (avpkt->size > 0) {
         bs_read_pos = 0;
         imgb = NULL;
-
-        int counter = 0;
         while(avpkt->size > (bs_read_pos + XEVD_NAL_UNIT_LENGTH_BYTE)) {
-            counter++;
             memset(&stat, 0, sizeof(XEVD_STAT));
             memset(&bitb, 0, sizeof(XEVD_BITB));
 
@@ -291,6 +322,21 @@ static int libxevd_decode(struct AVCodecContext *avctx, struct AVFrame *frame, i
                         imgb = NULL;
                     }
                 }
+                if (imgb) {
+                    int ret = libxevd_image_copy(avctx, imgb, frame);
+                    if(ret < 0) {
+                        goto ERR;
+                    }
+
+                    frame->pts = avpkt->pts;
+                    *got_frame_ptr = 1;
+
+                    // xevd_pull uses pool of objects of type XEVD_IMGB.
+                    // The pool size is equal MAX_PB_SIZE (26), so release object when it is no more needed
+                    imgb->release(imgb);
+                    imgb = NULL;
+                } else
+                    *got_frame_ptr = 0;
             }
         }
     } else { // bumping
@@ -303,42 +349,22 @@ static int libxevd_decode(struct AVCodecContext *avctx, struct AVFrame *frame, i
             ret = AVERROR_EXTERNAL;
             goto ERR;
         }
-    }
-
-    if (imgb) {
-        // @todo supports other color space and bit depth
-        if (imgb->cs != XEVD_CS_YCBCR420_10LE) {
-            av_log(avctx, AV_LOG_ERROR, "Not supported pixel format: %s\n", av_get_pix_fmt_name(avctx->pix_fmt));
-            ret = AVERROR_INVALIDDATA;
-            goto ERR;
-        }
-
-        if (imgb->w[0] != avctx->width || imgb->h[0] != avctx->height) { // stream resolution changed
-            if (ff_set_dimensions(avctx, imgb->w[0], imgb->h[0]) < 0) {
-                av_log(avctx, AV_LOG_ERROR, "Cannot set new dimension\n");
-                ret = AVERROR_INVALIDDATA;
+        if (imgb) {
+            int ret = libxevd_image_copy(avctx, imgb, frame);
+            if(ret < 0) {
                 goto ERR;
             }
-        }
 
-        if (ret = ff_get_buffer(avctx, frame, 0) < 0) {
-            goto ERR;
-        }
+            frame->pts = avpkt->pts;
+            *got_frame_ptr = 1;
 
-        frame->pts = avpkt->pts;
-
-        av_image_copy(frame->data, frame->linesize, (const uint8_t **)imgb->a,
-                      imgb->s, avctx->pix_fmt,
-                      imgb->w[0], imgb->h[0]);
-
-        *got_frame_ptr = 1;
-
-        // xevd_pull uses pool of objects of type XEVD_IMGB.
-        // The pool size is equal MAX_PB_SIZE (26), so release object when it is no more needed
-        imgb->release(imgb);
-        imgb = NULL;
-    } else
-        *got_frame_ptr = 0;
+            // xevd_pull uses pool of objects of type XEVD_IMGB.
+            // The pool size is equal MAX_PB_SIZE (26), so release object when it is no more needed
+            imgb->release(imgb);
+            imgb = NULL;
+        } else
+            *got_frame_ptr = 0;
+    }
 
     return avpkt->size;
 

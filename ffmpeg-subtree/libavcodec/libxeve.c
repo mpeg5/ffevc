@@ -591,7 +591,8 @@ const FFCodec ff_libxeve_encoder = {
     .priv_data_size     = sizeof(XeveContext),
     .p.priv_class       = &libxeve_class,
     .defaults           = libxeve_defaults,
-    .p.capabilities     = FF_CODEC_CAP_INIT_CLEANUP | AV_CODEC_CAP_DELAY | AV_CODEC_CAP_AUTO_THREADS | AV_CODEC_CAP_DR1,
+    .p.capabilities     = AV_CODEC_CAP_DELAY | AV_CODEC_CAP_OTHER_THREADS | AV_CODEC_CAP_DR1,
     .p.wrapper_name     = "libxeve",
     .p.pix_fmts         = supported_pixel_formats,
+    .caps_internal      = FF_CODEC_CAP_INIT_CLEANUP | FF_CODEC_CAP_NOT_INIT_THREADSAFE,
 };

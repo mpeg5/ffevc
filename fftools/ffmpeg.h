@@ -52,6 +52,7 @@
 // deprecated features
 #define FFMPEG_OPT_PSNR 1
 #define FFMPEG_OPT_MAP_CHANNEL 1
+#define FFMPEG_OPT_MAP_SYNC 1
 
 enum VideoSyncMethod {
     VSYNC_AUTO = -1,
@@ -81,8 +82,6 @@ typedef struct StreamMap {
     int disabled;           /* 1 is this mapping is disabled by a negative map */
     int file_index;
     int stream_index;
-    int sync_file_index;
-    int sync_stream_index;
     char *linklabel;       /* name of an output link, for mapping lavfi outputs */
 } StreamMap;
 
@@ -408,7 +407,14 @@ typedef struct InputStream {
     int got_output;
 } InputStream;
 
+typedef struct LastFrameDuration {
+    int     stream_idx;
+    int64_t duration;
+} LastFrameDuration;
+
 typedef struct InputFile {
+    int index;
+
     AVFormatContext *ctx;
     int eof_reached;      /* true if eof reached */
     int eagain;           /* true if last read attempt returned EAGAIN */
@@ -431,13 +437,15 @@ typedef struct InputFile {
     float readrate;
     int accurate_seek;
 
-    AVPacket *pkt;
-
     AVThreadMessageQueue *in_thread_queue;
     pthread_t thread;           /* thread reading from this file */
     int non_blocking;           /* reading packets from the thread should not block */
-    int joined;                 /* the thread has been joined */
     int thread_queue_size;      /* maximum number of queued packets */
+
+    /* when looping the input file, this queue is used by decoders to report
+     * the last frame duration back to the demuxer thread */
+    AVThreadMessageQueue *audio_duration_queue;
+    int                   audio_duration_queue_size;
 } InputFile;
 
 enum forced_keyframes_const {
@@ -464,12 +472,10 @@ typedef struct OutputStream {
     int index;               /* stream index in the output file */
     int source_index;        /* InputStream index */
     AVStream *st;            /* stream in the output file */
-    int encoding_needed;     /* true if encoding needed for this stream */
     /* number of frames emitted by the video-encoding sync code */
     int64_t vsync_frame_number;
     /* input pts and corresponding output pts
        for A/V sync */
-    struct InputStream *sync_ist; /* input stream to sync against */
     int64_t sync_opts;       /* output frame counter, could be changed to some true timestamp */ // FIXME look at frame_number
     /* pts of the first frame encoded for this stream, used for limiting
      * recording time */
@@ -540,7 +546,6 @@ typedef struct OutputStream {
     char *apad;
     OSTFinished finished;        /* no more packets should be written for this stream */
     int unavailable;                     /* true if the steram is unavailable (possibly temporarily) */
-    int stream_copy;
 
     // init_output_stream() has been called for this stream
     // The encoder and the bitstream filters have been initialized and the stream
@@ -712,5 +717,19 @@ int of_submit_packet(OutputFile *of, AVPacket *pkt, OutputStream *ost);
 int64_t of_filesize(OutputFile *of);
 AVChapter * const *
 of_get_chapters(OutputFile *of, unsigned int *nb_chapters);
+
+/**
+ * Get next input packet from the demuxer.
+ *
+ * @param pkt the packet is written here when this function returns 0
+ * @return
+ * - 0 when a packet has been read successfully
+ * - 1 when stream end was reached, but the stream is looped;
+ *     caller should flush decoders and read from this demuxer again
+ * - a negative error code on failure
+ */
+int ifile_get_packet(InputFile *f, AVPacket **pkt);
+int init_input_threads(void);
+void free_input_threads(void);
 
 #endif /* FFTOOLS_FFMPEG_H */

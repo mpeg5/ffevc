@@ -26,8 +26,11 @@
 #include <stdint.h>
 #include <sys/types.h>
 
-#include <mfx/mfxvideo.h>
+#include <mfxvideo.h>
 
+#include "libavutil/common.h"
+#include "libavutil/hwcontext.h"
+#include "libavutil/hwcontext_qsv.h"
 #include "libavutil/avutil.h"
 #include "libavutil/fifo.h"
 
@@ -44,7 +47,7 @@
 #else
 #define QSV_HAVE_AVBR   0
 #define QSV_HAVE_VCM    0
-#define QSV_HAVE_MF     1
+#define QSV_HAVE_MF     !QSV_ONEVPL
 #endif
 
 #define QSV_COMMON_OPTS \
@@ -137,9 +140,11 @@ typedef struct QSVEncContext {
     mfxExtHEVCTiles exthevctiles;
     mfxExtVP9Param  extvp9param;
 
+#if QSV_HAVE_OPAQUE
     mfxExtOpaqueSurfaceAlloc opaque_alloc;
     mfxFrameSurface1       **opaque_surfaces;
     AVBufferRef             *opaque_alloc_buf;
+#endif
 
     mfxExtVideoSignalInfo extvsi;
 

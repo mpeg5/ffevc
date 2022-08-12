@@ -22,7 +22,7 @@
 #include <stdint.h>
 #include <sys/types.h>
 
-#include <mfx/mfxvideo.h>
+#include <mfxvideo.h>
 
 #include "libavutil/common.h"
 #include "libavutil/opt.h"
@@ -35,7 +35,6 @@
 #include "hevcdec.h"
 #include "h2645_parse.h"
 #include "qsv.h"
-#include "qsv_internal.h"
 #include "qsvenc.h"
 
 enum LoadPlugin {

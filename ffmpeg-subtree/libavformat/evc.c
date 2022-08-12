@@ -401,6 +401,11 @@ int ff_isom_write_evcc(AVIOContext *pb, const uint8_t *data,
                        int size, int ps_array_completeness)
 {
     EVCDecoderConfigurationRecord evcc;
+    int nalu_type;
+    size_t nalu_size;
+    unsigned char *bits = (unsigned char *)data;
+    int bytes_to_read = size;
+
     int ret = 0;
 
     if (size < 8) {
@@ -414,13 +419,8 @@ int ff_isom_write_evcc(AVIOContext *pb, const uint8_t *data,
 
     evcc_init(&evcc);
 
-    int nalu_type;
-    size_t nalu_size;
-    unsigned char *bits = (unsigned char *)data;
-    int bytes_to_read = size;
-
     while (bytes_to_read > EVC_NAL_UNIT_LENGTH_BYTE) {
-
+        uint8_t *nalu_buf = NULL;
         nalu_size = read_nal_unit_length(bits, EVC_NAL_UNIT_LENGTH_BYTE);
         if (nalu_size == 0) break;
 
@@ -430,7 +430,7 @@ int ff_isom_write_evcc(AVIOContext *pb, const uint8_t *data,
         if (bytes_to_read < nalu_size) break;
 
         nalu_type = get_nalu_type(bits, bytes_to_read);
-        uint8_t *nalu_buf = bits;
+        nalu_buf = bits;
 
         switch (nalu_type) {
         case EVC_APS_NUT:

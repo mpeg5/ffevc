@@ -1065,6 +1065,8 @@ static void add_input_streams(OptionsContext *o, AVFormatContext *ic)
             ist->top_field_first = -1;
             MATCH_PER_STREAM_OPT(top_field_first, i, ist->top_field_first, ic, st);
 
+            ist->framerate_guessed = av_guess_frame_rate(ic, st, NULL);
+
             break;
         case AVMEDIA_TYPE_AUDIO:
             ist->guess_layout_max = INT_MAX;
@@ -1090,7 +1092,11 @@ static void add_input_streams(OptionsContext *o, AVFormatContext *ic)
             abort();
         }
 
-        ret = avcodec_parameters_from_context(par, ist->dec_ctx);
+        ist->par = avcodec_parameters_alloc();
+        if (!ist->par)
+            exit_program(1);
+
+        ret = avcodec_parameters_from_context(ist->par, ist->dec_ctx);
         if (ret < 0) {
             av_log(NULL, AV_LOG_ERROR, "Error initializing the decoder context.\n");
             exit_program(1);
@@ -2861,6 +2867,42 @@ static void of_add_metadata(AVFormatContext *oc, const OptionsContext *o)
         }
     }
 }
+static void set_channel_layout(OutputFilter *f, OutputStream *ost)
+{
+    int i, err;
+
+    if (ost->enc_ctx->ch_layout.order != AV_CHANNEL_ORDER_UNSPEC) {
+        /* Pass the layout through for all orders but UNSPEC */
+        err = av_channel_layout_copy(&f->ch_layout, &ost->enc_ctx->ch_layout);
+        if (err < 0)
+            exit_program(1);
+        return;
+    }
+
+    /* Requested layout is of order UNSPEC */
+    if (!ost->enc->ch_layouts) {
+        /* Use the default native layout for the requested amount of channels when the
+           encoder doesn't have a list of supported layouts */
+        av_channel_layout_default(&f->ch_layout, ost->enc_ctx->ch_layout.nb_channels);
+        return;
+    }
+    /* Encoder has a list of supported layouts. Pick the first layout in it with the
+       same amount of channels as the requested layout */
+    for (i = 0; ost->enc->ch_layouts[i].nb_channels; i++) {
+        if (ost->enc->ch_layouts[i].nb_channels == ost->enc_ctx->ch_layout.nb_channels)
+            break;
+    }
+    if (ost->enc->ch_layouts[i].nb_channels) {
+        /* Use it if one is found */
+        err = av_channel_layout_copy(&f->ch_layout, &ost->enc->ch_layouts[i]);
+        if (err < 0)
+            exit_program(1);
+        return;
+    }
+    /* If no layout for the amount of channels requested was found, use the default
+       native layout for it. */
+    av_channel_layout_default(&f->ch_layout, ost->enc_ctx->ch_layout.nb_channels);
+}
 
 static int open_output_file(OptionsContext *o, const char *filename)
 {
@@ -3051,7 +3093,7 @@ static int open_output_file(OptionsContext *o, const char *filename)
                     f->sample_rates = ost->enc->supported_samplerates;
                 }
                 if (ost->enc_ctx->ch_layout.nb_channels) {
-                    av_channel_layout_default(&f->ch_layout, ost->enc_ctx->ch_layout.nb_channels);
+                    set_channel_layout(f, ost);
                 } else if (ost->enc->ch_layouts) {
                     f->ch_layouts = ost->enc->ch_layouts;
                 }

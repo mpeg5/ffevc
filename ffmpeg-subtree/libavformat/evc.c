@@ -458,4 +458,3 @@ end:
     evcc_close(&evcc);
     return ret;
 }
-

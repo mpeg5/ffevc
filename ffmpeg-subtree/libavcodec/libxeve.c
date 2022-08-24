@@ -39,6 +39,7 @@
 #include "internal.h"
 #include "packet_internal.h"
 #include "codec_internal.h"
+#include "profiles.h"
 #include "encode.h"
 
 #define MAX_BS_BUF (16*1024*1024)
@@ -595,6 +596,7 @@ const FFCodec ff_libxeve_encoder = {
     .p.priv_class       = &libxeve_class,
     .defaults           = libxeve_defaults,
     .p.capabilities     = AV_CODEC_CAP_DELAY | AV_CODEC_CAP_OTHER_THREADS | AV_CODEC_CAP_DR1,
+    .p.profiles         = NULL_IF_CONFIG_SMALL(ff_evc_profiles),
     .p.wrapper_name     = "libxeve",
     .p.pix_fmts         = supported_pixel_formats,
     .caps_internal      = FF_CODEC_CAP_INIT_CLEANUP | FF_CODEC_CAP_NOT_INIT_THREADSAFE,

@@ -38,6 +38,7 @@
 #include "internal.h"
 #include "packet_internal.h"
 #include "codec_internal.h"
+#include "profiles.h"
 
 #define XEVD_PARAM_BAD_NAME -1
 #define XEVD_PARAM_BAD_VALUE -2
@@ -415,6 +416,7 @@ const FFCodec ff_libxevd_decoder = {
     .priv_data_size     = sizeof(XevdContext),
     .p.priv_class       = &libxevd_class,
     .p.capabilities     = AV_CODEC_CAP_DELAY | AV_CODEC_CAP_OTHER_THREADS | AV_CODEC_CAP_AVOID_PROBING | AV_CODEC_CAP_DR1,
+    .p.profiles         = NULL_IF_CONFIG_SMALL(ff_evc_profiles),
     .p.wrapper_name     = "libxevd",
     .caps_internal      = FF_CODEC_CAP_INIT_CLEANUP | FF_CODEC_CAP_NOT_INIT_THREADSAFE,
 };

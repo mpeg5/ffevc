@@ -36,7 +36,8 @@ version 5.1:
 - PHM image format support
 - remap_opencl filter
 - added chromakey_cuda filter
-
+- eXtra-fast Essential Video Encoder (XEVE)
+- eXtra-fast Essential Video Decoder (XEVD)
 
 version 5.0:
 - ADPCM IMA Westwood encoder
@@ -82,8 +83,6 @@ version 5.0:
 - VideoToolbox ProRes encoder
 - anlmf audio filter
 - IMF demuxer (experimental)
-- eXtra-fast Essential Video Encoder (XEVE)
-- eXtra-fast Essential Video Decoder (XEVD)
 
 version 4.4:
 - AudioToolbox output device

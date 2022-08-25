@@ -155,7 +155,6 @@ static int libxeve_color_space(enum AVPixelFormat av_pix_fmt)
  * - the corresponding field values of the AvCodecConetxt structure,
  * - the xeve encoder specific option values,
  *   (the full list of options available for xeve encoder is displayed after executing the command ./ffmpeg --help encoder = libxeve)
- * - and the xeve encoder options specified as a list of key-value pairs following the xeve-params option
  *
  * The order of processing input data and populating the XEVE_CDSC structure
  * 1) first, the fields of the AVCodecContext structure corresponding to the provided input options are processed,
@@ -537,7 +536,6 @@ static const enum AVPixelFormat supported_pixel_formats[] = {
     AV_PIX_FMT_NONE
 };
 
-// Example of using: ./ffmpeg -xeve-params "m=2:q=17"
 // Consider using following options (./ffmpeg --help encoder=libxeve)
 //
 static const AVOption libxeve_options[] = {

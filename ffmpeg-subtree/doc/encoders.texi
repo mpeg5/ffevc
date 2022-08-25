@@ -2959,29 +2959,6 @@ Quantization parameter qp <0..51> [default: 32]
 @item threads (@emph{threads})
 Force to use a specific number of threads
 
-@item xeve-params
-Set xeve options using a list of @var{key}=@var{value} couples separated
-by ":".
-
-For example to specify libxeve encoding options with @option{-xeve-params}:
-
-@example
-ffmpeg -i input -c:v libxeve -xeve-params profile=main:tune=zerolatency:preset=fast:q=17:bframes=15:bitrate=100k output.mp4
-@end example
-@end table
-
-@subsubsection Supported key values for xeve-params
-
-Set xeve options using a list of @var{key}=@var{value} couples separated
-
-@table @option
-
-@item hash
-Embed the picture signature (HASH) for conformance checking in decoding, (0: Off, 1: On)
-
-@item vbv-bufsize
-Set the VBV buffer size: Kbits(none,K,k), Mbits(M,m)
-
 @end table
 
 @section libxvid

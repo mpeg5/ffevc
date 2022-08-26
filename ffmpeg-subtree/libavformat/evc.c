@@ -22,6 +22,7 @@
 #include "libavutil/intreadwrite.h"
 #include "libavcodec/get_bits.h"
 #include "libavcodec/golomb.h"
+#include "libavcodec/evc.h"
 #include "avformat.h"
 #include "avio.h"
 #include "evc.h"

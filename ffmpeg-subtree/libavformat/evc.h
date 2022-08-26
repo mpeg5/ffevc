@@ -26,121 +26,18 @@
 #include "libavutil/rational.h"
 #include "avio.h"
 
+
+
 /**
- * @see ISO_IEC_23094-1_2020, 7.4.2.2 NAL unit header semantic
- *      Table 4 - NAL unit type codes and NAL unit type classes
+ * Writes EVC sample metadata to the provided AVIOContext.
+ *
+ * @param pb pointer to the AVIOContext where the evc sample metadata shall be written
+ * @param buf input data buffer
+ * @param size size in bytes of the input data buffer
+ * @param ps_array_completeness @see ISO/IEC 14496-15:2021 Coding of audio-visual objects - Part 15: section 12.3.3.3
+ *
+ * @return 0 in case of success, a negative error code in case of failure
  */
-enum EVCNALUnitType {
-    EVC_NOIDR_NUT            = 0,
-    EVC_IDR_NUT              = 1,
-    EVC_RSV_VCL_NUT02        = 2,
-    EVC_RSV_VCL_NUT03        = 3,
-    EVC_RSV_VCL_NUT04        = 4,
-    EVC_RSV_VCL_NUT05        = 5,
-    EVC_RSV_VCL_NUT06        = 6,
-    EVC_RSV_VCL_NUT07        = 7,
-    EVC_RSV_VCL_NUT08        = 8,
-    EVC_RSV_VCL_NUT09        = 9,
-    EVC_RSV_VCL_NUT10        = 10,
-    EVC_RSV_VCL_NUT11        = 11,
-    EVC_RSV_VCL_NUT12        = 12,
-    EVC_RSV_VCL_NUT13        = 13,
-    EVC_RSV_VCL_NUT14        = 14,
-    EVC_RSV_VCL_NUT15        = 15,
-    EVC_RSV_VCL_NUT16        = 16,
-    EVC_RSV_VCL_NUT17        = 17,
-    EVC_RSV_VCL_NUT18        = 18,
-    EVC_RSV_VCL_NUT19        = 19,
-    EVC_RSV_VCL_NUT20        = 20,
-    EVC_RSV_VCL_NUT21        = 21,
-    EVC_RSV_VCL_NUT22        = 22,
-    EVC_RSV_VCL_NUT23        = 23,
-    EVC_SPS_NUT              = 24,
-    EVC_PPS_NUT              = 25,
-    EVC_APS_NUT              = 26,
-    EVC_FD_NUT               = 27,
-    EVC_SEI_NUT              = 28,
-    EVC_RSV_NONVCL29         = 29,
-    EVC_RSV_NONVCL30         = 30,
-    EVC_RSV_NONVCL31         = 31,
-    EVC_RSV_NONVCL32         = 32,
-    EVC_RSV_NONVCL33         = 33,
-    EVC_RSV_NONVCL34         = 34,
-    EVC_RSV_NONVCL35         = 35,
-    EVC_RSV_NONVCL36         = 36,
-    EVC_RSV_NONVCL37         = 37,
-    EVC_RSV_NONVCL38         = 38,
-    EVC_RSV_NONVCL39         = 39,
-    EVC_RSV_NONVCL40         = 40,
-    EVC_RSV_NONVCL41         = 41,
-    EVC_RSV_NONVCL42         = 42,
-    EVC_RSV_NONVCL43         = 43,
-    EVC_RSV_NONVCL44         = 44,
-    EVC_RSV_NONVCL45         = 45,
-    EVC_RSV_NONVCL46         = 46,
-    EVC_RSV_NONVCL47         = 47,
-    EVC_RSV_NONVCL48         = 48,
-    EVC_RSV_NONVCL49         = 49,
-    EVC_RSV_NONVCL50         = 50,
-    EVC_RSV_NONVCL51         = 51,
-    EVC_RSV_NONVCL52         = 52,
-    EVC_RSV_NONVCL53         = 53,
-    EVC_RSV_NONVCL54         = 54,
-    EVC_RSV_NONVCL55         = 55,
-    EVC_UNSPEC_NUT56         = 56,
-    EVC_UNSPEC_NUT57         = 57,
-    EVC_UNSPEC_NUT58         = 58,
-    EVC_UNSPEC_NUT59         = 59,
-    EVC_UNSPEC_NUT60         = 60,
-    EVC_UNSPEC_NUT61         = 61,
-    EVC_UNSPEC_NUT62         = 62
-};
-
-enum {
-    // 7.4.3.2: aps_video_parameter_set_id is u(4).
-    EVC_MAX_APS_COUNT = 32,
-
-    // 7.4.3.1: sps_seq_parameter_set_id is in [0, 15].
-    EVC_MAX_SPS_COUNT = 16,
-
-    // 7.4.3.2: pps_pic_parameter_set_id is in [0, 63].
-    EVC_MAX_PPS_COUNT = 64,
-
-    // 7.4.5: slice header slice_pic_parameter_set_id in [0, 63]
-    EVC_MAX_SH_COUNT = 64,
-
-    // E.3.2: cpb_cnt_minus1[i] is in [0, 31].
-    EVC_MAX_CPB_CNT = 32,
-
-    // A.4.1: in table A.1 the highest level allows a MaxLumaPs of 35 651 584.
-    EVC_MAX_LUMA_PS = 35651584,
-
-    EVC_MAX_NUM_REF_PICS = 21,
-
-    // A.4.1: pic_width_in_luma_samples and pic_height_in_luma_samples are
-    // constrained to be not greater than sqrt(MaxLumaPs * 8).  Hence height/
-    // width are bounded above by sqrt(8 * 35651584) = 16888.2 samples.
-    EVC_MAX_WIDTH  = 16888,
-    EVC_MAX_HEIGHT = 16888,
-
-    // A.4.1: table A.1 allows at most 22 tile rows for any level.
-    EVC_MAX_TILE_ROWS    = 22,
-    // A.4.1: table A.1 allows at most 20 tile columns for any level.
-    EVC_MAX_TILE_COLUMNS = 20,
-
-    // A.4.1: table A.1 allows at most 600 slice segments for any level.
-    EVC_MAX_SLICE_SEGMENTS = 600,
-
-    // 7.4.7.1: in the worst case (tiles_enabled_flag and
-    // entropy_coding_sync_enabled_flag are both set), entry points can be
-    // placed at the beginning of every Ctb row in every tile, giving an
-    // upper bound of (num_tile_columns_minus1 + 1) * PicHeightInCtbsY - 1.
-    // Only a stream with very high resolution and perverse parameters could
-    // get near that, though, so set a lower limit here with the maximum
-    // possible value for 4K video (at most 135 16x16 Ctb rows).
-    HEVC_MAX_ENTRY_POINT_OFFSETS = EVC_MAX_TILE_COLUMNS * 135,
-};
-
 int ff_isom_write_evcc(AVIOContext *pb, const uint8_t *data,
                        int size, int ps_array_completeness);
 

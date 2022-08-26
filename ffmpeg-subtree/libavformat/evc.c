@@ -420,7 +420,6 @@ int ff_isom_write_evcc(AVIOContext *pb, const uint8_t *data,
     evcc_init(&evcc);
 
     while (bytes_to_read > EVC_NAL_UNIT_LENGTH_BYTE) {
-        uint8_t *nalu_buf = NULL;
         nalu_size = read_nal_unit_length(data, EVC_NAL_UNIT_LENGTH_BYTE);
         if (nalu_size == 0) break;
 

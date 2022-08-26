@@ -28,7 +28,7 @@
 
 /**
  * @see ISO_IEC_23094-1_2020, 7.4.2.2 NAL unit header semantic
- *      Table 4 – NAL unit type codes and NAL unit type classes
+ *      Table 4 - NAL unit type codes and NAL unit type classes
  */
 enum EVCNALUnitType {
     EVC_NOIDR_NUT            = 0,

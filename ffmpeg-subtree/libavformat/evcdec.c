@@ -23,26 +23,10 @@
 #include "libavcodec/get_bits.h"
 #include "libavcodec/golomb.h"
 #include "libavcodec/internal.h"
+#include "libavcodec/evc.h"
 
 #include "rawdec.h"
 #include "avformat.h"
-
-// The length field that indicates the length in bytes of the following NAL unit is configured to be of 4 bytes
-#define EVC_NAL_UNIT_LENGTH_BYTE        (4)  /* byte */
-
-#define EVC_NAL_HEADER_SIZE             (2)  /* byte */
-#define MAX_SPS_CNT                     (16) /* defined value in EVC standard */
-
-// NALU types
-// @see ISO_IEC_23094-1_2020 7.4.2.2 NAL unit header semantics
-//
-#define EVC_NUT_NONIDR                  (0)  /* Coded slice of a non-IDR picture */
-#define EVC_NUT_IDR                     (1)  /* Coded slice of an IDR picture */
-#define EVC_NUT_SPS                     (24) /* Sequence parameter set */
-#define EVC_NUT_PPS                     (25) /* Picture paremeter set */
-#define EVC_NUT_APS                     (26) /* Adaptation parameter set */
-#define EVC_NUT_FD                      (27) /* Filler data */
-#define EVC_NUT_SEI                     (28) /* Supplemental enhancement information */
 
 typedef struct EVCParserContext {
     int got_sps;
@@ -115,13 +99,13 @@ static int parse_nal_units(const AVProbeData *p, EVCParserContext *ev)
         bits += nalu_size;
         bytes_to_read -= nalu_size;
 
-        if (nalu_type == EVC_NUT_SPS)
+        if (nalu_type == EVC_SPS_NUT)
             ev->got_sps++;
-        else if (nalu_type == EVC_NUT_PPS)
+        else if (nalu_type == EVC_PPS_NUT)
             ev->got_pps++;
-        else if (nalu_type == EVC_NUT_IDR )
+        else if (nalu_type == EVC_IDR_NUT )
             ev->got_idr++;
-        else if (nalu_type == EVC_NUT_NONIDR)
+        else if (nalu_type == EVC_NOIDR_NUT)
             ev->got_nonidr++;
     }
 

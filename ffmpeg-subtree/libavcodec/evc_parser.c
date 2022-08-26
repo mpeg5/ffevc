@@ -23,41 +23,9 @@
 #include <stdint.h>
 
 #include "libavutil/common.h"
-
 #include "parser.h"
 #include "golomb.h"
-
-// The length field that indicates the length in bytes of the following NAL unit is configured to be of 4 bytes
-#define EVC_NAL_UNIT_LENGTH_BYTE        (4)  /* byte */
-
-#define EVC_NAL_HEADER_SIZE             (2)  /* byte */
-#define MAX_SPS_CNT                     (16) /* defined value in EVC standard */
-#define MAX_PPS_CNT                     (64) /* defined value in EVC standard */
-
-#define MAX_NUM_TILES_ROW               (22)
-#define MAX_NUM_TILES_COL               (20)
-
-// NALU types
-// @see ISO_IEC_23094-1_2020 7.4.2.2 NAL unit header semantics
-//
-#define EVC_NUT_NONIDR                  (0)  /* Coded slice of a non-IDR picture */
-#define EVC_NUT_IDR                     (1)  /* Coded slice of an IDR picture */
-#define EVC_NUT_SPS                     (24) /* Sequence parameter set */
-#define EVC_NUT_PPS                     (25) /* Picture paremeter set */
-#define EVC_NUT_APS                     (26) /* Adaptation parameter set */
-#define EVC_NUT_FD                      (27) /* Filler data */
-#define EVC_NUT_SEI                     (28) /* Supplemental enhancement information */
-
-// slice type
-// @see ISO_IEC_23094-1_2020 7.4.5 Slice header semantics
-//
-#define SLICE_TYPE_UNKNOWN              (-1)
-#define SLICE_TYPE_B                    (0)
-#define SLICE_TYPE_P                    (1)
-#define SLICE_TYPE_I                    (2)
-
-#define MAX_NUM_RPLS                    (32)
-#define MAX_NUM_REF_PICS                (21)
+#include "evc.h"
 
 // rpl structure
 typedef struct RefPicListStruct {
@@ -65,7 +33,7 @@ typedef struct RefPicListStruct {
     int tid;
     int ref_pic_num;
     int ref_pic_active_num;
-    int ref_pics[MAX_NUM_REF_PICS];
+    int ref_pics[EVC_MAX_NUM_REF_PICS];
     char pic_type;
 
 } RefPicListStruct;
@@ -134,7 +102,7 @@ typedef struct EVCParserSPS {
     int long_term_ref_pic_flag;           // u(1)
     int rpl1_same_as_rpl0_flag;           // u(1)
     int num_ref_pic_list_in_sps[2];       // ue(v)
-    RefPicListStruct rpls[2][MAX_NUM_RPLS];
+    RefPicListStruct rpls[2][EVC_MAX_NUM_RPLS];
 
     int picture_cropping_flag;      // u(1)
     int picture_crop_left_offset;   // ue(v)
@@ -163,13 +131,13 @@ typedef struct EVCParserPPS {
     int num_tile_columns_minus1;                            // ue(v)
     int num_tile_rows_minus1;                               // ue(v)
     int uniform_tile_spacing_flag;                          // u(1)
-    int tile_column_width_minus1[MAX_NUM_TILES_ROW];        // ue(v)
-    int tile_row_height_minus1[MAX_NUM_TILES_COL];          // ue(v)
+    int tile_column_width_minus1[EVC_MAX_TILE_ROWS];        // ue(v)
+    int tile_row_height_minus1[EVC_MAX_TILE_COLUMNS];          // ue(v)
     int loop_filter_across_tiles_enabled_flag;              // u(1)
     int tile_offset_len_minus1;                             // ue(v)
     int tile_id_len_minus1;                                 // ue(v)
     int explicit_tile_id_flag;                              // u(1)
-    int tile_id_val[MAX_NUM_TILES_ROW][MAX_NUM_TILES_COL];  // u(v)
+    int tile_id_val[EVC_MAX_TILE_ROWS][EVC_MAX_TILE_COLUMNS];  // u(v)
     int pic_dra_enabled_flag;                               // u(1)
     int pic_dra_aps_id;                                     // u(5)
     int arbitrary_slice_present_flag;                       // u(1)
@@ -194,7 +162,7 @@ typedef struct EVCParserSliceHeader {
     int arbitrary_slice_flag;                                           // u(1)
     int last_tile_id;                                                   // u(v)
     int num_remaining_tiles_in_slice_minus1;                            // ue(v)
-    int delta_tile_id_minus1[MAX_NUM_TILES_ROW * MAX_NUM_TILES_COL];    // ue(v)
+    int delta_tile_id_minus1[EVC_MAX_TILE_ROWS * EVC_MAX_TILE_COLUMNS];    // ue(v)
 
     int slice_type;                                                     // ue(v)
 
@@ -211,9 +179,9 @@ typedef struct EVCParserSliceHeader {
 
 typedef struct EVCParserContext {
     ParseContext pc;
-    EVCParserSPS sps[MAX_SPS_CNT];
-    EVCParserPPS pps[MAX_PPS_CNT];
-    EVCParserSliceHeader slice_header[MAX_PPS_CNT];
+    EVCParserSPS sps[EVC_MAX_SPS_COUNT];
+    EVCParserPPS pps[EVC_MAX_PPS_COUNT];
+    EVCParserSliceHeader slice_header[EVC_MAX_PPS_COUNT];
     int is_avc;
     int nal_length_size;
     int to_read;
@@ -270,7 +238,7 @@ static EVCParserSPS *parse_sps(const uint8_t *bs, int bs_size, EVCParserContext 
 
     sps_seq_parameter_set_id = get_ue_golomb(&gb);
 
-    if (sps_seq_parameter_set_id >= MAX_SPS_CNT)
+    if (sps_seq_parameter_set_id >= EVC_MAX_SPS_COUNT)
         return NULL;
 
     sps = &ev->sps[sps_seq_parameter_set_id];
@@ -372,7 +340,7 @@ static EVCParserPPS *parse_pps(const uint8_t *bs, int bs_size, EVCParserContext 
         return NULL;
 
     pps_pic_parameter_set_id = get_ue_golomb(&gb);
-    if (pps_pic_parameter_set_id > MAX_PPS_CNT)
+    if (pps_pic_parameter_set_id > EVC_MAX_PPS_COUNT)
         return NULL;
 
     pps = &ev->pps[pps_pic_parameter_set_id];
@@ -380,7 +348,7 @@ static EVCParserPPS *parse_pps(const uint8_t *bs, int bs_size, EVCParserContext 
     pps->pps_pic_parameter_set_id = pps_pic_parameter_set_id;
 
     pps->pps_seq_parameter_set_id = get_ue_golomb(&gb);
-    if (pps->pps_seq_parameter_set_id >= MAX_SPS_CNT)
+    if (pps->pps_seq_parameter_set_id >= EVC_MAX_SPS_COUNT)
         return NULL;
 
     pps->num_ref_idx_default_active_minus1[0] = get_ue_golomb(&gb);
@@ -445,7 +413,7 @@ static EVCParserSliceHeader *parse_slice_header(const uint8_t *bs, int bs_size, 
 
     slice_pic_parameter_set_id = get_ue_golomb(&gb);
 
-    if (slice_pic_parameter_set_id < 0 || slice_pic_parameter_set_id >= MAX_PPS_CNT)
+    if (slice_pic_parameter_set_id < 0 || slice_pic_parameter_set_id >= EVC_MAX_PPS_COUNT)
         return NULL;
 
     sh = &ev->slice_header[slice_pic_parameter_set_id];
@@ -509,7 +477,7 @@ static int parse_nal_units(AVCodecParserContext *s, const uint8_t *bs,
     bits += EVC_NAL_HEADER_SIZE;
     bits_size -= EVC_NAL_HEADER_SIZE;
 
-    if (nalu_type == EVC_NUT_SPS) { // NAL Unit type: SPS (Sequence Parameter Set)
+    if (nalu_type == EVC_SPS_NUT) { // NAL Unit type: SPS (Sequence Parameter Set)
         EVCParserSPS *sps;
 
         sps = parse_sps(bits, bits_size, ev);
@@ -554,7 +522,7 @@ static int parse_nal_units(AVCodecParserContext *s, const uint8_t *bs,
         // If it will be needed, parse_sps function could be extended to handle VUI parameters parsing
         // to initialize fields of the AVCodecContex i.e. color_primaries, color_trc,color_range
 
-    } else if (nalu_type == EVC_NUT_PPS) { // NAL Unit type: PPS (Video Parameter Set)
+    } else if (nalu_type == EVC_PPS_NUT) { // NAL Unit type: PPS (Video Parameter Set)
         EVCParserPPS *pps;
 
         pps = parse_pps(bits, bits_size, ev);
@@ -562,9 +530,9 @@ static int parse_nal_units(AVCodecParserContext *s, const uint8_t *bs,
             av_log(avctx, AV_LOG_ERROR, "PPS parsing error\n");
             return -1;
         }
-    } else if (nalu_type == EVC_NUT_SEI) // NAL unit type: SEI (Supplemental Enhancement Information)
+    } else if (nalu_type == EVC_SEI_NUT) // NAL unit type: SEI (Supplemental Enhancement Information)
         return 0;
-    else if (nalu_type == EVC_NUT_IDR || nalu_type == EVC_NUT_NONIDR) { // NAL Unit type: Coded slice of a IDR or non-IDR picture
+    else if (nalu_type == EVC_IDR_NUT || nalu_type == EVC_NOIDR_NUT) { // NAL Unit type: Coded slice of a IDR or non-IDR picture
         EVCParserSliceHeader *sh;
 
         sh = parse_slice_header(bits, bits_size, ev);
@@ -573,15 +541,15 @@ static int parse_nal_units(AVCodecParserContext *s, const uint8_t *bs,
             return -1;
         }
         switch (sh->slice_type) {
-        case SLICE_TYPE_B: {
+        case EVC_SLICE_TYPE_B: {
             s->pict_type =  AV_PICTURE_TYPE_B;
             break;
         }
-        case SLICE_TYPE_P: {
+        case EVC_SLICE_TYPE_P: {
             s->pict_type =  AV_PICTURE_TYPE_P;
             break;
         }
-        case SLICE_TYPE_I: {
+        case EVC_SLICE_TYPE_I: {
             s->pict_type =  AV_PICTURE_TYPE_I;
             break;
         }
@@ -589,7 +557,7 @@ static int parse_nal_units(AVCodecParserContext *s, const uint8_t *bs,
             s->pict_type =  AV_PICTURE_TYPE_NONE;
         }
         }
-        s->key_frame = (nalu_type == EVC_NUT_IDR) ? 1 : 0;
+        s->key_frame = (nalu_type == EVC_IDR_NUT) ? 1 : 0;
     } else {
         av_log(avctx, AV_LOG_ERROR, "Invalid NAL unit type: %d\n", nalu_type);
         return -1;

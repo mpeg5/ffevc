@@ -1,5 +1,5 @@
 /*
- * EVC definitions and structures
+ * EVC definitions and enums
  * Copyright (c) 2022 Dawid Kozinski <d.kozinski@samsung.com>
  *
  * This file is part of FFmpeg.
@@ -22,13 +22,17 @@
 #ifndef AVCODEC_EVC_H
 #define AVCODEC_EVC_H
 
+// The length field that indicates the length in bytes of the following NAL unit is configured to be of 4 bytes
+#define EVC_NAL_UNIT_LENGTH_BYTE        (4)  /* byte */
+#define EVC_NAL_HEADER_SIZE             (2)  /* byte */
+
 /**
  * @see ISO_IEC_23094-1_2020, 7.4.2.2 NAL unit header semantic
  *      Table 4 - NAL unit type codes and NAL unit type classes
  */
 enum EVCNALUnitType {
-    EVC_NOIDR_NUT            = 0,
-    EVC_IDR_NUT              = 1,
+    EVC_NOIDR_NUT            = 0,   /* Coded slice of a non-IDR picture */
+    EVC_IDR_NUT              = 1,   /* Coded slice of an IDR picture */
     EVC_RSV_VCL_NUT02        = 2,
     EVC_RSV_VCL_NUT03        = 3,
     EVC_RSV_VCL_NUT04        = 4,
@@ -51,11 +55,11 @@ enum EVCNALUnitType {
     EVC_RSV_VCL_NUT21        = 21,
     EVC_RSV_VCL_NUT22        = 22,
     EVC_RSV_VCL_NUT23        = 23,
-    EVC_SPS_NUT              = 24,
-    EVC_PPS_NUT              = 25,
-    EVC_APS_NUT              = 26,
-    EVC_FD_NUT               = 27,
-    EVC_SEI_NUT              = 28,
+    EVC_SPS_NUT              = 24,  /* Sequence parameter set */
+    EVC_PPS_NUT              = 25,  /* Picture paremeter set */
+    EVC_APS_NUT              = 26,  /* Adaptation parameter set */
+    EVC_FD_NUT               = 27,  /* Filler data */
+    EVC_SEI_NUT              = 28,  /* Supplemental enhancement information */
     EVC_RSV_NONVCL29         = 29,
     EVC_RSV_NONVCL30         = 30,
     EVC_RSV_NONVCL31         = 31,
@@ -92,6 +96,15 @@ enum EVCNALUnitType {
     EVC_UNSPEC_NUT62         = 62
 };
 
+// slice type
+// @see ISO_IEC_23094-1_2020 7.4.5 Slice header semantics
+//
+enum EVCSliceType {
+    EVC_SLICE_TYPE_B = 0,
+    EVC_SLICE_TYPE_P = 1,
+    EVC_SLICE_TYPE_I = 2
+};
+
 enum {
     // 7.4.3.2: aps_video_parameter_set_id is u(4).
     EVC_MAX_APS_COUNT = 32,
@@ -112,6 +125,8 @@ enum {
     EVC_MAX_LUMA_PS = 35651584,
 
     EVC_MAX_NUM_REF_PICS = 21,
+
+    EVC_MAX_NUM_RPLS = 32,
 
     // A.4.1: pic_width_in_luma_samples and pic_height_in_luma_samples are
     // constrained to be not greater than sqrt(MaxLumaPs * 8).  Hence height/

@@ -71,17 +71,18 @@ typedef struct EVCSPS {
 
 } EVCSPS;
 
+// @see ISO/IEC 14496-15:2021 Coding of audio-visual objects - Part 15: section 12.3.3.3
 typedef struct EVCNALUnitArray {
-    uint8_t  array_completeness;
-    uint8_t  NAL_unit_type;
-    uint16_t numNalus;
-    uint16_t *nalUnitLength;
-    uint8_t  **nalUnit;
+    uint8_t  array_completeness; // when equal to 1 indicates that all NAL units of the given type are in the following array
+    uint8_t  NAL_unit_type;      // indicates the type of the NAL units in the following array
+    uint16_t numNalus;           // indicates the number of NAL units of the indicated type
+    uint16_t *nalUnitLength;     // indicates the length in bytes of the NAL unit
+    uint8_t  **nalUnit;          // contains an SPS, PPS, APS or a SEI NAL unit, as specified in ISO/IEC 23094-1
 } EVCNALUnitArray;
 
 /**
  * @brief Specifies the decoder configuration information for ISO/IEC 23094-1 video content.
- * @see ISO/IEC 14496-15:2021 Coding of audio-visual objects — Part 15:
+ * @see ISO/IEC 14496-15:2021 Coding of audio-visual objects - Part 15: section 12.3.3.2
  *      Carriage of network abstraction layer (NAL) unit structured video in the ISO base media file format
  */
 typedef struct EVCDecoderConfigurationRecord {
@@ -136,10 +137,8 @@ static uint32_t read_nal_unit_length(const uint8_t *bits, int bits_size)
     if (bits_size >= EVC_NAL_UNIT_LENGTH_BYTE) {
 
         int t = 0;
-        unsigned char *p = (unsigned char *)bits;
-
         for (int i = 0; i < EVC_NAL_UNIT_LENGTH_BYTE; i++)
-            t = (t << 8) | p[i];
+            t = (t << 8) | bits[i];
 
         nalu_len = t;
         if (nalu_len == 0)
@@ -198,6 +197,7 @@ static int evcc_parse_sps(const uint8_t *bs, int bs_size, EVCDecoderConfiguratio
     return 0;
 }
 
+// @see ISO/IEC 14496-15:2021 Coding of audio-visual objects - Part 15: section 12.3.3.3
 static int evcc_array_add_nal_unit(uint8_t *nal_buf, uint32_t nal_size,
                                    uint8_t nal_type, int ps_array_completeness,
                                    EVCDecoderConfigurationRecord *evcc)
@@ -244,7 +244,7 @@ static int evcc_array_add_nal_unit(uint8_t *nal_buf, uint32_t nal_size,
      * array_completeness is 1 for arrays of all types of parameter sets, and 0
      * for all other arrays.
      */
-    if (nal_type == EVC_SPS_NUT || nal_type == EVC_PPS_NUT)
+    if (nal_type == EVC_SPS_NUT || nal_type == EVC_PPS_NUT || nal_type == EVC_APS_NUT)
         array->array_completeness = ps_array_completeness;
 
     return 0;
@@ -403,7 +403,6 @@ int ff_isom_write_evcc(AVIOContext *pb, const uint8_t *data,
     EVCDecoderConfigurationRecord evcc;
     int nalu_type;
     size_t nalu_size;
-    unsigned char *bits = (unsigned char *)data;
     int bytes_to_read = size;
 
     int ret = 0;
@@ -421,34 +420,37 @@ int ff_isom_write_evcc(AVIOContext *pb, const uint8_t *data,
 
     while (bytes_to_read > EVC_NAL_UNIT_LENGTH_BYTE) {
         uint8_t *nalu_buf = NULL;
-        nalu_size = read_nal_unit_length(bits, EVC_NAL_UNIT_LENGTH_BYTE);
+        nalu_size = read_nal_unit_length(data, EVC_NAL_UNIT_LENGTH_BYTE);
         if (nalu_size == 0) break;
 
-        bits += EVC_NAL_UNIT_LENGTH_BYTE;
+        data += EVC_NAL_UNIT_LENGTH_BYTE;
         bytes_to_read -= EVC_NAL_UNIT_LENGTH_BYTE;
 
         if (bytes_to_read < nalu_size) break;
 
-        nalu_type = get_nalu_type(bits, bytes_to_read);
-        nalu_buf = bits;
+        nalu_type = get_nalu_type(data, bytes_to_read);
+        nalu_buf = data;
 
         switch (nalu_type) {
-        case EVC_APS_NUT:
         case EVC_SPS_NUT:
-        case EVC_PPS_NUT:
             ret = evcc_array_add_nal_unit(nalu_buf, nalu_size, nalu_type, ps_array_completeness, &evcc);
             if (ret < 0)
                 goto end;
-            else if (nalu_type == EVC_SPS_NUT)
-                ret = evcc_parse_sps(nalu_buf, nalu_size, &evcc);
+            ret = evcc_parse_sps(nalu_buf, nalu_size, &evcc);
             if (ret < 0)
                 goto end;
             break;
+        case EVC_APS_NUT:
+        case EVC_PPS_NUT:
+        case EVC_SEI_NUT:
+            ret = evcc_array_add_nal_unit(nalu_buf, nalu_size, nalu_type, ps_array_completeness, &evcc);
+            if (ret < 0)
+                goto end;
         default:
             break;
         }
 
-        bits += nalu_size;
+        data += nalu_size;
         bytes_to_read -= nalu_size;
     }
 

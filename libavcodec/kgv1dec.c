@@ -29,7 +29,7 @@
 #include "libavutil/imgutils.h"
 #include "avcodec.h"
 #include "codec_internal.h"
-#include "internal.h"
+#include "decode.h"
 
 typedef struct KgvContext {
     uint16_t *frame_buffer;

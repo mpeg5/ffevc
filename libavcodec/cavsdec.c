@@ -31,7 +31,7 @@
 #include "golomb.h"
 #include "cavs.h"
 #include "codec_internal.h"
-#include "internal.h"
+#include "decode.h"
 #include "mathops.h"
 #include "mpeg12data.h"
 #include "startcode.h"

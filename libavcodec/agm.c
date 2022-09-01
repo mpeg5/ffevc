@@ -20,8 +20,6 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
-#include <stdio.h>
-#include <stdlib.h>
 #include <string.h>
 
 #define BITSTREAM_READER_LE
@@ -32,9 +30,9 @@
 #include "bytestream.h"
 #include "codec_internal.h"
 #include "copy_block.h"
+#include "decode.h"
 #include "get_bits.h"
 #include "idctdsp.h"
-#include "internal.h"
 
 static const uint8_t unscaled_luma[64] = {
     16, 11, 10, 16, 24, 40, 51, 61, 12, 12, 14, 19,

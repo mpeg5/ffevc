@@ -24,10 +24,9 @@
 #include "libavutil/intfloat.h"
 #include "libavutil/imgutils.h"
 #include "libavutil/timecode.h"
-#include "bytestream.h"
 #include "avcodec.h"
 #include "codec_internal.h"
-#include "internal.h"
+#include "decode.h"
 
 enum DPX_TRC {
     DPX_TRC_USER_DEFINED       = 0,

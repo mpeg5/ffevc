@@ -26,7 +26,6 @@
 
 #include "libavutil/channel_layout.h"
 #include "libavutil/common.h"
-#include "libavutil/float_dsp.h"
 #include "libavutil/lfg.h"
 
 #include "avcodec.h"
@@ -37,7 +36,7 @@
 #include "acelp_vectors.h"
 #include "acelp_pitch_delay.h"
 #include "codec_internal.h"
-#include "internal.h"
+#include "decode.h"
 
 #define AMR_USE_16BIT_TABLES
 #include "amr.h"
@@ -1289,7 +1288,7 @@ static int amrwb_decode_frame(AVCodecContext *avctx, AVFrame *frame,
 
     *got_frame_ptr = 1;
 
-    return avpkt->size;
+    return buf - avpkt->data;
 }
 
 const FFCodec ff_amrwb_decoder = {

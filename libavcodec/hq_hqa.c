@@ -21,14 +21,13 @@
 #include <stdint.h>
 
 #include "libavutil/attributes.h"
-#include "libavutil/intreadwrite.h"
 
 #include "avcodec.h"
 #include "bytestream.h"
 #include "canopus.h"
 #include "codec_internal.h"
+#include "decode.h"
 #include "get_bits.h"
-#include "internal.h"
 
 #include "hq_hqa.h"
 #include "hq_hqadsp.h"

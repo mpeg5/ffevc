@@ -36,7 +36,7 @@
 
 #include "avcodec.h"
 #include "codec_internal.h"
-#include "internal.h"
+#include "decode.h"
 
 #include <jxl/decode.h>
 #include <jxl/thread_parallel_runner.h>

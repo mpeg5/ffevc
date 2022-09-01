@@ -47,7 +47,7 @@
 #include "libavutil/mem_internal.h"
 
 #include "codec_internal.h"
-#include "internal.h"
+#include "decode.h"
 #include "avcodec.h"
 #include "mpegutils.h"
 #include "h264data.h"
@@ -64,8 +64,6 @@
 #if CONFIG_ZLIB
 #include <zlib.h>
 #endif
-
-#include "svq1.h"
 
 /**
  * @file

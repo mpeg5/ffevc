@@ -26,7 +26,7 @@
 #include "avcodec.h"
 #include "bytestream.h"
 #include "codec_internal.h"
-#include "internal.h"
+#include "decode.h"
 
 #define HEADER1_CHUNK    0x03
 #define HEADER2_CHUNK    0x3D

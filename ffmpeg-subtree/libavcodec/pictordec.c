@@ -29,7 +29,7 @@
 #include "bytestream.h"
 #include "cga_data.h"
 #include "codec_internal.h"
-#include "internal.h"
+#include "decode.h"
 
 typedef struct PicContext {
     int width, height;

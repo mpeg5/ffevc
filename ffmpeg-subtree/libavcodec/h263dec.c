@@ -31,6 +31,7 @@
 
 #include "avcodec.h"
 #include "codec_internal.h"
+#include "decode.h"
 #include "error_resilience.h"
 #include "flvdec.h"
 #include "h263.h"
@@ -39,7 +40,6 @@
 #include "h263_parser.h"
 #endif
 #include "hwconfig.h"
-#include "internal.h"
 #include "mpeg_er.h"
 #include "mpeg4video.h"
 #include "mpeg4videodec.h"

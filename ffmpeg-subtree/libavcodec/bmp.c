@@ -25,7 +25,7 @@
 #include "bytestream.h"
 #include "bmp.h"
 #include "codec_internal.h"
-#include "internal.h"
+#include "decode.h"
 #include "msrledec.h"
 
 static int bmp_decode_frame(AVCodecContext *avctx, AVFrame *p,

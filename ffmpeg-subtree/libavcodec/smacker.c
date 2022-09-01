@@ -28,8 +28,7 @@
  * Based on http://wiki.multimedia.cx/index.php?title=Smacker
  */
 
-#include <stdio.h>
-#include <stdlib.h>
+#include <stddef.h>
 
 #include "libavutil/channel_layout.h"
 
@@ -51,9 +50,8 @@
 #define BITSTREAM_READER_LE
 #include "bytestream.h"
 #include "codec_internal.h"
+#include "decode.h"
 #include "get_bits.h"
-#include "internal.h"
-#include "mathops.h"
 
 typedef struct SmackVContext {
     AVCodecContext *avctx;

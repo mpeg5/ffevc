@@ -26,8 +26,6 @@
  * @see http://wiki.multimedia.cx/index.php?title=RL2
  */
 
-#include <stdio.h>
-#include <stdlib.h>
 #include <string.h>
 
 #include "libavutil/internal.h"
@@ -35,7 +33,7 @@
 #include "libavutil/mem.h"
 #include "avcodec.h"
 #include "codec_internal.h"
-#include "internal.h"
+#include "decode.h"
 
 
 #define EXTRADATA1_SIZE (6 + 256 * 3) ///< video base, clr count, palette

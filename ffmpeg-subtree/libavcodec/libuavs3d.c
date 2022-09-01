@@ -30,7 +30,7 @@
 #include "avcodec.h"
 #include "avs3.h"
 #include "codec_internal.h"
-#include "internal.h"
+#include "decode.h"
 #include "uavs3d.h"
 
 typedef struct uavs3d_context {

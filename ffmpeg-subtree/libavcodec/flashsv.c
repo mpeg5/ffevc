@@ -35,16 +35,15 @@
 
 #include "config_components.h"
 
-#include <stdio.h>
-#include <stdlib.h>
+#include <stddef.h>
 #include <zlib.h>
 
 #include "libavutil/intreadwrite.h"
 #include "avcodec.h"
 #include "bytestream.h"
 #include "codec_internal.h"
+#include "decode.h"
 #include "get_bits.h"
-#include "internal.h"
 #include "zlib_wrapper.h"
 
 typedef struct BlockInfo {

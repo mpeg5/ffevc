@@ -39,6 +39,7 @@
 #include "packet_internal.h"
 #include "codec_internal.h"
 #include "profiles.h"
+#include "decode.h"
 
 #define XEVD_PARAM_BAD_NAME -1
 #define XEVD_PARAM_BAD_VALUE -2

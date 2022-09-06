@@ -258,7 +258,7 @@ static void evcc_close(EVCDecoderConfigurationRecord *evcc)
 
 static int evcc_write(AVIOContext *pb, EVCDecoderConfigurationRecord *evcc)
 {
-    uint16_t sps_count, pps_count, aps_count;
+    uint16_t sps_count;
 
     av_log(NULL, AV_LOG_TRACE,  "configurationVersion:                %"PRIu8"\n",
            evcc->configurationVersion);
@@ -284,31 +284,28 @@ static int evcc_write(AVIOContext *pb, EVCDecoderConfigurationRecord *evcc)
            evcc->lengthSizeMinusOne);
     av_log(NULL, AV_LOG_TRACE,  "num_of_arrays:                       %"PRIu8"\n",
            evcc->num_of_arrays);
-    for (unsigned i = 0, j = 0; i < FF_ARRAY_ELEMS(evcc->arrays); i++) {
+    for (unsigned i = 0; i < FF_ARRAY_ELEMS(evcc->arrays); i++) {
         const EVCNALUnitArray *const array = &evcc->arrays[i];
 
         if(array->numNalus == 0)
             continue;
 
         av_log(NULL, AV_LOG_TRACE, "array_completeness[%"PRIu8"]:               %"PRIu8"\n",
-               j, array->array_completeness);
+               i, array->array_completeness);
         av_log(NULL, AV_LOG_TRACE, "NAL_unit_type[%"PRIu8"]:                    %"PRIu8"\n",
-               j, array->NAL_unit_type);
+               i, array->NAL_unit_type);
         av_log(NULL, AV_LOG_TRACE, "numNalus[%"PRIu8"]:                         %"PRIu16"\n",
-               j, array->numNalus);
-        for ( unsigned k = 0; k < array->numNalus; k++)
+               i, array->numNalus);
+        for ( unsigned j = 0; j < array->numNalus; j++)
             av_log(NULL, AV_LOG_TRACE,
                    "nalUnitLength[%"PRIu8"][%"PRIu16"]:                 %"PRIu16"\n",
-                   j, k, array->nalUnitLength[k]);
-        j++;
+                   i, j, array->nalUnitLength[j]);
     }
 
     /*
      * We need at least one SPS.
      */
     sps_count = evcc->arrays[SPS_INDEX].numNalus;
-    pps_count = evcc->arrays[PPS_INDEX].numNalus;
-    aps_count = evcc->arrays[APS_INDEX].numNalus;
     if (!sps_count || sps_count > EVC_MAX_SPS_COUNT)
         return AVERROR_INVALIDDATA;
 

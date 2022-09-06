@@ -32,6 +32,15 @@
 #define EVC_NAL_UNIT_LENGTH_BYTE        (4)  /* byte */
 #define EVC_NAL_HEADER_SIZE             (2)  /* byte */
 
+// @see ISO/IEC 14496-15:2021 Coding of audio-visual objects - Part 15: section 12.3.3.1
+enum {
+    SPS_INDEX,
+    PPS_INDEX,
+    APS_INDEX,
+    SEI_INDEX,
+    NB_ARRAYS
+};
+
 // rpl structure
 typedef struct RefPicListStruct {
     int poc;
@@ -100,7 +109,7 @@ typedef struct EVCDecoderConfigurationRecord {
     uint8_t  reserved;                      // 6 bits '000000'b
     uint8_t  lengthSizeMinusOne;            // 2 bits
     uint8_t  num_of_arrays;                 // 8 bits
-    EVCNALUnitArray *array;
+    EVCNALUnitArray arrays[NB_ARRAYS];
 } EVCDecoderConfigurationRecord;
 
 typedef struct NALU {
@@ -201,31 +210,10 @@ static int evcc_parse_sps(const uint8_t *bs, int bs_size, EVCDecoderConfiguratio
 // @see ISO/IEC 14496-15:2021 Coding of audio-visual objects - Part 15: section 12.3.3.3
 static int evcc_array_add_nal_unit(const uint8_t *nal_buf, uint32_t nal_size,
                                    uint8_t nal_type, int ps_array_completeness,
-                                   EVCDecoderConfigurationRecord *evcc)
+                                   EVCNALUnitArray *array)
 {
     int ret;
-    uint8_t index;
-    uint16_t numNalus;
-    EVCNALUnitArray *array;
-
-    for (index = 0; index < evcc->num_of_arrays; index++)
-        if (evcc->array[index].NAL_unit_type == nal_type)
-            break;
-
-    if (index >= evcc->num_of_arrays) {
-        uint8_t i;
-
-        ret = av_reallocp_array(&evcc->array, index + 1, sizeof(EVCNALUnitArray));
-        if (ret < 0)
-            return ret;
-
-        for (i = evcc->num_of_arrays; i <= index; i++)
-            memset(&evcc->array[i], 0, sizeof(EVCNALUnitArray));
-        evcc->num_of_arrays = index + 1;
-    }
-
-    array    = &evcc->array[index];
-    numNalus = array->numNalus;
+    uint16_t numNalus = array->numNalus;
 
     ret = av_reallocp_array(&array->nalUnit, numNalus + 1, sizeof(uint8_t *));
     if (ret < 0)
@@ -260,22 +248,17 @@ static void evcc_init(EVCDecoderConfigurationRecord *evcc)
 
 static void evcc_close(EVCDecoderConfigurationRecord *evcc)
 {
-    uint8_t i;
-
-    for (i = 0; i < evcc->num_of_arrays; i++) {
-        evcc->array[i].numNalus = 0;
-        av_freep(&evcc->array[i].nalUnit);
-        av_freep(&evcc->array[i].nalUnitLength);
+    for (unsigned i = 0; i < FF_ARRAY_ELEMS(evcc->arrays); i++) {
+        EVCNALUnitArray *const array = &evcc->arrays[i];
+        array->numNalus = 0;
+        av_freep(&array->nalUnit);
+        av_freep(&array->nalUnitLength);
     }
-
-    evcc->num_of_arrays = 0;
-    av_freep(&evcc->array);
 }
 
 static int evcc_write(AVIOContext *pb, EVCDecoderConfigurationRecord *evcc)
 {
-    uint8_t i;
-    uint16_t j, aps_count = 0, sps_count = 0, pps_count = 0;
+    uint16_t sps_count;
 
     av_log(NULL, AV_LOG_TRACE,  "configurationVersion:                %"PRIu8"\n",
            evcc->configurationVersion);
@@ -301,36 +284,31 @@ static int evcc_write(AVIOContext *pb, EVCDecoderConfigurationRecord *evcc)
            evcc->lengthSizeMinusOne);
     av_log(NULL, AV_LOG_TRACE,  "num_of_arrays:                       %"PRIu8"\n",
            evcc->num_of_arrays);
-    for (i = 0; i < evcc->num_of_arrays; i++) {
+    for (unsigned i = 0; i < FF_ARRAY_ELEMS(evcc->arrays); i++) {
+        const EVCNALUnitArray *const array = &evcc->arrays[i];
+
+        if(array->numNalus == 0)
+            continue;
+
         av_log(NULL, AV_LOG_TRACE, "array_completeness[%"PRIu8"]:               %"PRIu8"\n",
-               i, evcc->array[i].array_completeness);
+               i, array->array_completeness);
         av_log(NULL, AV_LOG_TRACE, "NAL_unit_type[%"PRIu8"]:                    %"PRIu8"\n",
-               i, evcc->array[i].NAL_unit_type);
+               i, array->NAL_unit_type);
         av_log(NULL, AV_LOG_TRACE, "numNalus[%"PRIu8"]:                         %"PRIu16"\n",
-               i, evcc->array[i].numNalus);
-        for (j = 0; j < evcc->array[i].numNalus; j++)
+               i, array->numNalus);
+        for ( unsigned j = 0; j < array->numNalus; j++)
             av_log(NULL, AV_LOG_TRACE,
                    "nalUnitLength[%"PRIu8"][%"PRIu16"]:                 %"PRIu16"\n",
-                   i, j, evcc->array[i].nalUnitLength[j]);
+                   i, j, array->nalUnitLength[j]);
     }
 
     /*
      * We need at least one SPS.
      */
-    for (i = 0; i < evcc->num_of_arrays; i++)
-        switch (evcc->array[i].NAL_unit_type) {
-        case EVC_APS_NUT:
-            aps_count += evcc->array[i].numNalus;
-            break;
-        case EVC_SPS_NUT:
-            sps_count += evcc->array[i].numNalus;
-            break;
-        case EVC_PPS_NUT:
-            pps_count += evcc->array[i].numNalus;
-            break;
-        default:
-            break;
-        }
+    sps_count = evcc->arrays[SPS_INDEX].numNalus;
+    if (!sps_count || sps_count > EVC_MAX_SPS_COUNT)
+        return AVERROR_INVALIDDATA;
+
     if (!sps_count || sps_count > EVC_MAX_SPS_COUNT)
         return AVERROR_INVALIDDATA;
 
@@ -373,25 +351,30 @@ static int evcc_write(AVIOContext *pb, EVCDecoderConfigurationRecord *evcc)
     /* unsigned int(8) numOfArrays; */
     avio_w8(pb, evcc->num_of_arrays);
 
-    for (i = 0; i < evcc->num_of_arrays; i++) {
+    for (unsigned i = 0; i < FF_ARRAY_ELEMS(evcc->arrays); i++) {
+        const EVCNALUnitArray *const array = &evcc->arrays[i];
+
+        if (!array->numNalus)
+            continue;
+
         /*
          * bit(1) array_completeness;
          * unsigned int(1) reserved = 0;
          * unsigned int(6) NAL_unit_type;
          */
-        avio_w8(pb, evcc->array[i].array_completeness << 7 |
-                evcc->array[i].NAL_unit_type & 0x3f);
+        avio_w8(pb, array->array_completeness << 7 |
+                array->NAL_unit_type & 0x3f);
 
         /* unsigned int(16) numNalus; */
-        avio_wb16(pb, evcc->array[i].numNalus);
+        avio_wb16(pb, array->numNalus);
 
-        for (j = 0; j < evcc->array[i].numNalus; j++) {
+        for (unsigned j = 0; j < array->numNalus; j++) {
             /* unsigned int(16) nalUnitLength; */
-            avio_wb16(pb, evcc->array[i].nalUnitLength[j]);
+            avio_wb16(pb, array->nalUnitLength[j]);
 
             /* bit(8*nalUnitLength) nalUnit; */
-            avio_write(pb, evcc->array[i].nalUnit[j],
-                       evcc->array[i].nalUnitLength[j]);
+            avio_write(pb, array->nalUnit[j],
+                       array->nalUnitLength[j]);
         }
     }
 
@@ -405,6 +388,7 @@ int ff_isom_write_evcc(AVIOContext *pb, const uint8_t *data,
     int nalu_type;
     size_t nalu_size;
     int bytes_to_read = size;
+    unsigned array_index;
 
     int ret = 0;
 
@@ -432,21 +416,31 @@ int ff_isom_write_evcc(AVIOContext *pb, const uint8_t *data,
 
         switch (nalu_type) {
         case EVC_SPS_NUT:
-            ret = evcc_array_add_nal_unit(data, nalu_size, nalu_type, ps_array_completeness, &evcc);
-            if (ret < 0)
-                goto end;
+            array_index = SPS_INDEX;
+            break;
+        case EVC_PPS_NUT:
+            array_index = PPS_INDEX;
+            break;
+        case EVC_APS_NUT:
+            array_index = APS_INDEX;
+            break;
+        case EVC_SEI_NUT:
+            array_index = SEI_INDEX;
+            break;
+        default:
+            break;
+        }
+
+        ret = evcc_array_add_nal_unit(data, nalu_size, nalu_type, ps_array_completeness, &(evcc.arrays[array_index]));
+        if (ret < 0)
+            goto end;
+        if (evcc.arrays[array_index].numNalus == 1)
+            evcc.num_of_arrays++;
+
+        if(nalu_type == EVC_SPS_NUT) {
             ret = evcc_parse_sps(data, nalu_size, &evcc);
             if (ret < 0)
                 goto end;
-            break;
-        case EVC_APS_NUT:
-        case EVC_PPS_NUT:
-        case EVC_SEI_NUT:
-            ret = evcc_array_add_nal_unit(data, nalu_size, nalu_type, ps_array_completeness, &evcc);
-            if (ret < 0)
-                goto end;
-        default:
-            break;
         }
 
         data += nalu_size;

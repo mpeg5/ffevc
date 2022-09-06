@@ -44,9 +44,11 @@
 #include "codec_internal.h"
 #include "decode.h"
 #include "dv.h"
+#include "dv_internal.h"
 #include "dv_profile_internal.h"
 #include "dvdata.h"
 #include "get_bits.h"
+#include "idctdsp.h"
 #include "put_bits.h"
 #include "simple_idct.h"
 #include "thread.h"
@@ -60,6 +62,19 @@ typedef struct BlockInfo {
     uint32_t partial_bit_buffer;
     int shift_offset;
 } BlockInfo;
+
+typedef struct DVDecContext {
+    const AVDVProfile *sys;
+    const AVFrame     *frame;
+    const uint8_t     *buf;
+
+    uint8_t      dv_zigzag[2][64];
+    DVwork_chunk work_chunks[4 * 12 * 27];
+    uint32_t     idct_factor[2 * 4 * 16 * 64];
+    void       (*idct_put[2])(uint8_t *dest, ptrdiff_t stride, int16_t *block);
+
+    IDCTDSPContext idsp;
+} DVDecContext;
 
 static const int dv_iweight_bits = 14;
 
@@ -186,7 +201,7 @@ static void dv_init_static(void)
     }
 }
 
-static void dv_init_weight_tables(DVVideoContext *ctx, const AVDVProfile *d)
+static void dv_init_weight_tables(DVDecContext *ctx, const AVDVProfile *d)
 {
     int j, i, c, s;
     uint32_t *factor1 = &ctx->idct_factor[0],
@@ -235,8 +250,10 @@ static void dv_init_weight_tables(DVVideoContext *ctx, const AVDVProfile *d)
 static av_cold int dvvideo_decode_init(AVCodecContext *avctx)
 {
     static AVOnce init_static_once = AV_ONCE_INIT;
-    DVVideoContext *s = avctx->priv_data;
+    DVDecContext *s = avctx->priv_data;
     int i;
+
+    avctx->chroma_sample_location = AVCHROMA_LOC_TOPLEFT;
 
     ff_idctdsp_init(&s->idsp, avctx);
 
@@ -256,7 +273,7 @@ static av_cold int dvvideo_decode_init(AVCodecContext *avctx)
 
     ff_thread_once(&init_static_once, dv_init_static);
 
-    return ff_dvvideo_init(avctx);
+    return 0;
 }
 
 /* decode AC coefficients */
@@ -343,7 +360,7 @@ static av_always_inline void put_block_8x4(int16_t *block, uint8_t *av_restrict 
     }
 }
 
-static void dv100_idct_put_last_row_field_chroma(const DVVideoContext *s, uint8_t *data,
+static void dv100_idct_put_last_row_field_chroma(const DVDecContext *s, uint8_t *data,
                                                  int stride, int16_t *blocks)
 {
     s->idsp.idct(blocks + 0*64);
@@ -355,7 +372,7 @@ static void dv100_idct_put_last_row_field_chroma(const DVVideoContext *s, uint8_
     put_block_8x4(blocks+1*64 + 4*8, data + 8 + stride, stride<<1);
 }
 
-static void dv100_idct_put_last_row_field_luma(const DVVideoContext *s, uint8_t *data,
+static void dv100_idct_put_last_row_field_luma(const DVDecContext *s, uint8_t *data,
                                                int stride, int16_t *blocks)
 {
     s->idsp.idct(blocks + 0*64);
@@ -376,7 +393,7 @@ static void dv100_idct_put_last_row_field_luma(const DVVideoContext *s, uint8_t 
 /* mb_x and mb_y are in units of 8 pixels */
 static int dv_decode_video_segment(AVCodecContext *avctx, void *arg)
 {
-    const DVVideoContext *s = avctx->priv_data;
+    const DVDecContext *s = avctx->priv_data;
     DVwork_chunk *work_chunk = arg;
     int quant, dc, dct_mode, class1, j;
     int mb_index, mb_x, mb_y, last_index;
@@ -391,7 +408,7 @@ static int dv_decode_video_segment(AVCodecContext *avctx, void *arg)
     LOCAL_ALIGNED_16(int16_t, sblock, [5 * DV_MAX_BPM], [64]);
     LOCAL_ALIGNED_16(uint8_t, mb_bit_buffer, [80     + AV_INPUT_BUFFER_PADDING_SIZE]); /* allow some slack */
     LOCAL_ALIGNED_16(uint8_t, vs_bit_buffer, [80 * 5 + AV_INPUT_BUFFER_PADDING_SIZE]); /* allow some slack */
-    const int log2_blocksize = 3-s->avctx->lowres;
+    const int log2_blocksize = 3 - avctx->lowres;
     int is_field_mode[5];
     int vs_bit_buffer_damaged = 0;
     int mb_bit_buffer_damaged[5] = {0};
@@ -531,7 +548,7 @@ retry:
     block = &sblock[0][0];
     mb    = mb_data;
     for (mb_index = 0; mb_index < 5; mb_index++) {
-        dv_calculate_mb_xy(s, work_chunk, mb_index, &mb_x, &mb_y);
+        dv_calculate_mb_xy(s->sys, s->buf, work_chunk, mb_index, &mb_x, &mb_y);
 
         /* idct_put'ting luminance */
         if ((s->sys->pix_fmt == AV_PIX_FMT_YUV420P)                      ||
@@ -610,7 +627,7 @@ static int dvvideo_decode_frame(AVCodecContext *avctx, AVFrame *frame,
 {
     uint8_t *buf = avpkt->data;
     int buf_size = avpkt->size;
-    DVVideoContext *s = avctx->priv_data;
+    DVDecContext *s = avctx->priv_data;
     const uint8_t *vsc_pack;
     int apt, is16_9, ret;
     const AVDVProfile *sys;
@@ -622,7 +639,7 @@ static int dvvideo_decode_frame(AVCodecContext *avctx, AVFrame *frame,
     }
 
     if (sys != s->sys) {
-        ret = ff_dv_init_dynamic_tables(s, sys);
+        ret = ff_dv_init_dynamic_tables(s->work_chunks, sys);
         if (ret < 0) {
             av_log(avctx, AV_LOG_ERROR, "Error initializing the work tables.\n");
             return ret;
@@ -643,7 +660,7 @@ static int dvvideo_decode_frame(AVCodecContext *avctx, AVFrame *frame,
 
     /* Determine the codec's sample_aspect ratio from the packet */
     vsc_pack = buf + 80 * 5 + 48 + 5;
-    if (*vsc_pack == dv_video_control) {
+    if (*vsc_pack == DV_VIDEO_CONTROL) {
         apt    = buf[4] & 0x07;
         is16_9 = (vsc_pack[2] & 0x07) == 0x02 ||
                  (!apt && (vsc_pack[2] & 0x07) == 0x07);
@@ -654,7 +671,7 @@ static int dvvideo_decode_frame(AVCodecContext *avctx, AVFrame *frame,
         return ret;
 
     /* Determine the codec's field order from the packet */
-    if ( *vsc_pack == dv_video_control ) {
+    if ( *vsc_pack == DV_VIDEO_CONTROL ) {
         if (avctx->height == 720) {
             frame->interlaced_frame = 0;
             frame->top_field_first = 0;
@@ -681,10 +698,10 @@ static int dvvideo_decode_frame(AVCodecContext *avctx, AVFrame *frame,
 
 const FFCodec ff_dvvideo_decoder = {
     .p.name         = "dvvideo",
-    .p.long_name    = NULL_IF_CONFIG_SMALL("DV (Digital Video)"),
+    CODEC_LONG_NAME("DV (Digital Video)"),
     .p.type         = AVMEDIA_TYPE_VIDEO,
     .p.id           = AV_CODEC_ID_DVVIDEO,
-    .priv_data_size = sizeof(DVVideoContext),
+    .priv_data_size = sizeof(DVDecContext),
     .init           = dvvideo_decode_init,
     FF_CODEC_DECODE_CB(dvvideo_decode_frame),
     .p.capabilities = AV_CODEC_CAP_DR1 | AV_CODEC_CAP_FRAME_THREADS | AV_CODEC_CAP_SLICE_THREADS,

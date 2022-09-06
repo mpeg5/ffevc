@@ -27,6 +27,7 @@
 
 #include "libavutil/attributes.h"
 #include "libavutil/colorspace.h"
+#include "libavutil/file_open.h"
 #include "libavutil/opt.h"
 #include "libavutil/bswap.h"
 
@@ -707,7 +708,7 @@ static const AVClass dvdsub_class = {
 
 const FFCodec ff_dvdsub_decoder = {
     .p.name         = "dvdsub",
-    .p.long_name    = NULL_IF_CONFIG_SMALL("DVD subtitles"),
+    CODEC_LONG_NAME("DVD subtitles"),
     .p.type         = AVMEDIA_TYPE_SUBTITLE,
     .p.id           = AV_CODEC_ID_DVD_SUBTITLE,
     .priv_data_size = sizeof(DVDSubContext),

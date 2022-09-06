@@ -3169,7 +3169,7 @@ static av_cold int theora_decode_init(AVCodecContext *avctx)
 
 const FFCodec ff_theora_decoder = {
     .p.name                = "theora",
-    .p.long_name           = NULL_IF_CONFIG_SMALL("Theora"),
+    CODEC_LONG_NAME("Theora"),
     .p.type                = AVMEDIA_TYPE_VIDEO,
     .p.id                  = AV_CODEC_ID_THEORA,
     .priv_data_size        = sizeof(Vp3DecodeContext),
@@ -3179,7 +3179,7 @@ const FFCodec ff_theora_decoder = {
     .p.capabilities        = AV_CODEC_CAP_DR1 | AV_CODEC_CAP_DRAW_HORIZ_BAND |
                              AV_CODEC_CAP_FRAME_THREADS,
     .flush                 = vp3_decode_flush,
-    .update_thread_context = ONLY_IF_THREADS_ENABLED(vp3_update_thread_context),
+    UPDATE_THREAD_CONTEXT(vp3_update_thread_context),
     .caps_internal         = FF_CODEC_CAP_INIT_CLEANUP |
                              FF_CODEC_CAP_EXPORTS_CROPPING | FF_CODEC_CAP_ALLOCATE_PROGRESS,
 };
@@ -3187,7 +3187,7 @@ const FFCodec ff_theora_decoder = {
 
 const FFCodec ff_vp3_decoder = {
     .p.name                = "vp3",
-    .p.long_name           = NULL_IF_CONFIG_SMALL("On2 VP3"),
+    CODEC_LONG_NAME("On2 VP3"),
     .p.type                = AVMEDIA_TYPE_VIDEO,
     .p.id                  = AV_CODEC_ID_VP3,
     .priv_data_size        = sizeof(Vp3DecodeContext),
@@ -3197,7 +3197,7 @@ const FFCodec ff_vp3_decoder = {
     .p.capabilities        = AV_CODEC_CAP_DR1 | AV_CODEC_CAP_DRAW_HORIZ_BAND |
                              AV_CODEC_CAP_FRAME_THREADS,
     .flush                 = vp3_decode_flush,
-    .update_thread_context = ONLY_IF_THREADS_ENABLED(vp3_update_thread_context),
+    UPDATE_THREAD_CONTEXT(vp3_update_thread_context),
     .caps_internal         = FF_CODEC_CAP_INIT_CLEANUP |
                              FF_CODEC_CAP_ALLOCATE_PROGRESS,
 };
@@ -3205,7 +3205,7 @@ const FFCodec ff_vp3_decoder = {
 #if CONFIG_VP4_DECODER
 const FFCodec ff_vp4_decoder = {
     .p.name                = "vp4",
-    .p.long_name           = NULL_IF_CONFIG_SMALL("On2 VP4"),
+    CODEC_LONG_NAME("On2 VP4"),
     .p.type                = AVMEDIA_TYPE_VIDEO,
     .p.id                  = AV_CODEC_ID_VP4,
     .priv_data_size        = sizeof(Vp3DecodeContext),
@@ -3215,7 +3215,7 @@ const FFCodec ff_vp4_decoder = {
     .p.capabilities        = AV_CODEC_CAP_DR1 | AV_CODEC_CAP_DRAW_HORIZ_BAND |
                              AV_CODEC_CAP_FRAME_THREADS,
     .flush                 = vp3_decode_flush,
-    .update_thread_context = ONLY_IF_THREADS_ENABLED(vp3_update_thread_context),
+    UPDATE_THREAD_CONTEXT(vp3_update_thread_context),
     .caps_internal         = FF_CODEC_CAP_INIT_CLEANUP |
                              FF_CODEC_CAP_ALLOCATE_PROGRESS,
 };

@@ -459,7 +459,6 @@ static int parse_nal_units(AVCodecParserContext *s, const uint8_t *bs,
     int bits_size = bs_size;
 
     avctx->codec_id = AV_CODEC_ID_EVC;
-    s->pict_type = AV_PICTURE_TYPE_NONE;
     s->picture_structure = AV_PICTURE_STRUCTURE_FRAME;
     s->key_frame = -1;
 

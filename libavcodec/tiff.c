@@ -1367,7 +1367,7 @@ static int tiff_decode_tag(TiffContext *s, AVFrame *frame)
         } else
             s->strippos = off;
         s->strips = count;
-        if (s->strips == 1)
+        if (s->strips == s->bppcount)
             s->rps = s->height;
         s->sot = type;
         break;
@@ -2182,7 +2182,7 @@ static const AVClass tiff_decoder_class = {
 
 const FFCodec ff_tiff_decoder = {
     .p.name         = "tiff",
-    .p.long_name    = NULL_IF_CONFIG_SMALL("TIFF image"),
+    CODEC_LONG_NAME("TIFF image"),
     .p.type         = AVMEDIA_TYPE_VIDEO,
     .p.id           = AV_CODEC_ID_TIFF,
     .priv_data_size = sizeof(TiffContext),

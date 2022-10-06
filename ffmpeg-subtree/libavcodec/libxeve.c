@@ -88,6 +88,8 @@ typedef struct XeveContext {
     int sei_info;       // embed Supplemental enhancement information while encoding
 
     int color_format;   // input data color format: currently only XEVE_CF_YCBCR420 is supported
+
+    AVDictionary *xeve_params;
 } XeveContext;
 
 /**
@@ -352,6 +354,17 @@ static av_cold int libxeve_init(AVCodecContext *avctx)
         return AVERROR(EINVAL);
     }
 
+    {
+        AVDictionaryEntry *en = NULL;
+        while (en = av_dict_get(xectx->xeve_params, "", en, AV_DICT_IGNORE_SUFFIX)) {
+           if ((ret = xeve_param_parse(&cdsc->param, en->key, en->value)) < 0) {
+               av_log(avctx, AV_LOG_WARNING,
+                      "Error parsing option '%s = %s'.\n",
+                       en->key, en->value);
+            }
+        }
+    }
+
     /* create encoder */
     xectx->id = xeve_create(cdsc, NULL);
     if (xectx->id == NULL) {
@@ -560,6 +573,7 @@ static const AVOption libxeve_options[] = {
     { "crf", "Constant rate factor value for CRF rate control mode", OFFSET(crf), AV_OPT_TYPE_INT, { .i64 = 32 }, 10, 49, VE },
     { "hash", "Embed picture signature (HASH) for conformance checking in decoding", OFFSET(hash), AV_OPT_TYPE_INT, { .i64 = 0 }, 0, 1, VE },
     { "sei_info", "Embed SEI messages identifying encoder parameters and command line arguments", OFFSET(sei_info), AV_OPT_TYPE_INT, { .i64 = 0 }, 0, 1, VE },
+    { "xeve-params",  "Override the xeve configuration using a :-separated list of key=value parameters", OFFSET(xeve_params), AV_OPT_TYPE_DICT, { 0 }, 0, 0, VE },
     { NULL }
 };
 

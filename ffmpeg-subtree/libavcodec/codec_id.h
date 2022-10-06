@@ -318,6 +318,7 @@ enum AVCodecID {
     AV_CODEC_ID_PHM,
     AV_CODEC_ID_RADIANCE_HDR,
     AV_CODEC_ID_WBMP,
+    AV_CODEC_ID_MEDIA100,
     AV_CODEC_ID_EVC,
 
     /* various PCM "codecs" */
@@ -528,6 +529,10 @@ enum AVCodecID {
     AV_CODEC_ID_FASTAUDIO,
     AV_CODEC_ID_MSNSIREN,
     AV_CODEC_ID_DFPWM,
+    AV_CODEC_ID_BONK,
+    AV_CODEC_ID_MISC4,
+    AV_CODEC_ID_APAC,
+    AV_CODEC_ID_FTR,
 
     /* subtitle codecs */
     AV_CODEC_ID_FIRST_SUBTITLE = 0x17000,          ///< A dummy ID pointing at the start of subtitle codecs.

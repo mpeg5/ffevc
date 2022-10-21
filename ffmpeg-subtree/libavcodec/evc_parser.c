@@ -329,6 +329,12 @@ static EVCParserSPS *parse_sps(const uint8_t *bs, int bs_size, EVCParserContext 
 }
 
 // @see ISO_IEC_23094-1 (7.3.2.2 SPS RBSP syntax)
+//
+// @note
+// The current implementation of parse_sps function doesn't handle VUI parameters parsing.
+// If it will be needed, parse_sps function could be extended to handle VUI parameters parsing
+// to initialize fields of the AVCodecContex i.e. color_primaries, color_trc,color_range
+//
 static EVCParserPPS *parse_pps(const uint8_t *bs, int bs_size, EVCParserContext *ev)
 {
     GetBitContext gb;
@@ -479,7 +485,7 @@ static int parse_nal_units(AVCodecParserContext *s, const uint8_t *buf,
     // @see ISO_IEC_23094-1_2020, 7.4.2.2 NAL unit header semantic (Table 4 - NAL unit type codes and NAL unit type classes)
     // @see enum EVCNALUnitType in evc.h
     nalu_type = get_nalu_type(buf, buf_size, avctx);
-    if (nalu_type < 0 || nalu_type > 62) {
+    if (nalu_type < EVC_NOIDR_NUT || nalu_type > EVC_UNSPEC_NUT62) {
         av_log(avctx, AV_LOG_ERROR, "Invalid NAL unit type: (%d)\n", nalu_type);
         return AVERROR_INVALIDDATA;
     }
@@ -525,11 +531,6 @@ static int parse_nal_units(AVCodecParserContext *s, const uint8_t *buf,
             av_log(avctx, AV_LOG_ERROR, "Unknown supported chroma format\n");
             return -1;
         }
-
-      // @note
-      // The current implementation of parse_sps function doesn't handle VUI parameters parsing.
-      // If it will be needed, parse_sps function could be extended to handle VUI parameters parsing
-      // to initialize fields of the AVCodecContex i.e. color_primaries, color_trc,color_range
     } else if (nalu_type == EVC_PPS_NUT) {
         EVCParserPPS *pps;
 

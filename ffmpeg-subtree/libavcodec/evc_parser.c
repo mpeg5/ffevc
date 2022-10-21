@@ -468,7 +468,7 @@ static int parse_nal_units(AVCodecParserContext *s, const uint8_t *buf,
     s->key_frame = -1;
 
     nalu_size = read_nal_unit_length(buf, buf_size, avctx);
-    if (nalu_size == 0) {
+    if (nalu_size <= 0) {
         av_log(avctx, AV_LOG_ERROR, "Invalid NAL unit size: (%d)\n", nalu_size);
         return -1;
     }

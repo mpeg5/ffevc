@@ -470,7 +470,7 @@ static int parse_nal_units(AVCodecParserContext *s, const uint8_t *buf,
     nalu_size = read_nal_unit_length(buf, buf_size, avctx);
     if (nalu_size <= 0) {
         av_log(avctx, AV_LOG_ERROR, "Invalid NAL unit size: (%d)\n", nalu_size);
-        return -1;
+        return AVERROR_INVALIDDATA;
     }
 
     buf += EVC_NAL_UNIT_LENGTH_BYTE;
@@ -481,7 +481,7 @@ static int parse_nal_units(AVCodecParserContext *s, const uint8_t *buf,
     nalu_type = get_nalu_type(buf, buf_size, avctx);
     if (nalu_type < 0 || nalu_type > 62) {
         av_log(avctx, AV_LOG_ERROR, "Invalid NAL unit type: (%d)\n", nalu_type);
-        return -1;
+        return AVERROR_INVALIDDATA;
     }
 
     buf += EVC_NAL_HEADER_SIZE;
@@ -493,7 +493,7 @@ static int parse_nal_units(AVCodecParserContext *s, const uint8_t *buf,
         sps = parse_sps(buf, buf_size, ev);
         if (!sps) {
             av_log(avctx, AV_LOG_ERROR, "SPS parsing error\n");
-            return -1;
+            return AVERROR_INVALIDDATA;
         }
 
         s->coded_width         = sps->pic_width_in_luma_samples;
@@ -536,7 +536,7 @@ static int parse_nal_units(AVCodecParserContext *s, const uint8_t *buf,
         pps = parse_pps(buf, buf_size, ev);
         if (!pps) {
             av_log(avctx, AV_LOG_ERROR, "PPS parsing error\n");
-            return -1;
+            return AVERROR_INVALIDDATA;
         }
     } else if (nalu_type == EVC_SEI_NUT) // Supplemental Enhancement Information
         return 0;
@@ -546,7 +546,7 @@ static int parse_nal_units(AVCodecParserContext *s, const uint8_t *buf,
         sh = parse_slice_header(buf, buf_size, ev);
         if (!sh) {
             av_log(avctx, AV_LOG_ERROR, "Slice header parsing error\n");
-            return -1;
+            return AVERROR_INVALIDDATA;
         }
         switch (sh->slice_type) {
         case EVC_SLICE_TYPE_B: {
@@ -714,13 +714,18 @@ static int evc_parse(AVCodecParserContext *s, AVCodecContext *avctx,
 
     is_dummy_buf &= (dummy_buf == buf);
 
-    if (!is_dummy_buf)
-        parse_nal_units(s, buf, buf_size, avctx);
+    if (!is_dummy_buf) {
+        if (parse_nal_units(s, buf, buf_size, avctx) == AVERROR_INVALIDDATA) {
+            *poutbuf      = NULL;
+            *poutbuf_size = 0;
+            return buf_size;
+        }
+    }
 
     // poutbuf contains just one NAL unit
     *poutbuf      = buf;
     *poutbuf_size = buf_size;
-    ev->to_read -= next;
+    ev->to_read  -= next;
 
     return next;
 }

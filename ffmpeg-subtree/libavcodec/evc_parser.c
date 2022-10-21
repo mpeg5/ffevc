@@ -450,36 +450,42 @@ static EVCParserSliceHeader *parse_slice_header(const uint8_t *bs, int bs_size, 
     return sh;
 }
 
-static int parse_nal_units(AVCodecParserContext *s, const uint8_t *bs,
-                           int bs_size, AVCodecContext *avctx)
+/**
+ * Parse NAL units of found picture and decode some basic information.
+ *
+ * @param s parser context.
+ * @param avctx codec context.
+ * @param buf buffer with field/frame data.
+ * @param buf_size size of the buffer.
+ */
+static int parse_nal_units(AVCodecParserContext *s, const uint8_t *buf,
+                           int buf_size, AVCodecContext *avctx)
 {
     EVCParserContext *ev = s->priv_data;
     int nalu_type, nalu_size;
-    unsigned char *bits = (unsigned char *)bs;
-    int bits_size = bs_size;
-
+    
     avctx->codec_id = AV_CODEC_ID_EVC;
     s->picture_structure = AV_PICTURE_STRUCTURE_FRAME;
     s->key_frame = -1;
 
-    nalu_size = read_nal_unit_length(bits, bits_size, avctx);
+    nalu_size = read_nal_unit_length(buf, buf_size, avctx);
     if (nalu_size == 0) {
         av_log(avctx, AV_LOG_ERROR, "Invalid NAL unit size: (%d)\n", nalu_size);
         return -1;
     }
 
-    bits += EVC_NAL_UNIT_LENGTH_BYTE;
-    bits_size -= EVC_NAL_UNIT_LENGTH_BYTE;
+    buf += EVC_NAL_UNIT_LENGTH_BYTE;
+    buf_size -= EVC_NAL_UNIT_LENGTH_BYTE;
 
-    nalu_type = get_nalu_type(bits, bits_size, avctx);
+    nalu_type = get_nalu_type(buf, buf_size, avctx);
 
-    bits += EVC_NAL_HEADER_SIZE;
-    bits_size -= EVC_NAL_HEADER_SIZE;
+    buf += EVC_NAL_HEADER_SIZE;
+    buf_size -= EVC_NAL_HEADER_SIZE;
 
     if (nalu_type == EVC_SPS_NUT) { // NAL Unit type: SPS (Sequence Parameter Set)
         EVCParserSPS *sps;
 
-        sps = parse_sps(bits, bits_size, ev);
+        sps = parse_sps(buf, buf_size, ev);
         if (!sps) {
             av_log(avctx, AV_LOG_ERROR, "SPS parsing error\n");
             return -1;
@@ -524,7 +530,7 @@ static int parse_nal_units(AVCodecParserContext *s, const uint8_t *bs,
     } else if (nalu_type == EVC_PPS_NUT) { // NAL Unit type: PPS (Video Parameter Set)
         EVCParserPPS *pps;
 
-        pps = parse_pps(bits, bits_size, ev);
+        pps = parse_pps(buf, buf_size, ev);
         if (!pps) {
             av_log(avctx, AV_LOG_ERROR, "PPS parsing error\n");
             return -1;
@@ -534,7 +540,7 @@ static int parse_nal_units(AVCodecParserContext *s, const uint8_t *bs,
     else if (nalu_type == EVC_IDR_NUT || nalu_type == EVC_NOIDR_NUT) { // NAL Unit type: Coded slice of a IDR or non-IDR picture
         EVCParserSliceHeader *sh;
 
-        sh = parse_slice_header(bits, bits_size, ev);
+        sh = parse_slice_header(buf, buf_size, ev);
         if (!sh) {
             av_log(avctx, AV_LOG_ERROR, "Slice header parsing error\n");
             return -1;

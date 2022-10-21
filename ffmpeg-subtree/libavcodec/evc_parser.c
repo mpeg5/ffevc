@@ -329,6 +329,12 @@ static EVCParserSPS *parse_sps(const uint8_t *bs, int bs_size, EVCParserContext 
 }
 
 // @see ISO_IEC_23094-1 (7.3.2.2 SPS RBSP syntax)
+//
+// @note
+// The current implementation of parse_sps function doesn't handle VUI parameters parsing.
+// If it will be needed, parse_sps function could be extended to handle VUI parameters parsing
+// to initialize fields of the AVCodecContex i.e. color_primaries, color_trc,color_range
+//
 static EVCParserPPS *parse_pps(const uint8_t *bs, int bs_size, EVCParserContext *ev)
 {
     GetBitContext gb;
@@ -450,39 +456,50 @@ static EVCParserSliceHeader *parse_slice_header(const uint8_t *bs, int bs_size, 
     return sh;
 }
 
-static int parse_nal_units(AVCodecParserContext *s, const uint8_t *bs,
-                           int bs_size, AVCodecContext *avctx)
+/**
+ * Parse NAL units of found picture and decode some basic information.
+ *
+ * @param s parser context.
+ * @param avctx codec context.
+ * @param buf buffer with field/frame data.
+ * @param buf_size size of the buffer.
+ */
+static int parse_nal_units(AVCodecParserContext *s, const uint8_t *buf,
+                           int buf_size, AVCodecContext *avctx)
 {
     EVCParserContext *ev = s->priv_data;
     int nalu_type, nalu_size;
-    unsigned char *bits = (unsigned char *)bs;
-    int bits_size = bs_size;
 
-    avctx->codec_id = AV_CODEC_ID_EVC;
     s->picture_structure = AV_PICTURE_STRUCTURE_FRAME;
     s->key_frame = -1;
 
-    nalu_size = read_nal_unit_length(bits, bits_size, avctx);
-    if (nalu_size == 0) {
+    nalu_size = read_nal_unit_length(buf, buf_size, avctx);
+    if (nalu_size <= 0) {
         av_log(avctx, AV_LOG_ERROR, "Invalid NAL unit size: (%d)\n", nalu_size);
-        return -1;
+        return AVERROR_INVALIDDATA;
     }
 
-    bits += EVC_NAL_UNIT_LENGTH_BYTE;
-    bits_size -= EVC_NAL_UNIT_LENGTH_BYTE;
+    buf += EVC_NAL_UNIT_LENGTH_BYTE;
+    buf_size -= EVC_NAL_UNIT_LENGTH_BYTE;
 
-    nalu_type = get_nalu_type(bits, bits_size, avctx);
+    // @see ISO_IEC_23094-1_2020, 7.4.2.2 NAL unit header semantic (Table 4 - NAL unit type codes and NAL unit type classes)
+    // @see enum EVCNALUnitType in evc.h
+    nalu_type = get_nalu_type(buf, buf_size, avctx);
+    if (nalu_type < EVC_NOIDR_NUT || nalu_type > EVC_UNSPEC_NUT62) {
+        av_log(avctx, AV_LOG_ERROR, "Invalid NAL unit type: (%d)\n", nalu_type);
+        return AVERROR_INVALIDDATA;
+    }
 
-    bits += EVC_NAL_HEADER_SIZE;
-    bits_size -= EVC_NAL_HEADER_SIZE;
+    buf += EVC_NAL_HEADER_SIZE;
+    buf_size -= EVC_NAL_HEADER_SIZE;
 
-    if (nalu_type == EVC_SPS_NUT) { // NAL Unit type: SPS (Sequence Parameter Set)
+    if (nalu_type == EVC_SPS_NUT) {
         EVCParserSPS *sps;
 
-        sps = parse_sps(bits, bits_size, ev);
+        sps = parse_sps(buf, buf_size, ev);
         if (!sps) {
             av_log(avctx, AV_LOG_ERROR, "SPS parsing error\n");
-            return -1;
+            return AVERROR_INVALIDDATA;
         }
 
         s->coded_width         = sps->pic_width_in_luma_samples;
@@ -493,7 +510,6 @@ static int parse_nal_units(AVCodecParserContext *s, const uint8_t *bs,
         if (sps->profile_idc == 1) avctx->profile = FF_PROFILE_EVC_MAIN;
         else avctx->profile = FF_PROFILE_EVC_BASELINE;
 
-        // Currently XEVD decoder supports ony YCBCR420_10LE chroma format for EVC stream
         switch (sps->chroma_format_idc) {
         case 0: /* YCBCR400_10LE */
             av_log(avctx, AV_LOG_ERROR, "YCBCR400_10LE: Not supported chroma format\n");
@@ -515,29 +531,23 @@ static int parse_nal_units(AVCodecParserContext *s, const uint8_t *bs,
             av_log(avctx, AV_LOG_ERROR, "Unknown supported chroma format\n");
             return -1;
         }
-
-        // @note
-        // The current implementation of parse_sps function doesn't handle VUI parameters parsing.
-        // If it will be needed, parse_sps function could be extended to handle VUI parameters parsing
-        // to initialize fields of the AVCodecContex i.e. color_primaries, color_trc,color_range
-
-    } else if (nalu_type == EVC_PPS_NUT) { // NAL Unit type: PPS (Video Parameter Set)
+    } else if (nalu_type == EVC_PPS_NUT) {
         EVCParserPPS *pps;
 
-        pps = parse_pps(bits, bits_size, ev);
+        pps = parse_pps(buf, buf_size, ev);
         if (!pps) {
             av_log(avctx, AV_LOG_ERROR, "PPS parsing error\n");
-            return -1;
+            return AVERROR_INVALIDDATA;
         }
-    } else if (nalu_type == EVC_SEI_NUT) // NAL unit type: SEI (Supplemental Enhancement Information)
+    } else if (nalu_type == EVC_SEI_NUT) // Supplemental Enhancement Information
         return 0;
-    else if (nalu_type == EVC_IDR_NUT || nalu_type == EVC_NOIDR_NUT) { // NAL Unit type: Coded slice of a IDR or non-IDR picture
+    else if (nalu_type == EVC_IDR_NUT || nalu_type == EVC_NOIDR_NUT) { // Coded slice of a IDR or non-IDR picture
         EVCParserSliceHeader *sh;
 
-        sh = parse_slice_header(bits, bits_size, ev);
+        sh = parse_slice_header(buf, buf_size, ev);
         if (!sh) {
             av_log(avctx, AV_LOG_ERROR, "Slice header parsing error\n");
-            return -1;
+            return AVERROR_INVALIDDATA;
         }
         switch (sh->slice_type) {
         case EVC_SLICE_TYPE_B: {
@@ -558,8 +568,8 @@ static int parse_nal_units(AVCodecParserContext *s, const uint8_t *bs,
         }
         s->key_frame = (nalu_type == EVC_IDR_NUT) ? 1 : 0;
     } else {
-        av_log(avctx, AV_LOG_ERROR, "Invalid NAL unit type: %d\n", nalu_type);
-        return -1;
+        av_log(avctx, AV_LOG_ERROR, "Unknown NAL unit type: %d\n", nalu_type);
+        return 0;
     }
 
     return 0;
@@ -705,13 +715,18 @@ static int evc_parse(AVCodecParserContext *s, AVCodecContext *avctx,
 
     is_dummy_buf &= (dummy_buf == buf);
 
-    if (!is_dummy_buf)
-        parse_nal_units(s, buf, buf_size, avctx);
+    if (!is_dummy_buf) {
+        if (parse_nal_units(s, buf, buf_size, avctx) == AVERROR_INVALIDDATA) {
+            *poutbuf      = NULL;
+            *poutbuf_size = 0;
+            return buf_size;
+        }
+    }
 
     // poutbuf contains just one NAL unit
     *poutbuf      = buf;
     *poutbuf_size = buf_size;
-    ev->to_read -= next;
+    ev->to_read  -= next;
 
     return next;
 }

@@ -463,8 +463,7 @@ static int parse_nal_units(AVCodecParserContext *s, const uint8_t *buf,
 {
     EVCParserContext *ev = s->priv_data;
     int nalu_type, nalu_size;
-    
-    avctx->codec_id = AV_CODEC_ID_EVC;
+
     s->picture_structure = AV_PICTURE_STRUCTURE_FRAME;
     s->key_frame = -1;
 

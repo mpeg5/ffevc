@@ -526,12 +526,11 @@ static int parse_nal_units(AVCodecParserContext *s, const uint8_t *buf,
             return -1;
         }
 
-        // @note
-        // The current implementation of parse_sps function doesn't handle VUI parameters parsing.
-        // If it will be needed, parse_sps function could be extended to handle VUI parameters parsing
-        // to initialize fields of the AVCodecContex i.e. color_primaries, color_trc,color_range
-
-    } else if (nalu_type == EVC_PPS_NUT) { // NAL Unit type: PPS (Video Parameter Set)
+      // @note
+      // The current implementation of parse_sps function doesn't handle VUI parameters parsing.
+      // If it will be needed, parse_sps function could be extended to handle VUI parameters parsing
+      // to initialize fields of the AVCodecContex i.e. color_primaries, color_trc,color_range
+    } else if (nalu_type == EVC_PPS_NUT) {
         EVCParserPPS *pps;
 
         pps = parse_pps(buf, buf_size, ev);
@@ -539,9 +538,9 @@ static int parse_nal_units(AVCodecParserContext *s, const uint8_t *buf,
             av_log(avctx, AV_LOG_ERROR, "PPS parsing error\n");
             return -1;
         }
-    } else if (nalu_type == EVC_SEI_NUT) // NAL unit type: SEI (Supplemental Enhancement Information)
+    } else if (nalu_type == EVC_SEI_NUT) // Supplemental Enhancement Information
         return 0;
-    else if (nalu_type == EVC_IDR_NUT || nalu_type == EVC_NOIDR_NUT) { // NAL Unit type: Coded slice of a IDR or non-IDR picture
+    else if (nalu_type == EVC_IDR_NUT || nalu_type == EVC_NOIDR_NUT) { // Coded slice of a IDR or non-IDR picture
         EVCParserSliceHeader *sh;
 
         sh = parse_slice_header(buf, buf_size, ev);
@@ -568,8 +567,8 @@ static int parse_nal_units(AVCodecParserContext *s, const uint8_t *buf,
         }
         s->key_frame = (nalu_type == EVC_IDR_NUT) ? 1 : 0;
     } else {
-        av_log(avctx, AV_LOG_ERROR, "Invalid NAL unit type: %d\n", nalu_type);
-        return -1;
+        av_log(avctx, AV_LOG_ERROR, "Unknown NAL unit type: %d\n", nalu_type);
+        return 0;
     }
 
     return 0;

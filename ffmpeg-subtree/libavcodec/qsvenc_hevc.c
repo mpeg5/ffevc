@@ -294,7 +294,6 @@ static const FFCodecDefault qsv_enc_defaults[] = {
     { "qmin",      "-1"    },
     { "qmax",      "-1"    },
     { "trellis",   "-1"    },
-    { "flags",     "+cgop" },
     { NULL },
 };
 
@@ -310,12 +309,14 @@ const FFCodec ff_hevc_qsv_encoder = {
     .p.capabilities = AV_CODEC_CAP_DELAY | AV_CODEC_CAP_HYBRID,
     .p.pix_fmts     = (const enum AVPixelFormat[]){ AV_PIX_FMT_NV12,
                                                     AV_PIX_FMT_P010,
+                                                    AV_PIX_FMT_P012,
                                                     AV_PIX_FMT_YUYV422,
                                                     AV_PIX_FMT_Y210,
                                                     AV_PIX_FMT_QSV,
                                                     AV_PIX_FMT_BGRA,
                                                     AV_PIX_FMT_X2RGB10,
                                                     AV_PIX_FMT_VUYX,
+                                                    AV_PIX_FMT_XV30,
                                                     AV_PIX_FMT_NONE },
     .p.priv_class   = &class,
     .defaults       = qsv_enc_defaults,

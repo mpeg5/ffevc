@@ -1917,6 +1917,13 @@ static const AVCodecDescriptor codec_descriptors[] = {
         .props     = AV_CODEC_PROP_INTRA_ONLY | AV_CODEC_PROP_LOSSY,
     },
     {
+        .id        = AV_CODEC_ID_VQC,
+        .type      = AVMEDIA_TYPE_VIDEO,
+        .name      = "vqc",
+        .long_name = NULL_IF_CONFIG_SMALL("ViewQuest VQC"),
+        .props     = AV_CODEC_PROP_LOSSY,
+    },
+    {
         .id        = AV_CODEC_ID_EVC,
         .type      = AVMEDIA_TYPE_VIDEO,
         .name      = "evc",

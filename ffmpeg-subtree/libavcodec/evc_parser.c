@@ -476,12 +476,18 @@ static int parse_nal_units(AVCodecParserContext *s, const uint8_t *buf,
     buf += EVC_NAL_UNIT_LENGTH_BYTE;
     buf_size -= EVC_NAL_UNIT_LENGTH_BYTE;
 
+    // @see ISO_IEC_23094-1_2020, 7.4.2.2 NAL unit header semantic (Table 4 - NAL unit type codes and NAL unit type classes)
+    // @see enum EVCNALUnitType in evc.h
     nalu_type = get_nalu_type(buf, buf_size, avctx);
+    if (nalu_type < 0 || nalu_type > 62) {
+        av_log(avctx, AV_LOG_ERROR, "Invalid NAL unit type: (%d)\n", nalu_type);
+        return -1;
+    }
 
     buf += EVC_NAL_HEADER_SIZE;
     buf_size -= EVC_NAL_HEADER_SIZE;
 
-    if (nalu_type == EVC_SPS_NUT) { // NAL Unit type: SPS (Sequence Parameter Set)
+    if (nalu_type == EVC_SPS_NUT) {
         EVCParserSPS *sps;
 
         sps = parse_sps(buf, buf_size, ev);
@@ -498,7 +504,6 @@ static int parse_nal_units(AVCodecParserContext *s, const uint8_t *buf,
         if (sps->profile_idc == 1) avctx->profile = FF_PROFILE_EVC_MAIN;
         else avctx->profile = FF_PROFILE_EVC_BASELINE;
 
-        // Currently XEVD decoder supports ony YCBCR420_10LE chroma format for EVC stream
         switch (sps->chroma_format_idc) {
         case 0: /* YCBCR400_10LE */
             av_log(avctx, AV_LOG_ERROR, "YCBCR400_10LE: Not supported chroma format\n");

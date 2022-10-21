@@ -205,7 +205,7 @@ static void celt_frame_mdct(OpusEncContext *s, CeltFrame *f)
                 float *src2 = &b->samples[CELT_OVERLAP*t];
                 s->dsp->vector_fmul(win, src1, ff_celt_window, 128);
                 s->dsp->vector_fmul_reverse(&win[CELT_OVERLAP], src2,
-                                            ff_celt_window - 8, 128);
+                                            ff_celt_window_padded, 128);
                 src1 = src2;
                 s->tx_fn[0](s->tx[0], b->coeffs + t, win, sizeof(float)*f->blocks);
             }
@@ -226,7 +226,7 @@ static void celt_frame_mdct(OpusEncContext *s, CeltFrame *f)
 
             /* Samples, windowed */
             s->dsp->vector_fmul_reverse(temp, b->samples + rwin,
-                                        ff_celt_window - 8, 128);
+                                        ff_celt_window_padded, 128);
             memcpy(win + lap_dst + blk_len, temp, CELT_OVERLAP*sizeof(float));
 
             s->tx_fn[f->size](s->tx[f->size], b->coeffs, win, sizeof(float));
@@ -594,7 +594,7 @@ static int opus_encode_frame(AVCodecContext *avctx, AVPacket *avpkt,
     opus_packet_assembler(s, avpkt);
 
     /* Update the psychoacoustic system */
-    ff_opus_psy_postencode_update(&s->psyctx, s->frame, s->rc);
+    ff_opus_psy_postencode_update(&s->psyctx, s->frame);
 
     /* Remove samples from queue and skip if needed */
     ff_af_queue_remove(&s->afq, s->packet.frames*frame_size, &avpkt->pts, &avpkt->duration);

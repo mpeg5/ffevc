@@ -27,8 +27,6 @@
  * SpeedHQ encoder.
  */
 
-#include "config_components.h"
-
 #include "libavutil/thread.h"
 
 #include "avcodec.h"
@@ -38,9 +36,9 @@
 #include "mpegvideo.h"
 #include "mpegvideodata.h"
 #include "mpegvideoenc.h"
+#include "speedhq.h"
 #include "speedhqenc.h"
 
-extern RLTable ff_rl_speedhq;
 static uint8_t speedhq_static_rl_table_store[2][2*MAX_RUN + MAX_LEVEL + 3];
 
 /* Exactly the same as MPEG-2, except little-endian. */
@@ -280,7 +278,6 @@ int ff_speedhq_mb_y_order_to_mb(int mb_y_order, int mb_height, int *first_in_sli
     return mb_y_order * 4 + slice_num;
 }
 
-#if CONFIG_SPEEDHQ_ENCODER
 const FFCodec ff_speedhq_encoder = {
     .p.name         = "speedhq",
     CODEC_LONG_NAME("NewTek SpeedHQ"),
@@ -297,4 +294,3 @@ const FFCodec ff_speedhq_encoder = {
         AV_PIX_FMT_NONE
     },
 };
-#endif

@@ -320,6 +320,27 @@ static av_cold int dct_init(MpegEncContext *s)
     return 0;
 }
 
+av_cold void ff_init_scantable(const uint8_t *permutation, ScanTable *st,
+                               const uint8_t *src_scantable)
+{
+    int end;
+
+    st->scantable = src_scantable;
+
+    for (int i = 0; i < 64; i++) {
+        int j = src_scantable[i];
+        st->permutated[i] = permutation[j];
+    }
+
+    end = -1;
+    for (int i = 0; i < 64; i++) {
+        int j = st->permutated[i];
+        if (j > end)
+            end = j;
+        st->raster_end[i] = end;
+    }
+}
+
 av_cold void ff_mpv_idct_init(MpegEncContext *s)
 {
     if (s->codec_id == AV_CODEC_ID_MPEG4)
@@ -336,8 +357,10 @@ av_cold void ff_mpv_idct_init(MpegEncContext *s)
         ff_init_scantable(s->idsp.idct_permutation, &s->inter_scantable, ff_zigzag_direct);
         ff_init_scantable(s->idsp.idct_permutation, &s->intra_scantable, ff_zigzag_direct);
     }
-    ff_init_scantable(s->idsp.idct_permutation, &s->intra_h_scantable, ff_alternate_horizontal_scan);
-    ff_init_scantable(s->idsp.idct_permutation, &s->intra_v_scantable, ff_alternate_vertical_scan);
+    ff_permute_scantable(s->permutated_intra_h_scantable, ff_alternate_horizontal_scan,
+                         s->idsp.idct_permutation);
+    ff_permute_scantable(s->permutated_intra_v_scantable, ff_alternate_vertical_scan,
+                         s->idsp.idct_permutation);
 }
 
 static int init_duplicate_context(MpegEncContext *s)

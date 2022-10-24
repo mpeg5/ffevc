@@ -244,6 +244,7 @@ OBJS-$(CONFIG_AURA_DECODER)            += cyuv.o
 OBJS-$(CONFIG_AURA2_DECODER)           += aura.o
 OBJS-$(CONFIG_AV1_DECODER)             += av1dec.o
 OBJS-$(CONFIG_AV1_CUVID_DECODER)       += cuviddec.o
+OBJS-$(CONFIG_AV1_QSV_ENCODER)         += qsvenc_av1.o
 OBJS-$(CONFIG_AVRN_DECODER)            += avrndec.o
 OBJS-$(CONFIG_AVRP_DECODER)            += r210dec.o
 OBJS-$(CONFIG_AVRP_ENCODER)            += r210enc.o
@@ -660,7 +661,8 @@ OBJS-$(CONFIG_SOL_DPCM_DECODER)        += dpcm.o
 OBJS-$(CONFIG_SONIC_DECODER)           += sonic.o
 OBJS-$(CONFIG_SONIC_ENCODER)           += sonic.o
 OBJS-$(CONFIG_SONIC_LS_ENCODER)        += sonic.o
-OBJS-$(CONFIG_SPEEDHQ_DECODER)         += speedhq.o mpeg12.o mpeg12data.o
+OBJS-$(CONFIG_SPEEDHQ_DECODER)         += speedhqdec.o speedhq.o mpeg12.o \
+                                          mpeg12data.o
 OBJS-$(CONFIG_SPEEDHQ_ENCODER)         += speedhq.o mpeg12data.o mpeg12enc.o speedhqenc.o
 OBJS-$(CONFIG_SPEEX_DECODER)           += speexdec.o
 OBJS-$(CONFIG_SP5X_DECODER)            += sp5xdec.o

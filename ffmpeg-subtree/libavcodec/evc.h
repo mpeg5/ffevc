@@ -23,8 +23,8 @@
 #define AVCODEC_EVC_H
 
 // The length field that indicates the length in bytes of the following NAL unit is configured to be of 4 bytes
-#define EVC_NAL_UNIT_LENGTH_BYTE        (4)  /* byte */
-#define EVC_NAL_HEADER_SIZE             (2)  /* byte */
+#define EVC_NALU_LENGTH_PREFIX_SIZE     (4)  /* byte */
+#define EVC_NALU_HEADER_SIZE            (2)  /* byte */
 
 /**
  * @see ISO_IEC_23094-1_2020, 7.4.2.2 NAL unit header semantic

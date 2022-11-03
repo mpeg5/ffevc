@@ -265,7 +265,7 @@ static int libxevd_receive_frame(AVCodecContext *avctx, AVFrame *frame)
         XEVD_IMGB *imgb = NULL;
 
         xevd_ret = xevd_pull(xectx->id, &imgb);
-        if(XEVD_SUCCEEDED(ret)) {
+        if (XEVD_SUCCEEDED(ret)) {
             if (imgb) {
 
                 int ret = libxevd_image_copy(avctx, imgb, frame);
@@ -307,7 +307,7 @@ static int libxevd_receive_frame(AVCodecContext *avctx, AVFrame *frame)
         if (pkt.size) {
 
             bs_read_pos = 0;
-            while(pkt.size > (bs_read_pos + XEVD_NAL_UNIT_LENGTH_BYTE)) {
+            while (pkt.size > (bs_read_pos + XEVD_NAL_UNIT_LENGTH_BYTE)) {
 
                 nalu_size = read_nal_unit_length(pkt.data + bs_read_pos, XEVD_NAL_UNIT_LENGTH_BYTE, avctx);
                 if (nalu_size == 0) {
@@ -388,12 +388,10 @@ const FFCodec ff_libxevd_decoder = {
     .p.type             = AVMEDIA_TYPE_VIDEO,
     .p.id               = AV_CODEC_ID_EVC,
     .init               = libxevd_init,
-    // FF_CODEC_DECODE_CB(libxevd_decode),
     FF_CODEC_RECEIVE_FRAME_CB(libxevd_receive_frame),
     .close              = libxevd_close,
     .priv_data_size     = sizeof(XevdContext),
     .p.priv_class       = &libxevd_class,
-    // .p.capabilities     = AV_CODEC_CAP_DELAY | AV_CODEC_CAP_OTHER_THREADS | AV_CODEC_CAP_AVOID_PROBING | AV_CODEC_CAP_DR1,
     .p.capabilities     = AV_CODEC_CAP_DELAY | AV_CODEC_CAP_OTHER_THREADS | AV_CODEC_CAP_AVOID_PROBING,
     .p.profiles         = NULL_IF_CONFIG_SMALL(ff_evc_profiles),
     .p.wrapper_name     = "libxevd",

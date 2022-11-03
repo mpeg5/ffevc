@@ -39,7 +39,7 @@ static int get_nalu_type(const uint8_t *bits, int bits_size)
 {
     int unit_type_plus1 = 0;
 
-    if(bits_size >= EVC_NALU_HEADER_SIZE) {
+    if (bits_size >= EVC_NALU_HEADER_SIZE) {
         unsigned char *p = (unsigned char *)bits;
         // forbidden_zero_bit
         if ((p[0] & 0x80) != 0) { // Cannot get bitstream information. Malformed bitstream.
@@ -57,17 +57,17 @@ static uint32_t read_nal_unit_length(const uint8_t *bits, int bits_size)
 {
     uint32_t nalu_len = 0;
 
-    if(bits_size >= EVC_NALU_LENGTH_PREFIX_SIZE) {
+    if (bits_size >= EVC_NALU_LENGTH_PREFIX_SIZE) {
 
         int t = 0;
         unsigned char *p = (unsigned char *)bits;
 
-        for(int i=0; i<EVC_NALU_LENGTH_PREFIX_SIZE; i++) {
+        for (int i=0; i<EVC_NALU_LENGTH_PREFIX_SIZE; i++) {
             t = (t << 8) | p[i];
         }
 
         nalu_len = t;
-        if(nalu_len == 0) { // Invalid bitstream size
+        if (nalu_len == 0) { // Invalid bitstream size
             return 0;
         }
     }
@@ -82,10 +82,10 @@ static int parse_nal_units(const AVProbeData *p, EVCParserContext *ev)
     unsigned char *bits = (unsigned char *)p->buf;
     int bytes_to_read = p->buf_size;
 
-    while(bytes_to_read > EVC_NALU_LENGTH_PREFIX_SIZE) {
+    while (bytes_to_read > EVC_NALU_LENGTH_PREFIX_SIZE) {
 
         nalu_size = read_nal_unit_length(bits, EVC_NALU_LENGTH_PREFIX_SIZE);
-        if(nalu_size == 0) break;
+        if (nalu_size == 0) break;
 
         bits += EVC_NALU_LENGTH_PREFIX_SIZE;
         bytes_to_read -= EVC_NALU_LENGTH_PREFIX_SIZE;

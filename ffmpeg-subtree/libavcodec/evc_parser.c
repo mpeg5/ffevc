@@ -661,7 +661,7 @@ static int evc_find_frame_end(AVCodecParserContext *s, const uint8_t *buf,
 
     while ((buf_size-bytes_read)>0) {
 
-        if(ctx->to_read == 0) {
+        if (ctx->to_read == 0) {
             int nal_unit_size = 0;
 
             // This is the case when buffer size is not enough for buffer to store NAL unit 4-bytes prefix (length)
@@ -679,7 +679,7 @@ static int evc_find_frame_end(AVCodecParserContext *s, const uint8_t *buf,
             }
             return bytes_read;
         } else {
-            if(ctx->to_read < (buf_size - bytes_read)) {
+            if (ctx->to_read < (buf_size - bytes_read)) {
                 int next = ctx->to_read;
 
                 if (ctx->incomplete_nalu_prefix_read  == 1) {

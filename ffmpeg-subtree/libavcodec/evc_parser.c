@@ -182,10 +182,10 @@ typedef struct EVCParserContext {
     EVCParserSPS sps[EVC_MAX_SPS_COUNT];
     EVCParserPPS pps[EVC_MAX_PPS_COUNT];
     EVCParserSliceHeader slice_header[EVC_MAX_PPS_COUNT];
-    int is_avc;
-    int nal_length_size;
-    int to_read;
+    int to_read; // number of bytes of NAL unit that did not fit into the previous buffer and must be read from the new buffer
     int incomplete_nalu_prefix_read; // The flag is set to 1 when an incomplete NAL unit prefix has been read
+    int incomplete_nalu_header_read; // The flag is set to 1 when an incomplete NAL unit header has been read
+    int nuh_temporal_id; // the value of TemporalId shall be the same for all VCL NAL units of an access unit
 
 } EVCParserContext;
 
@@ -193,7 +193,7 @@ static int get_nalu_type(const uint8_t *bits, int bits_size, AVCodecContext *avc
 {
     int unit_type_plus1 = 0;
 
-    if (bits_size >= EVC_NAL_HEADER_SIZE) {
+    if (bits_size >= EVC_NALU_HEADER_SIZE) {
         unsigned char *p = (unsigned char *)bits;
         // forbidden_zero_bit
         if ((p[0] & 0x80) != 0)
@@ -210,12 +210,12 @@ static uint32_t read_nal_unit_length(const uint8_t *bits, int bits_size, AVCodec
 {
     uint32_t nalu_len = 0;
 
-    if (bits_size >= EVC_NAL_UNIT_LENGTH_BYTE) {
+    if (bits_size >= EVC_NALU_LENGTH_PREFIX_SIZE) {
 
         int t = 0;
         unsigned char *p = (unsigned char *)bits;
 
-        for (int i = 0; i < EVC_NAL_UNIT_LENGTH_BYTE; i++)
+        for (int i = 0; i < EVC_NALU_LENGTH_PREFIX_SIZE; i++)
             t = (t << 8) | p[i];
 
         nalu_len = t;
@@ -479,8 +479,8 @@ static int parse_nal_units(AVCodecParserContext *s, const uint8_t *buf,
         return AVERROR_INVALIDDATA;
     }
 
-    buf += EVC_NAL_UNIT_LENGTH_BYTE;
-    buf_size -= EVC_NAL_UNIT_LENGTH_BYTE;
+    buf += EVC_NALU_LENGTH_PREFIX_SIZE;
+    buf_size -= EVC_NALU_LENGTH_PREFIX_SIZE;
 
     // @see ISO_IEC_23094-1_2020, 7.4.2.2 NAL unit header semantic (Table 4 - NAL unit type codes and NAL unit type classes)
     // @see enum EVCNALUnitType in evc.h
@@ -490,8 +490,8 @@ static int parse_nal_units(AVCodecParserContext *s, const uint8_t *buf,
         return AVERROR_INVALIDDATA;
     }
 
-    buf += EVC_NAL_HEADER_SIZE;
-    buf_size -= EVC_NAL_HEADER_SIZE;
+    buf += EVC_NALU_HEADER_SIZE;
+    buf_size -= EVC_NALU_HEADER_SIZE;
 
     if (nalu_type == EVC_SPS_NUT) {
         EVCParserSPS *sps;
@@ -576,119 +576,138 @@ static int parse_nal_units(AVCodecParserContext *s, const uint8_t *buf,
 }
 
 /**
+ * @brief Reconstruct length of NALU from incomplete data
+ * Assemble NALU prefix if it is split between 2 buffers
+ *
+ * This is the case when buffer size is not enough for the buffer to store NAL unit prefix.
+ * In this case, we have to get part of the prefix from the previous buffer and assemble it with the rest from the current buffer.
+ * Then we'll be able to read NAL unit size.
+ *
+ */
+static int evc_assemble_nalu_prefix(AVCodecParserContext *s, const uint8_t *buf,
+                              int buf_size, AVCodecContext *avctx)
+{
+    EVCParserContext *ctx = s->priv_data;
+    ParseContext     *pc = &ctx->pc;
+
+    uint8_t nalu_len[EVC_NALU_LENGTH_PREFIX_SIZE] = {0};
+    int nal_unit_size = 0;
+
+    // 1. pc->buffer contains previously read bytes of NALU prefix
+    // 2. buf contains the rest of NAL unit prefix bytes
+    //
+    // ~~~~~~~
+    // EXAMPLE
+    // ~~~~~~~
+    //
+    // In the following example we assumed that the number of already read NAL Unit prefix bytes is equal 1
+    //
+    // ----------
+    // pc->buffer -> conatins already read bytes
+    // ----------
+    //              __ pc->index == 1
+    //             |
+    //             V
+    // -------------------------------------------------------
+    // |   0   |   1   |   2   |   3   |   4   | ... |   N   |
+    // -------------------------------------------------------
+    // |  0x00 |  0xXX |  0xXX |  0xXX |  0xXX | ... |  0xXX |
+    // -------------------------------------------------------
+    //
+    // ----------
+    // buf -> contains newly read bytes
+    // ----------
+    // -------------------------------------------------------
+    // |   0   |   1   |   2   |   3   |   4   | ... |   N   |
+    // -------------------------------------------------------
+    // |  0x00 |  0x00 |  0x3C |  0xXX |  0xXX | ... |  0xXX |
+    // -------------------------------------------------------
+    //
+    for (int i = 0; i < EVC_NALU_LENGTH_PREFIX_SIZE; i++) {
+        if (i < pc->index)
+            nalu_len[i] = pc->buffer[i];
+        else
+            nalu_len[i] = buf[i - pc->index];
+    }
+
+    // ----------
+    // nalu_len
+    // ----------
+    // ---------------------------------
+    // |   0   |   1   |   2   |   3   |
+    // ---------------------------------
+    // |  0x00 |  0x00 |  0x00 |  0x3C |
+    // ---------------------------------
+    // | NALU LENGTH                   |
+    // ---------------------------------
+    // NAL Unit lenght =  60 (0x0000003C)
+
+    nal_unit_size = read_nal_unit_length(nalu_len, EVC_NALU_LENGTH_PREFIX_SIZE, avctx);
+
+    return nal_unit_size;
+}
+
+/**
  * Find the end of the current frame in the bitstream.
  * @return the position of the first byte of the next frame, or END_NOT_FOUND
  */
 static int evc_find_frame_end(AVCodecParserContext *s, const uint8_t *buf,
                               int buf_size, AVCodecContext *avctx)
 {
-    EVCParserContext *ev = s->priv_data;
+    EVCParserContext *ctx = s->priv_data;
+    ParseContext     *pc = &ctx->pc;
 
-    if (!ev->to_read) {
-        int nal_unit_size = 0;
-        int next = END_NOT_FOUND;
+    int bytes_read = 0;
 
-        // This is the case when buffer size is not enough for buffer to store NAL unit length
-        if (buf_size < EVC_NAL_UNIT_LENGTH_BYTE) {
-            ev->to_read = EVC_NAL_UNIT_LENGTH_BYTE;
-            ev->nal_length_size = buf_size;
-            ev->incomplete_nalu_prefix_read  = 1;
+    while ((buf_size-bytes_read)>0) {
 
-            return END_NOT_FOUND;
-        }
-
-        nal_unit_size = read_nal_unit_length(buf, buf_size, avctx);
-        ev->nal_length_size = EVC_NAL_UNIT_LENGTH_BYTE;
-
-        next = nal_unit_size + EVC_NAL_UNIT_LENGTH_BYTE;
-        ev->to_read = next;
-        if (next < buf_size)
-            return next;
-        else
-            return END_NOT_FOUND;
-    } else if (ev->to_read > buf_size)
-        return END_NOT_FOUND;
-    else {
-        if (ev->incomplete_nalu_prefix_read  == 1) {
-            EVCParserContext *ev = s->priv_data;
-            ParseContext *pc = &ev->pc;
-            uint8_t nalu_len[EVC_NAL_UNIT_LENGTH_BYTE] = {0};
+        if (ctx->to_read == 0) {
             int nal_unit_size = 0;
 
-            // 1. pc->buffer contains previously read bytes of NALU prefix
-            // 2. buf contains the rest of NAL unit prefix bytes
-            //
-            // ~~~~~~~
-            // EXAMPLE
-            // ~~~~~~~
-            //
-            // In the following example we assumed that the number of already read NAL Unit prefix bytes is equal 1
-            //
-            // ----------
-            // pc->buffer -> conatins already read bytes
-            // ----------
-            //              __ pc->index == 1
-            //             |
-            //             V
-            // -------------------------------------------------------
-            // |   0   |   1   |   2   |   3   |   4   | ... |   N   |
-            // -------------------------------------------------------
-            // |  0x00 |  0xXX |  0xXX |  0xXX |  0xXX | ... |  0xXX |
-            // -------------------------------------------------------
-            //
-            // ----------
-            // buf -> contains newly read bytes
-            // ----------
-            // -------------------------------------------------------
-            // |   0   |   1   |   2   |   3   |   4   | ... |   N   |
-            // -------------------------------------------------------
-            // |  0x00 |  0x00 |  0x3C |  0xXX |  0xXX | ... |  0xXX |
-            // -------------------------------------------------------
-            //
-            for (int i = 0; i < EVC_NAL_UNIT_LENGTH_BYTE; i++) {
-                if (i < pc->index)
-                    nalu_len[i] = pc->buffer[i];
-                else
-                    nalu_len[i] = buf[i - pc->index];
+            // This is the case when buffer size is not enough for buffer to store NAL unit 4-bytes prefix (length)
+            if ((buf_size-bytes_read) < EVC_NALU_LENGTH_PREFIX_SIZE) {
+                ctx->to_read = EVC_NALU_LENGTH_PREFIX_SIZE - (bytes_read - buf_size);
+                ctx->incomplete_nalu_prefix_read  = 1;
+                return END_NOT_FOUND;
             }
 
-            // ----------
-            // nalu_len
-            // ----------
-            // ---------------------------------
-            // |   0   |   1   |   2   |   3   |
-            // ---------------------------------
-            // |  0x00 |  0x00 |  0x00 |  0x3C |
-            // ---------------------------------
-            // | NALU LENGTH                   |
-            // ---------------------------------
-            // NAL Unit lenght =  60 (0x0000003C)
-
-            nal_unit_size = read_nal_unit_length(nalu_len, EVC_NAL_UNIT_LENGTH_BYTE, avctx);
-
-            ev->to_read = nal_unit_size + EVC_NAL_UNIT_LENGTH_BYTE - pc->index;
-
-            ev->incomplete_nalu_prefix_read = 0;
-
-            if (ev->to_read > buf_size)
+            nal_unit_size = read_nal_unit_length(buf, buf_size, avctx);
+            bytes_read = nal_unit_size + EVC_NALU_LENGTH_PREFIX_SIZE;
+            if ((buf_size-bytes_read)<0) {
+                ctx->to_read = bytes_read - buf_size;
                 return END_NOT_FOUND;
-            else
-                return ev->to_read;
+            }
+            return bytes_read;
+        } else {
+            if (ctx->to_read < (buf_size - bytes_read)) {
+                int next = ctx->to_read;
+
+                if (ctx->incomplete_nalu_prefix_read  == 1) {
+                    int nal_unit_size = evc_assemble_nalu_prefix(s, buf, buf_size,avctx);
+                    bytes_read = nal_unit_size + EVC_NALU_LENGTH_PREFIX_SIZE - pc->index;
+
+                    ctx->incomplete_nalu_prefix_read = 0;
+
+                    if ((buf_size - bytes_read)<0) {
+                        ctx->to_read = bytes_read - buf_size;
+                        return END_NOT_FOUND;
+                    }
+                    else {
+                        ctx->to_read = 0;
+                        return bytes_read;
+                    }
+                }
+
+                ctx->to_read = 0;
+                return next;
+            } else {
+                ctx->to_read = ctx->to_read - (buf_size - bytes_read);
+                return END_NOT_FOUND;
+            }
         }
-        return ev->to_read;
     }
 
     return END_NOT_FOUND;
-}
-
-static int evc_parser_init(AVCodecParserContext *s)
-{
-    EVCParserContext *ev = s->priv_data;
-
-    ev->nal_length_size = EVC_NAL_UNIT_LENGTH_BYTE;
-    ev->incomplete_nalu_prefix_read = 0;
-
-    return 0;
 }
 
 static int evc_parse(AVCodecParserContext *s, AVCodecContext *avctx,
@@ -708,7 +727,6 @@ static int evc_parse(AVCodecParserContext *s, AVCodecContext *avctx,
         if (ff_combine_frame(pc, next, &buf, &buf_size) < 0) {
             *poutbuf      = NULL;
             *poutbuf_size = 0;
-            ev->to_read -= buf_size;
             return buf_size;
         }
     }
@@ -726,9 +744,17 @@ static int evc_parse(AVCodecParserContext *s, AVCodecContext *avctx,
     // poutbuf contains just one NAL unit
     *poutbuf      = buf;
     *poutbuf_size = buf_size;
-    ev->to_read  -= next;
 
     return next;
+}
+
+static int evc_parser_init(AVCodecParserContext *s)
+{
+    EVCParserContext *ev = s->priv_data;
+
+    ev->incomplete_nalu_prefix_read = 0;
+
+    return 0;
 }
 
 const AVCodecParser ff_evc_parser = {

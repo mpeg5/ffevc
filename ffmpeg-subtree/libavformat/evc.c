@@ -29,8 +29,8 @@
 #include "avio_internal.h"
 
 // The length field that indicates the length in bytes of the following NAL unit is configured to be of 4 bytes
-#define EVC_NAL_UNIT_LENGTH_BYTE        (4)  /* byte */
-#define EVC_NAL_HEADER_SIZE             (2)  /* byte */
+#define EVC_NALU_LENGTH_PREFIX_SIZE        (4)  /* byte */
+#define EVC_NALU_HEADER_SIZE             (2)  /* byte */
 
 // @see ISO/IEC 14496-15:2021 Coding of audio-visual objects - Part 15: section 12.3.3.1
 enum {
@@ -127,7 +127,7 @@ static int get_nalu_type(const uint8_t *bits, int bits_size)
 {
     int unit_type_plus1 = 0;
 
-    if (bits_size >= EVC_NAL_HEADER_SIZE) {
+    if (bits_size >= EVC_NALU_HEADER_SIZE) {
         unsigned char *p = (unsigned char *)bits;
         // forbidden_zero_bit
         if ((p[0] & 0x80) != 0)
@@ -144,10 +144,10 @@ static uint32_t read_nal_unit_length(const uint8_t *bits, int bits_size)
 {
     uint32_t nalu_len = 0;
 
-    if (bits_size >= EVC_NAL_UNIT_LENGTH_BYTE) {
+    if (bits_size >= EVC_NALU_LENGTH_PREFIX_SIZE) {
 
         int t = 0;
-        for (int i = 0; i < EVC_NAL_UNIT_LENGTH_BYTE; i++)
+        for (int i = 0; i < EVC_NALU_LENGTH_PREFIX_SIZE; i++)
             t = (t << 8) | bits[i];
 
         nalu_len = t;
@@ -403,12 +403,12 @@ int ff_isom_write_evcc(AVIOContext *pb, const uint8_t *data,
 
     evcc_init(&evcc);
 
-    while (bytes_to_read > EVC_NAL_UNIT_LENGTH_BYTE) {
-        nalu_size = read_nal_unit_length(data, EVC_NAL_UNIT_LENGTH_BYTE);
+    while (bytes_to_read > EVC_NALU_LENGTH_PREFIX_SIZE) {
+        nalu_size = read_nal_unit_length(data, EVC_NALU_LENGTH_PREFIX_SIZE);
         if (nalu_size == 0) break;
 
-        data += EVC_NAL_UNIT_LENGTH_BYTE;
-        bytes_to_read -= EVC_NAL_UNIT_LENGTH_BYTE;
+        data += EVC_NALU_LENGTH_PREFIX_SIZE;
+        bytes_to_read -= EVC_NALU_LENGTH_PREFIX_SIZE;
 
         if (bytes_to_read < nalu_size) break;
 

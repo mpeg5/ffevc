@@ -226,6 +226,30 @@ static uint32_t read_nal_unit_length(const uint8_t *bits, int bits_size, AVCodec
     return nalu_len;
 }
 
+// nuh_temporal_id specifies a temporal identifier for the NAL unit
+static int get_temporal_id(const uint8_t *bits, int bits_size, AVCodecContext *avctx)
+{
+    int temporal_id = 0;
+    short t = 0;
+
+    if (bits_size >= EVC_NALU_HEADER_SIZE) {
+        unsigned char *p = (unsigned char *)bits;
+        // forbidden_zero_bit
+        if ((p[0] & 0x80) != 0)
+            return -1;
+
+        for (int i = 0; i < EVC_NALU_HEADER_SIZE; i++)
+            t = (t << 8) | p[i];
+
+        // short mask = 0x01C0;
+        // t = t & mask;
+        temporal_id = (t >> 6) & 0x0007;
+        // temporal_id = (t >> 9) & 0x3F; // type
+    }
+
+    return temporal_id;
+}
+
 // @see ISO_IEC_23094-1 (7.3.2.1 SPS RBSP syntax)
 static EVCParserSPS *parse_sps(const uint8_t *bs, int bs_size, EVCParserContext *ev)
 {
@@ -469,109 +493,120 @@ static int parse_nal_units(AVCodecParserContext *s, const uint8_t *buf,
 {
     EVCParserContext *ev = s->priv_data;
     int nalu_type, nalu_size;
+    const uint8_t *data = buf;
+    int data_size = buf_size; 
 
     s->picture_structure = AV_PICTURE_STRUCTURE_FRAME;
     s->key_frame = -1;
+    
+    while (data_size > EVC_NALU_LENGTH_PREFIX_SIZE) {
 
-    nalu_size = read_nal_unit_length(buf, buf_size, avctx);
-    if (nalu_size <= 0) {
-        av_log(avctx, AV_LOG_ERROR, "Invalid NAL unit size: (%d)\n", nalu_size);
-        return AVERROR_INVALIDDATA;
-    }
-
-    buf += EVC_NALU_LENGTH_PREFIX_SIZE;
-    buf_size -= EVC_NALU_LENGTH_PREFIX_SIZE;
-
-    // @see ISO_IEC_23094-1_2020, 7.4.2.2 NAL unit header semantic (Table 4 - NAL unit type codes and NAL unit type classes)
-    // @see enum EVCNALUnitType in evc.h
-    nalu_type = get_nalu_type(buf, buf_size, avctx);
-    if (nalu_type < EVC_NOIDR_NUT || nalu_type > EVC_UNSPEC_NUT62) {
-        av_log(avctx, AV_LOG_ERROR, "Invalid NAL unit type: (%d)\n", nalu_type);
-        return AVERROR_INVALIDDATA;
-    }
-
-    buf += EVC_NALU_HEADER_SIZE;
-    buf_size -= EVC_NALU_HEADER_SIZE;
-
-    if (nalu_type == EVC_SPS_NUT) {
-        EVCParserSPS *sps;
-
-        sps = parse_sps(buf, buf_size, ev);
-        if (!sps) {
-            av_log(avctx, AV_LOG_ERROR, "SPS parsing error\n");
+        nalu_size = read_nal_unit_length(data, data_size, avctx);
+        if (nalu_size <= 0) {
+            av_log(avctx, AV_LOG_ERROR, "Invalid NAL unit size: (%d)\n", nalu_size);
             return AVERROR_INVALIDDATA;
         }
 
-        s->coded_width         = sps->pic_width_in_luma_samples;
-        s->coded_height        = sps->pic_height_in_luma_samples;
-        s->width               = sps->pic_width_in_luma_samples;
-        s->height              = sps->pic_height_in_luma_samples;
-
-        if (sps->profile_idc == 1) avctx->profile = FF_PROFILE_EVC_MAIN;
-        else avctx->profile = FF_PROFILE_EVC_BASELINE;
-
-        switch (sps->chroma_format_idc) {
-        case 0: /* YCBCR400_10LE */
-            av_log(avctx, AV_LOG_ERROR, "YCBCR400_10LE: Not supported chroma format\n");
-            s->format = AV_PIX_FMT_GRAY10LE;
-            return -1;
-        case 1: /* YCBCR420_10LE */
-            s->format = AV_PIX_FMT_YUV420P10LE;
-            break;
-        case 2: /* YCBCR422_10LE */
-            av_log(avctx, AV_LOG_ERROR, "YCBCR422_10LE: Not supported chroma format\n");
-            s->format = AV_PIX_FMT_YUV422P10LE;
-            return -1;
-        case 3: /* YCBCR444_10LE */
-            av_log(avctx, AV_LOG_ERROR, "YCBCR444_10LE: Not supported chroma format\n");
-            s->format = AV_PIX_FMT_YUV444P10LE;
-            return -1;
-        default:
-            s->format = AV_PIX_FMT_NONE;
-            av_log(avctx, AV_LOG_ERROR, "Unknown supported chroma format\n");
-            return -1;
-        }
-    } else if (nalu_type == EVC_PPS_NUT) {
-        EVCParserPPS *pps;
-
-        pps = parse_pps(buf, buf_size, ev);
-        if (!pps) {
-            av_log(avctx, AV_LOG_ERROR, "PPS parsing error\n");
+        data += EVC_NALU_LENGTH_PREFIX_SIZE;
+        data_size -= EVC_NALU_LENGTH_PREFIX_SIZE;
+        
+        // @see ISO_IEC_23094-1_2020, 7.4.2.2 NAL unit header semantic (Table 4 - NAL unit type codes and NAL unit type classes)
+        // @see enum EVCNALUnitType in evc.h
+        nalu_type = get_nalu_type(data, data_size, avctx);
+        if (nalu_type < EVC_NOIDR_NUT || nalu_type > EVC_UNSPEC_NUT62) {
+            av_log(avctx, AV_LOG_ERROR, "Invalid NAL unit type: (%d)\n", nalu_type);
             return AVERROR_INVALIDDATA;
         }
-    } else if (nalu_type == EVC_SEI_NUT) // Supplemental Enhancement Information
-        return 0;
-    else if (nalu_type == EVC_IDR_NUT || nalu_type == EVC_NOIDR_NUT) { // Coded slice of a IDR or non-IDR picture
-        EVCParserSliceHeader *sh;
 
-        sh = parse_slice_header(buf, buf_size, ev);
-        if (!sh) {
-            av_log(avctx, AV_LOG_ERROR, "Slice header parsing error\n");
+        if(data_size < nalu_size) {
+            av_log(avctx, AV_LOG_ERROR, "NAL unit does not fit in the data buffer\n");
             return AVERROR_INVALIDDATA;
         }
-        switch (sh->slice_type) {
-        case EVC_SLICE_TYPE_B: {
-            s->pict_type =  AV_PICTURE_TYPE_B;
-            break;
+
+        data += EVC_NALU_HEADER_SIZE;
+        data_size -= EVC_NALU_HEADER_SIZE;
+                
+        if (nalu_type == EVC_SPS_NUT) {
+            EVCParserSPS *sps;
+
+            sps = parse_sps(data, nalu_size, ev);
+            if (!sps) {
+                av_log(avctx, AV_LOG_ERROR, "SPS parsing error\n");
+                return AVERROR_INVALIDDATA;
+            }
+
+            s->coded_width         = sps->pic_width_in_luma_samples;
+            s->coded_height        = sps->pic_height_in_luma_samples;
+            s->width               = sps->pic_width_in_luma_samples;
+            s->height              = sps->pic_height_in_luma_samples;
+
+            if (sps->profile_idc == 1) avctx->profile = FF_PROFILE_EVC_MAIN;
+            else avctx->profile = FF_PROFILE_EVC_BASELINE;
+
+            switch (sps->chroma_format_idc) {
+            case 0: /* YCBCR400_10LE */
+                av_log(avctx, AV_LOG_ERROR, "YCBCR400_10LE: Not supported chroma format\n");
+                s->format = AV_PIX_FMT_GRAY10LE;
+                return -1;
+            case 1: /* YCBCR420_10LE */
+                s->format = AV_PIX_FMT_YUV420P10LE;
+                break;
+            case 2: /* YCBCR422_10LE */
+                av_log(avctx, AV_LOG_ERROR, "YCBCR422_10LE: Not supported chroma format\n");
+                s->format = AV_PIX_FMT_YUV422P10LE;
+                return -1;
+            case 3: /* YCBCR444_10LE */
+                av_log(avctx, AV_LOG_ERROR, "YCBCR444_10LE: Not supported chroma format\n");
+                s->format = AV_PIX_FMT_YUV444P10LE;
+                return -1;
+            default:
+                s->format = AV_PIX_FMT_NONE;
+                av_log(avctx, AV_LOG_ERROR, "Unknown supported chroma format\n");
+                return -1;
+            }
+        } else if (nalu_type == EVC_PPS_NUT) {
+            EVCParserPPS *pps;
+
+            pps = parse_pps(data, nalu_size, ev);
+            if (!pps) {
+                av_log(avctx, AV_LOG_ERROR, "PPS parsing error\n");
+                return AVERROR_INVALIDDATA;
+            }
+        } else if (nalu_type == EVC_SEI_NUT) // Supplemental Enhancement Information
+            return 0;
+        else if (nalu_type == EVC_IDR_NUT || nalu_type == EVC_NOIDR_NUT) { // Coded slice of a IDR or non-IDR picture
+            EVCParserSliceHeader *sh;
+
+            sh = parse_slice_header(data, nalu_size, ev);
+            if (!sh) {
+                av_log(avctx, AV_LOG_ERROR, "Slice header parsing error\n");
+                return AVERROR_INVALIDDATA;
+            }
+            switch (sh->slice_type) {
+            case EVC_SLICE_TYPE_B: {
+                s->pict_type =  AV_PICTURE_TYPE_B;
+                break;
+            }
+            case EVC_SLICE_TYPE_P: {
+                s->pict_type =  AV_PICTURE_TYPE_P;
+                break;
+            }
+            case EVC_SLICE_TYPE_I: {
+                s->pict_type =  AV_PICTURE_TYPE_I;
+                break;
+            }
+            default: {
+                s->pict_type =  AV_PICTURE_TYPE_NONE;
+            }
+            }
+            s->key_frame = (nalu_type == EVC_IDR_NUT) ? 1 : 0;
+        } else {
+            av_log(avctx, AV_LOG_ERROR, "Unknown NAL unit type: %d\n", nalu_type);
+            return 0;
         }
-        case EVC_SLICE_TYPE_P: {
-            s->pict_type =  AV_PICTURE_TYPE_P;
-            break;
-        }
-        case EVC_SLICE_TYPE_I: {
-            s->pict_type =  AV_PICTURE_TYPE_I;
-            break;
-        }
-        default: {
-            s->pict_type =  AV_PICTURE_TYPE_NONE;
-        }
-        }
-        s->key_frame = (nalu_type == EVC_IDR_NUT) ? 1 : 0;
-    } else {
-        av_log(avctx, AV_LOG_ERROR, "Unknown NAL unit type: %d\n", nalu_type);
-        return 0;
+        data += (nalu_size - EVC_NALU_HEADER_SIZE);
+        data_size -= (nalu_size - EVC_NALU_HEADER_SIZE);
     }
-
     return 0;
 }
 
@@ -648,6 +683,29 @@ static int evc_assemble_nalu_prefix(AVCodecParserContext *s, const uint8_t *buf,
 }
 
 /**
+ * Read the value of nuh_temporal_id from current NAL Unit header 
+ * and compare it to the previously stored nuh_temporal_id.
+ * 
+ * If the the value of the nuh_temporal_id for the current NALU is different
+ * than the nuh_temporal_id for the previous NALU it means that the current NALU is a part of new Access Unit.
+ *  
+ * @return 1 if the new access unit detected, 0 otherwise 
+ */
+static int new_access_unit_detected(AVCodecParserContext *s, const uint8_t *buf, int buf_size, AVCodecContext *avctx)
+{
+    EVCParserContext *ctx = s->priv_data;
+    
+    if (buf_size >= EVC_NALU_HEADER_SIZE) {
+        int t_id = get_temporal_id(buf, buf_size, avctx);
+        if(t_id != ctx->nuh_temporal_id) {
+            ctx->nuh_temporal_id = t_id;
+            return 1;
+        }
+    }
+    return 0;
+}
+
+/**
  * Find the end of the current frame in the bitstream.
  * @return the position of the first byte of the next frame, or END_NOT_FOUND
  */
@@ -656,28 +714,150 @@ static int evc_find_frame_end(AVCodecParserContext *s, const uint8_t *buf,
 {
     EVCParserContext *ctx = s->priv_data;
     ParseContext     *pc = &ctx->pc;
+    
+    const uint8_t *data = buf;
+    int data_size = buf_size; 
 
     int bytes_read = 0;
 
-    while ((buf_size-bytes_read)>0) {
+    while (data_size > 0) {
 
         if (ctx->to_read == 0) {
             int nal_unit_size = 0;
 
             // This is the case when buffer size is not enough for buffer to store NAL unit 4-bytes prefix (length)
-            if ((buf_size-bytes_read) < EVC_NALU_LENGTH_PREFIX_SIZE) {
-                ctx->to_read = EVC_NALU_LENGTH_PREFIX_SIZE - (bytes_read - buf_size);
+            if (data_size < EVC_NALU_LENGTH_PREFIX_SIZE) {
+                ctx->to_read = EVC_NALU_LENGTH_PREFIX_SIZE - data_size;
                 ctx->incomplete_nalu_prefix_read  = 1;
                 return END_NOT_FOUND;
             }
 
-            nal_unit_size = read_nal_unit_length(buf, buf_size, avctx);
-            bytes_read = nal_unit_size + EVC_NALU_LENGTH_PREFIX_SIZE;
-            if ((buf_size-bytes_read)<0) {
-                ctx->to_read = bytes_read - buf_size;
+            nal_unit_size = read_nal_unit_length(data, data_size, avctx);
+            data += EVC_NALU_LENGTH_PREFIX_SIZE;
+            data_size -= EVC_NALU_LENGTH_PREFIX_SIZE;
+            // bytes_read += EVC_NALU_LENGTH_PREFIX_SIZE;
+            
+            // This is the case when buffer size is not enough for buffer to store NAL unit 2-bytes header
+            if (data_size < EVC_NALU_HEADER_SIZE) {
+                ctx->to_read = EVC_NALU_HEADER_SIZE - data_size;
+                ctx->incomplete_nalu_header_read  = 1;
                 return END_NOT_FOUND;
             }
-            return bytes_read;
+
+            // If the new Access Unit has been detected return position of the the current NAL Unit
+            // If a new Access Unit is detected, return current NAL Unit position that points to the begining of the AU.
+            // This will cause the current AU to be sent to the decoder,
+            // and the parse function will be called with a buffer pointing to the begining of the next AU.
+            if(new_access_unit_detected(s, data, data_size, avctx)) {
+                return bytes_read - EVC_NALU_LENGTH_PREFIX_SIZE;
+            }
+
+            if (data_size < nal_unit_size ) {
+            
+                ctx->to_read = nal_unit_size - data_size;
+                return END_NOT_FOUND;
+            }
+
+            // the entire NALU can be read
+            // bytes_read += nal_unit_size;
+            data += nal_unit_size;
+            data_size -= nal_unit_size;
+
+            // go to the next iteration
+
+        } else {
+            if (ctx->to_read < data_size) {
+                int next = ctx->to_read;
+
+                if (ctx->incomplete_nalu_prefix_read  == 1) {
+                    int nal_unit_size = evc_assemble_nalu_prefix(s, data, data_size,avctx);
+        
+                    if (data_size < (nal_unit_size +  EVC_NALU_LENGTH_PREFIX_SIZE - pc->index)) {
+                        ctx->to_read = (nal_unit_size +  EVC_NALU_LENGTH_PREFIX_SIZE - pc->index) - data_size;
+                        return END_NOT_FOUND;
+                    }
+
+                    // bytes_read = nal_unit_size + EVC_NALU_LENGTH_PREFIX_SIZE - pc->index;
+                    data +=  (nal_unit_size +  EVC_NALU_LENGTH_PREFIX_SIZE - pc->index);
+                    data_size -= (nal_unit_size +  EVC_NALU_LENGTH_PREFIX_SIZE - pc->index);
+        
+                    ctx->to_read = 0;
+                    return bytes_read;
+                }
+
+                ctx->to_read = 0;
+                
+            
+                // the next NALU can be read
+                data += next;
+                data_size -= next;
+
+            } else {
+                ctx->to_read = ctx->to_read - data_size;
+                return END_NOT_FOUND;
+            }
+        }
+    }
+
+    return END_NOT_FOUND;
+}
+
+/**
+ * Find the end of the current frame in the bitstream.
+ * @return the position of the first byte of the next frame, or END_NOT_FOUND
+ */
+static int evc_find_frame_end_OLD(AVCodecParserContext *s, const uint8_t *buf,
+                              int buf_size, AVCodecContext *avctx)
+{
+    EVCParserContext *ctx = s->priv_data;
+    ParseContext     *pc = &ctx->pc;
+    
+    const uint8_t *data = buf;
+    int data_size = buf_size; 
+
+    int bytes_read = 0;
+
+    while ((buf_size - bytes_read) > 0) {
+
+        if (ctx->to_read == 0) {
+            int nal_unit_size = 0;
+
+            // This is the case when buffer size is not enough for buffer to store NAL unit 4-bytes prefix (length)
+            if ((buf_size - bytes_read) < EVC_NALU_LENGTH_PREFIX_SIZE) {
+                ctx->to_read = EVC_NALU_LENGTH_PREFIX_SIZE - (buf_size - bytes_read);
+                ctx->incomplete_nalu_prefix_read  = 1;
+                return END_NOT_FOUND;
+            }
+
+            nal_unit_size = read_nal_unit_length(buf + bytes_read, buf_size, avctx);
+            bytes_read += EVC_NALU_LENGTH_PREFIX_SIZE;
+            
+            // This is the case when buffer size is not enough for buffer to store NAL unit 2-bytes header
+            if ((buf_size - bytes_read) < EVC_NALU_HEADER_SIZE) {
+                ctx->to_read = EVC_NALU_HEADER_SIZE - (buf_size - bytes_read);
+                ctx->incomplete_nalu_header_read  = 1;
+                return END_NOT_FOUND;
+            }
+
+            // If the new Access Unit has been detected return position of the the current NAL Unit
+            // If a new Access Unit is detected, return current NAL Unit position that points to the begining of the AU.
+            // This will cause the current AU to be sent to the decoder,
+            // and the parse function will be called with a buffer pointing to the begining of the next AU.
+            if(new_access_unit_detected(s, buf, buf_size, avctx)) {
+                return bytes_read - EVC_NALU_LENGTH_PREFIX_SIZE;
+            }
+
+            if ((buf_size - bytes_read) < nal_unit_size ) {
+            
+                ctx->to_read = nal_unit_size - (buf_size - bytes_read);
+                return END_NOT_FOUND;
+            }
+
+            // the entire NALU can be read
+            bytes_read += nal_unit_size;
+
+            // go to the next iteration
+
         } else {
             if (ctx->to_read < (buf_size - bytes_read)) {
                 int next = ctx->to_read;
@@ -699,7 +879,10 @@ static int evc_find_frame_end(AVCodecParserContext *s, const uint8_t *buf,
                 }
 
                 ctx->to_read = 0;
-                return next;
+            
+                // the next NALU can be read
+                bytes_read += next;
+
             } else {
                 ctx->to_read = ctx->to_read - (buf_size - bytes_read);
                 return END_NOT_FOUND;
@@ -723,7 +906,7 @@ static int evc_parse(AVCodecParserContext *s, AVCodecContext *avctx,
     if (s->flags & PARSER_FLAG_COMPLETE_FRAMES)
         next = buf_size;
     else {
-        next = evc_find_frame_end(s, buf, buf_size, avctx);
+        next = evc_find_frame_end_OLD(s, buf, buf_size, avctx);
         if (ff_combine_frame(pc, next, &buf, &buf_size) < 0) {
             *poutbuf      = NULL;
             *poutbuf_size = 0;

@@ -288,7 +288,7 @@ static int libxevd_receive_frame(AVCodecContext *avctx, AVFrame *frame)
     {
         XEVD_STAT stat;
         XEVD_BITB bitb;
-        int nalu_size, bs_read_pos;
+        int nalu_size, bs_read_pos, dec_read_bytes;
 
         AVPacket pkt = {0};
 
@@ -307,6 +307,7 @@ static int libxevd_receive_frame(AVCodecContext *avctx, AVFrame *frame)
         if (pkt.size) {
 
             bs_read_pos = 0;
+            dec_read_bytes = 0;
             while (pkt.size > (bs_read_pos + XEVD_NAL_UNIT_LENGTH_BYTE)) {
 
                 nalu_size = read_nal_unit_length(pkt.data + bs_read_pos, XEVD_NAL_UNIT_LENGTH_BYTE, avctx);
@@ -334,13 +335,14 @@ static int libxevd_receive_frame(AVCodecContext *avctx, AVFrame *frame)
                 }
 
                 bs_read_pos += nalu_size;
+                dec_read_bytes += nalu_size;
 
                 if (stat.nalu_type == XEVD_NUT_SPS) { // EVC stream parameters changed
                     if ((ret = export_stream_params(xectx, avctx)) != 0)
                         goto ERR;
                 }
 
-                if (stat.read != nalu_size) {
+                if (stat.read != dec_read_bytes) {
                     av_log(avctx, AV_LOG_INFO, "Different reading of bitstream (in:%d, read:%d)\n", nalu_size, stat.read);
                     ret = AVERROR_EXTERNAL;
                     goto ERR;

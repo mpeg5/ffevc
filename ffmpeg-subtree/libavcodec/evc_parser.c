@@ -640,25 +640,25 @@ static int parse_nal_unit(AVCodecParserContext *s, const uint8_t *buf,
         else avctx->profile = FF_PROFILE_EVC_BASELINE;
 
         switch (sps->chroma_format_idc) {
-        case 0: /* YCBCR400_10LE */
-            av_log(avctx, AV_LOG_ERROR, "YCBCR400_10LE: Not supported chroma format\n");
-            s->format = AV_PIX_FMT_GRAY10LE;
-            return -1;
-        case 1: /* YCBCR420_10LE */
-            s->format = AV_PIX_FMT_YUV420P10LE;
-            break;
-        case 2: /* YCBCR422_10LE */
-            av_log(avctx, AV_LOG_ERROR, "YCBCR422_10LE: Not supported chroma format\n");
-            s->format = AV_PIX_FMT_YUV422P10LE;
-            return -1;
-        case 3: /* YCBCR444_10LE */
-            av_log(avctx, AV_LOG_ERROR, "YCBCR444_10LE: Not supported chroma format\n");
-            s->format = AV_PIX_FMT_YUV444P10LE;
-            return -1;
-        default:
-            s->format = AV_PIX_FMT_NONE;
-            av_log(avctx, AV_LOG_ERROR, "Unknown supported chroma format\n");
-            return -1;
+            case 0: /* YCBCR400_10LE */
+                av_log(avctx, AV_LOG_ERROR, "YCBCR400_10LE: Not supported chroma format\n");
+                s->format = AV_PIX_FMT_GRAY10LE;
+                return -1;
+            case 1: /* YCBCR420_10LE */
+                s->format = AV_PIX_FMT_YUV420P10LE;
+                break;
+            case 2: /* YCBCR422_10LE */
+                av_log(avctx, AV_LOG_ERROR, "YCBCR422_10LE: Not supported chroma format\n");
+                s->format = AV_PIX_FMT_YUV422P10LE;
+                return -1;
+            case 3: /* YCBCR444_10LE */
+                av_log(avctx, AV_LOG_ERROR, "YCBCR444_10LE: Not supported chroma format\n");
+                s->format = AV_PIX_FMT_YUV444P10LE;
+                return -1;
+            default:
+                s->format = AV_PIX_FMT_NONE;
+                av_log(avctx, AV_LOG_ERROR, "Unknown supported chroma format\n");
+                return -1;
         }
     } else if (nalu_type == EVC_PPS_NUT) {
         EVCParserPPS *pps;

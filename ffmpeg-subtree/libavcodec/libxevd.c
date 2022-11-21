@@ -208,9 +208,8 @@ static int libxevd_image_copy(struct AVCodecContext *avctx, XEVD_IMGB *imgb, str
         }
     }
 
-    if (ret = ff_get_buffer(avctx, frame, 0) < 0) {
+    if (ret = ff_get_buffer(avctx, frame, 0) < 0)
         return ret;
-    }
 
     av_image_copy(frame->data, frame->linesize, (const uint8_t **)imgb->a,
                   imgb->s, avctx->pix_fmt,
@@ -297,9 +296,8 @@ static int libxevd_receive_frame(AVCodecContext *avctx, AVFrame *frame)
 
         // obtain input data
         ret = ff_decode_get_packet(avctx, &pkt);
-        if (ret < 0 ) { // no data is currently available or end of stream has been reached
+        if (ret < 0)   // no data is currently available or end of stream has been reached
             return ret;
-        }
 
         memset(&stat, 0, sizeof(XEVD_STAT));
         memset(&bitb, 0, sizeof(XEVD_BITB));

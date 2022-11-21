@@ -151,10 +151,10 @@ typedef struct EVCParserPPS {
 // @see ISO_IEC_23094-1 section 7.3.2.6
 //
 // The following descriptors specify the parsing process of each element
-// u(n) - unsigned integer using n bits
+// u(n)  - unsigned integer using n bits
 // ue(v) - unsigned integer 0-th order Exp_Golomb-coded syntax element with the left bit first
-// u(n) - unsigned integer using n bits.
-//        When n is "v" in the syntax table, the number of bits varies in a manner dependent on the value of other syntax elements.
+// u(n)  - unsigned integer using n bits.
+//         When n is "v" in the syntax table, the number of bits varies in a manner dependent on the value of other syntax elements.
 typedef struct EVCParserSliceHeader {
     int slice_pic_parameter_set_id;                                     // ue(v)
     int single_tile_in_slice_flag;                                      // u(1)
@@ -190,8 +190,7 @@ typedef struct EVCParserSliceHeader {
 } EVCParserSliceHeader;
 
 // picture order count of the current picture
-typedef struct EVCParserPoc
-{
+typedef struct EVCParserPoc {
     int PicOrderCntVal;     // current picture order count value
     int prevPicOrderCntVal; // the picture order count of the previous Tid0 picture
     int DocOffset;          // the decoding order count of the previous picture
@@ -505,65 +504,54 @@ static EVCParserSliceHeader *parse_slice_header(const uint8_t *bs, int bs_size, 
 
     sh->slice_type = get_ue_golomb(&gb);
 
-    if(ev->nalu_type == EVC_IDR_NUT) {
+    if (ev->nalu_type == EVC_IDR_NUT)
         sh->no_output_of_prior_pics_flag = get_bits(&gb, 1);
-    }
 
-    if(sps->sps_mmvd_flag && ((sh->slice_type == EVC_SLICE_TYPE_B) || (sh->slice_type == EVC_SLICE_TYPE_P))) {
+    if (sps->sps_mmvd_flag && ((sh->slice_type == EVC_SLICE_TYPE_B) || (sh->slice_type == EVC_SLICE_TYPE_P)))
         sh->mmvd_group_enable_flag = get_bits(&gb, 1);
-    } else {
+    else
         sh->mmvd_group_enable_flag = 0;
-    }
 
-    if(sps->sps_alf_flag) {
+    if (sps->sps_alf_flag) {
         int ChromaArrayType = sps->chroma_format_idc;
 
         sh->slice_alf_enabled_flag = get_bits(&gb, 1);
 
-        if(sh->slice_alf_enabled_flag) {
+        if (sh->slice_alf_enabled_flag) {
             sh->slice_alf_luma_aps_id = get_bits(&gb, 5);
             sh->slice_alf_map_flag = get_bits(&gb, 1);
             sh->slice_alf_chroma_idc = get_bits(&gb, 2);
 
-            if ((ChromaArrayType == 1 || ChromaArrayType == 2) && sh->slice_alf_chroma_idc > 0) {
+            if ((ChromaArrayType == 1 || ChromaArrayType == 2) && sh->slice_alf_chroma_idc > 0)
                 sh->slice_alf_chroma_aps_id =  get_bits(&gb, 5);
-            }
         }
         if (ChromaArrayType == 3) {
             int sliceChromaAlfEnabledFlag = 0;
             int sliceChroma2AlfEnabledFlag = 0;
 
-            if (sh->slice_alf_chroma_idc == 1) // @see ISO_IEC_23094-1 (7.4.5)
-            {
+            if (sh->slice_alf_chroma_idc == 1) { // @see ISO_IEC_23094-1 (7.4.5)
                 sliceChromaAlfEnabledFlag = 1;
                 sliceChroma2AlfEnabledFlag = 0;
-            }
-            else if (sh->slice_alf_chroma_idc == 2)
-            {
+            } else if (sh->slice_alf_chroma_idc == 2) {
                 sliceChromaAlfEnabledFlag = 0;
                 sliceChroma2AlfEnabledFlag = 1;
-            }
-            else if (sh->slice_alf_chroma_idc == 3)
-            {
+            } else if (sh->slice_alf_chroma_idc == 3) {
                 sliceChromaAlfEnabledFlag = 1;
                 sliceChroma2AlfEnabledFlag = 1;
-            }
-            else
-            {
+            } else {
                 sliceChromaAlfEnabledFlag = 0;
                 sliceChroma2AlfEnabledFlag = 0;
             }
 
-            if(!sh->slice_alf_enabled_flag) {
+            if (!sh->slice_alf_enabled_flag)
                 sh->slice_alf_chroma_idc = get_bits(&gb, 2);
-            }
 
-            if(sliceChromaAlfEnabledFlag) {
+            if (sliceChromaAlfEnabledFlag) {
                 sh->slice_alf_chroma_aps_id = get_bits(&gb, 5);
                 sh->slice_alf_chroma_map_flag = get_bits(&gb, 1);
             }
 
-            if(sliceChroma2AlfEnabledFlag) {
+            if (sliceChroma2AlfEnabledFlag) {
                 sh->slice_alf_chroma2_aps_id = get_bits(&gb, 5);
                 sh->slice_alf_chroma2_map_flag = get_bits(&gb, 1);
             }
@@ -571,9 +559,8 @@ static EVCParserSliceHeader *parse_slice_header(const uint8_t *bs, int bs_size, 
     }
 
     if (ev->nalu_type != EVC_IDR_NUT) {
-        if(sps->sps_pocs_flag) {
+        if (sps->sps_pocs_flag)
             sh->slice_pic_order_cnt_lsb = get_bits(&gb, sps->log2_max_pic_order_cnt_lsb_minus4 + 4);
-        }
     }
 
     // @note
@@ -587,13 +574,13 @@ static EVCParserSliceHeader *parse_slice_header(const uint8_t *bs, int bs_size, 
  *
  * Parse NAL unit
  *
- * @param s parser context.
- * @param avctx codec context.
- * @param buf buffer with field/frame data.
- * @param buf_size size of the buffer.
+ * @param s parser context
+ * @param buf buffer with field/frame data
+ * @param buf_size size of the buffer
+ * @param avctx codec context
  */
 static int parse_nal_unit(AVCodecParserContext *s, const uint8_t *buf,
-                           int buf_size, AVCodecContext *avctx)
+                          int buf_size, AVCodecContext *avctx)
 {
     EVCParserContext *ev = s->priv_data;
     int nalu_type, nalu_size;
@@ -605,107 +592,100 @@ static int parse_nal_unit(AVCodecParserContext *s, const uint8_t *buf,
     s->key_frame = -1;
 
 
-        nalu_size = buf_size;
-        if (nalu_size <= 0) {
-            av_log(avctx, AV_LOG_ERROR, "Invalid NAL unit size: (%d)\n", nalu_size);
+    nalu_size = buf_size;
+    if (nalu_size <= 0) {
+        av_log(avctx, AV_LOG_ERROR, "Invalid NAL unit size: (%d)\n", nalu_size);
+        return AVERROR_INVALIDDATA;
+    }
+
+    // @see ISO_IEC_23094-1_2020, 7.4.2.2 NAL unit header semantic (Table 4 - NAL unit type codes and NAL unit type classes)
+    // @see enum EVCNALUnitType in evc.h
+    nalu_type = get_nalu_type(data, data_size, avctx);
+    if (nalu_type < EVC_NOIDR_NUT || nalu_type > EVC_UNSPEC_NUT62) {
+        av_log(avctx, AV_LOG_ERROR, "Invalid NAL unit type: (%d)\n", nalu_type);
+        return AVERROR_INVALIDDATA;
+    }
+    ev->nalu_type = nalu_type;
+
+    tid = get_temporal_id(data, data_size, avctx);
+    if (tid < 0) {
+        av_log(avctx, AV_LOG_ERROR, "Invalid temporial id: (%d)\n", tid);
+        return AVERROR_INVALIDDATA;
+    }
+    ev->nuh_temporal_id = tid;
+
+    if (data_size < nalu_size) {
+        av_log(avctx, AV_LOG_ERROR, "NAL unit does not fit in the data buffer\n");
+        return AVERROR_INVALIDDATA;
+    }
+
+    data += EVC_NALU_HEADER_SIZE;
+    data_size -= EVC_NALU_HEADER_SIZE;
+
+    if (nalu_type == EVC_SPS_NUT) {
+        EVCParserSPS *sps;
+
+        sps = parse_sps(data, nalu_size, ev);
+        if (!sps) {
+            av_log(avctx, AV_LOG_ERROR, "SPS parsing error\n");
             return AVERROR_INVALIDDATA;
         }
 
-        // @see ISO_IEC_23094-1_2020, 7.4.2.2 NAL unit header semantic (Table 4 - NAL unit type codes and NAL unit type classes)
-        // @see enum EVCNALUnitType in evc.h
-        nalu_type = get_nalu_type(data, data_size, avctx);
-        if (nalu_type < EVC_NOIDR_NUT || nalu_type > EVC_UNSPEC_NUT62) {
-            av_log(avctx, AV_LOG_ERROR, "Invalid NAL unit type: (%d)\n", nalu_type);
+        s->coded_width         = sps->pic_width_in_luma_samples;
+        s->coded_height        = sps->pic_height_in_luma_samples;
+        s->width               = sps->pic_width_in_luma_samples;
+        s->height              = sps->pic_height_in_luma_samples;
+
+        if (sps->profile_idc == 1) avctx->profile = FF_PROFILE_EVC_MAIN;
+        else avctx->profile = FF_PROFILE_EVC_BASELINE;
+
+        switch (sps->chroma_format_idc) {
+        case 0: /* YCBCR400_10LE */
+            av_log(avctx, AV_LOG_ERROR, "YCBCR400_10LE: Not supported chroma format\n");
+            s->format = AV_PIX_FMT_GRAY10LE;
+            return -1;
+        case 1: /* YCBCR420_10LE */
+            s->format = AV_PIX_FMT_YUV420P10LE;
+            break;
+        case 2: /* YCBCR422_10LE */
+            av_log(avctx, AV_LOG_ERROR, "YCBCR422_10LE: Not supported chroma format\n");
+            s->format = AV_PIX_FMT_YUV422P10LE;
+            return -1;
+        case 3: /* YCBCR444_10LE */
+            av_log(avctx, AV_LOG_ERROR, "YCBCR444_10LE: Not supported chroma format\n");
+            s->format = AV_PIX_FMT_YUV444P10LE;
+            return -1;
+        default:
+            s->format = AV_PIX_FMT_NONE;
+            av_log(avctx, AV_LOG_ERROR, "Unknown supported chroma format\n");
+            return -1;
+        }
+    } else if (nalu_type == EVC_PPS_NUT) {
+        EVCParserPPS *pps;
+
+        pps = parse_pps(data, nalu_size, ev);
+        if (!pps) {
+            av_log(avctx, AV_LOG_ERROR, "PPS parsing error\n");
             return AVERROR_INVALIDDATA;
         }
-        ev->nalu_type = nalu_type;
+    } else if (nalu_type == EVC_SEI_NUT)  // Supplemental Enhancement Information
+        return 0;
+    else if (nalu_type == EVC_APS_NUT)   // Adaptation parameter set
+        return 0;
+    else if (nalu_type == EVC_FD_NUT)   /* Filler data */
+        return 0;
+    else if (nalu_type == EVC_IDR_NUT || nalu_type == EVC_NOIDR_NUT) { // Coded slice of a IDR or non-IDR picture
+        EVCParserSliceHeader *sh;
+        EVCParserSPS *sps;
+        int slice_pic_parameter_set_id;
 
-        tid = get_temporal_id(data, data_size, avctx);
-        if (tid<0) {
-            av_log(avctx, AV_LOG_ERROR, "Invalid temporial id: (%d)\n", tid);
+        sh = parse_slice_header(data, nalu_size, ev);
+        if (!sh) {
+            av_log(avctx, AV_LOG_ERROR, "Slice header parsing error\n");
             return AVERROR_INVALIDDATA;
         }
-        ev->nuh_temporal_id = tid;
 
-        if(data_size < nalu_size) {
-            av_log(avctx, AV_LOG_ERROR, "NAL unit does not fit in the data buffer\n");
-            return AVERROR_INVALIDDATA;
-        }
-
-        data += EVC_NALU_HEADER_SIZE;
-        data_size -= EVC_NALU_HEADER_SIZE;
-
-        if (nalu_type == EVC_SPS_NUT) {
-            EVCParserSPS *sps;
-
-            sps = parse_sps(data, nalu_size, ev);
-            if (!sps) {
-                av_log(avctx, AV_LOG_ERROR, "SPS parsing error\n");
-                return AVERROR_INVALIDDATA;
-            }
-
-            s->coded_width         = sps->pic_width_in_luma_samples;
-            s->coded_height        = sps->pic_height_in_luma_samples;
-            s->width               = sps->pic_width_in_luma_samples;
-            s->height              = sps->pic_height_in_luma_samples;
-
-            if (sps->profile_idc == 1) avctx->profile = FF_PROFILE_EVC_MAIN;
-            else avctx->profile = FF_PROFILE_EVC_BASELINE;
-
-            av_log(avctx, AV_LOG_ERROR, "sps->profile_idc: %d\n", sps->profile_idc);
-            av_log(avctx, AV_LOG_ERROR, "sps->sps_pocs_flag: %d\n", sps->sps_pocs_flag);
-
-
-            switch (sps->chroma_format_idc) {
-            case 0: /* YCBCR400_10LE */
-                av_log(avctx, AV_LOG_ERROR, "YCBCR400_10LE: Not supported chroma format\n");
-                s->format = AV_PIX_FMT_GRAY10LE;
-                return -1;
-            case 1: /* YCBCR420_10LE */
-                s->format = AV_PIX_FMT_YUV420P10LE;
-                break;
-            case 2: /* YCBCR422_10LE */
-                av_log(avctx, AV_LOG_ERROR, "YCBCR422_10LE: Not supported chroma format\n");
-                s->format = AV_PIX_FMT_YUV422P10LE;
-                return -1;
-            case 3: /* YCBCR444_10LE */
-                av_log(avctx, AV_LOG_ERROR, "YCBCR444_10LE: Not supported chroma format\n");
-                s->format = AV_PIX_FMT_YUV444P10LE;
-                return -1;
-            default:
-                s->format = AV_PIX_FMT_NONE;
-                av_log(avctx, AV_LOG_ERROR, "Unknown supported chroma format\n");
-                return -1;
-            }
-        } else if (nalu_type == EVC_PPS_NUT) {
-            EVCParserPPS *pps;
-
-            pps = parse_pps(data, nalu_size, ev);
-            if (!pps) {
-                av_log(avctx, AV_LOG_ERROR, "PPS parsing error\n");
-                return AVERROR_INVALIDDATA;
-            }
-        } else if (nalu_type == EVC_SEI_NUT) {// Supplemental Enhancement Information
-            return 0;
-        }
-        else if (nalu_type == EVC_APS_NUT) { // Adaptation parameter set
-            return 0;
-        }
-        else if (nalu_type == EVC_FD_NUT)  {/* Filler data */
-            return 0;
-        }
-        else if (nalu_type == EVC_IDR_NUT || nalu_type == EVC_NOIDR_NUT) { // Coded slice of a IDR or non-IDR picture
-            EVCParserSliceHeader *sh;
-            EVCParserSPS *sps;
-            int slice_pic_parameter_set_id;
-
-            sh = parse_slice_header(data, nalu_size, ev);
-            if (!sh) {
-                av_log(avctx, AV_LOG_ERROR, "Slice header parsing error\n");
-                return AVERROR_INVALIDDATA;
-            }
-
-            switch (sh->slice_type) {
+        switch (sh->slice_type) {
             case EVC_SLICE_TYPE_B: {
                 s->pict_type =  AV_PICTURE_TYPE_B;
                 break;
@@ -721,90 +701,85 @@ static int parse_nal_unit(AVCodecParserContext *s, const uint8_t *buf,
             default: {
                 s->pict_type =  AV_PICTURE_TYPE_NONE;
             }
-            }
-
-            s->key_frame = (nalu_type == EVC_IDR_NUT) ? 1 : 0;
-
-            // POC (picture order count of the current picture) derivation
-            // @see ISO/IEC 23094-1:2020(E) 8.3.1 Decoding process for picture order count
-            slice_pic_parameter_set_id = sh->slice_pic_parameter_set_id;
-            sps = &ev->sps[slice_pic_parameter_set_id];
-
-            if(sps->sps_pocs_flag) {
-
-                int PicOrderCntMsb = 0;
-                ev->poc.prevPicOrderCntVal = ev->poc.PicOrderCntVal;
-
-                if (nalu_type == EVC_IDR_NUT) {
-                    PicOrderCntMsb = 0;
-                } else {
-                    int MaxPicOrderCntLsb = 1<<(sps->log2_max_pic_order_cnt_lsb_minus4 + 4);
-
-                    int prevPicOrderCntLsb = ev->poc.PicOrderCntVal & (MaxPicOrderCntLsb - 1);
-                    int prevPicOrderCntMsb = ev->poc.PicOrderCntVal - prevPicOrderCntLsb;
-
-
-                    if (( sh->slice_pic_order_cnt_lsb < prevPicOrderCntLsb) &&
-                       (( prevPicOrderCntLsb-sh->slice_pic_order_cnt_lsb) >= (MaxPicOrderCntLsb/2))) {
-
-                        PicOrderCntMsb = prevPicOrderCntMsb + MaxPicOrderCntLsb;
-
-                    } else if (( sh->slice_pic_order_cnt_lsb > prevPicOrderCntLsb) &&
-                       (( sh->slice_pic_order_cnt_lsb - prevPicOrderCntLsb) > (MaxPicOrderCntLsb/2)))  {
-
-                        PicOrderCntMsb = prevPicOrderCntMsb - MaxPicOrderCntLsb;
-
-                    } else {
-                        PicOrderCntMsb = prevPicOrderCntMsb;
-                    }
-                }
-                ev->poc.PicOrderCntVal = PicOrderCntMsb + sh->slice_pic_order_cnt_lsb;
-
-            } else {
-                if (nalu_type == EVC_IDR_NUT) {
-                    ev->poc.PicOrderCntVal = 0;
-                    ev->poc.DocOffset = -1;
-                } else {
-                    int SubGopLength = (int)pow(2.0, sps->log2_sub_gop_length);
-                    if (tid==0) {
-                        ev->poc.PicOrderCntVal = ev->poc.prevPicOrderCntVal + SubGopLength;
-                        ev->poc.DocOffset = 0;
-                        ev->poc.prevPicOrderCntVal = ev->poc.PicOrderCntVal;
-                    } else {
-                        int ExpectedTemporalId;
-                        int PocOffset;
-                        int prevDocOffset = ev->poc.DocOffset;
-
-                        ev->poc.DocOffset = (prevDocOffset + 1) % SubGopLength;
-                        if(ev->poc.DocOffset==0) {
-                            ev->poc.prevPicOrderCntVal += SubGopLength;
-                            ExpectedTemporalId = 0;
-                        } else {
-                            ExpectedTemporalId = 1 + (int)log2(ev->poc.DocOffset);
-                        }
-                        while (tid!=ExpectedTemporalId) {
-                            ev->poc.DocOffset = (ev->poc.DocOffset+1) % SubGopLength;
-                            if(ev->poc.DocOffset == 0) {
-                                ExpectedTemporalId = 0;
-                            } else {
-                                ExpectedTemporalId = 1 + (int)log2(ev->poc.DocOffset);
-                            }
-                        }
-                        PocOffset = (int)(SubGopLength * ((2.0 * ev->poc.DocOffset + 1) / (int)pow(2.0, tid) - 2));
-                        ev->poc.PicOrderCntVal = ev->poc.prevPicOrderCntVal + PocOffset;
-                    }
-                }
-            }
-            // if(ev->poc.prevPicOrderCntVal)
-            av_log(avctx, AV_LOG_ERROR, "PicOrderCntVal: %d | prevPicOrderCntVal: %d\n", ev->poc.PicOrderCntVal, ev->poc.prevPicOrderCntVal);
-
-            s->output_picture_number = ev->poc.PicOrderCntVal;
-            s->key_frame = (nalu_type == EVC_IDR_NUT) ? 1 : 0;
-
-            return 0;
         }
-        data += (nalu_size - EVC_NALU_HEADER_SIZE);
-        data_size -= (nalu_size - EVC_NALU_HEADER_SIZE);
+
+        s->key_frame = (nalu_type == EVC_IDR_NUT) ? 1 : 0;
+
+        // POC (picture order count of the current picture) derivation
+        // @see ISO/IEC 23094-1:2020(E) 8.3.1 Decoding process for picture order count
+        slice_pic_parameter_set_id = sh->slice_pic_parameter_set_id;
+        sps = &ev->sps[slice_pic_parameter_set_id];
+
+        if (sps->sps_pocs_flag) {
+
+            int PicOrderCntMsb = 0;
+            ev->poc.prevPicOrderCntVal = ev->poc.PicOrderCntVal;
+
+            if (nalu_type == EVC_IDR_NUT)
+                PicOrderCntMsb = 0;
+            else {
+                int MaxPicOrderCntLsb = 1 << (sps->log2_max_pic_order_cnt_lsb_minus4 + 4);
+
+                int prevPicOrderCntLsb = ev->poc.PicOrderCntVal & (MaxPicOrderCntLsb - 1);
+                int prevPicOrderCntMsb = ev->poc.PicOrderCntVal - prevPicOrderCntLsb;
+
+
+                if ((sh->slice_pic_order_cnt_lsb < prevPicOrderCntLsb) &&
+                    ((prevPicOrderCntLsb - sh->slice_pic_order_cnt_lsb) >= (MaxPicOrderCntLsb / 2)))
+
+                    PicOrderCntMsb = prevPicOrderCntMsb + MaxPicOrderCntLsb;
+
+                else if ((sh->slice_pic_order_cnt_lsb > prevPicOrderCntLsb) &&
+                         ((sh->slice_pic_order_cnt_lsb - prevPicOrderCntLsb) > (MaxPicOrderCntLsb / 2)))
+
+                    PicOrderCntMsb = prevPicOrderCntMsb - MaxPicOrderCntLsb;
+
+                else
+                    PicOrderCntMsb = prevPicOrderCntMsb;
+            }
+            ev->poc.PicOrderCntVal = PicOrderCntMsb + sh->slice_pic_order_cnt_lsb;
+
+        } else {
+            if (nalu_type == EVC_IDR_NUT) {
+                ev->poc.PicOrderCntVal = 0;
+                ev->poc.DocOffset = -1;
+            } else {
+                int SubGopLength = (int)pow(2.0, sps->log2_sub_gop_length);
+                if (tid == 0) {
+                    ev->poc.PicOrderCntVal = ev->poc.prevPicOrderCntVal + SubGopLength;
+                    ev->poc.DocOffset = 0;
+                    ev->poc.prevPicOrderCntVal = ev->poc.PicOrderCntVal;
+                } else {
+                    int ExpectedTemporalId;
+                    int PocOffset;
+                    int prevDocOffset = ev->poc.DocOffset;
+
+                    ev->poc.DocOffset = (prevDocOffset + 1) % SubGopLength;
+                    if (ev->poc.DocOffset == 0) {
+                        ev->poc.prevPicOrderCntVal += SubGopLength;
+                        ExpectedTemporalId = 0;
+                    } else
+                        ExpectedTemporalId = 1 + (int)log2(ev->poc.DocOffset);
+                    while (tid != ExpectedTemporalId) {
+                        ev->poc.DocOffset = (ev->poc.DocOffset + 1) % SubGopLength;
+                        if (ev->poc.DocOffset == 0)
+                            ExpectedTemporalId = 0;
+                        else
+                            ExpectedTemporalId = 1 + (int)log2(ev->poc.DocOffset);
+                    }
+                    PocOffset = (int)(SubGopLength * ((2.0 * ev->poc.DocOffset + 1) / (int)pow(2.0, tid) - 2));
+                    ev->poc.PicOrderCntVal = ev->poc.prevPicOrderCntVal + PocOffset;
+                }
+            }
+        }
+
+        s->output_picture_number = ev->poc.PicOrderCntVal;
+        s->key_frame = (nalu_type == EVC_IDR_NUT) ? 1 : 0;
+
+        return 0;
+    }
+    data += (nalu_size - EVC_NALU_HEADER_SIZE);
+    data_size -= (nalu_size - EVC_NALU_HEADER_SIZE);
 
     return 0;
 }
@@ -812,9 +787,11 @@ static int parse_nal_unit(AVCodecParserContext *s, const uint8_t *buf,
 /**
  * @brief Reconstruct NAL Unit from incomplete data
  *
+ * @param[in]  s parser context
  * @param[in]  data pointer to the buffer containg new data for current NALU prefix
  * @param[in]  data_size amount of bytes to read from the input buffer
  * @param[out] nalu_prefix assembled NALU length
+ * @param[in ] avctx codec context
  *
  * Assemble the NALU prefix storing NALU length if it has been split between 2 subsequent buffers (input chunks) incoming to the parser.
  * This is the case when the buffer size is not enough for the buffer to store the whole NAL unit prefix.
@@ -822,7 +799,7 @@ static int parse_nal_unit(AVCodecParserContext *s, const uint8_t *buf,
  * Then we'll be able to read NAL unit size.
  */
 static int evc_assemble_nalu_prefix(AVCodecParserContext *s, const uint8_t *data, int data_size,
-                                                             uint8_t *nalu_prefix, AVCodecContext *avctx)
+                                    uint8_t *nalu_prefix, AVCodecContext *avctx)
 {
     EVCParserContext *ctx = s->priv_data;
     ParseContext     *pc = &ctx->pc;
@@ -891,15 +868,16 @@ static int evc_assemble_nalu_prefix(AVCodecParserContext *s, const uint8_t *data
  * This is the case when buffer size is not enough for the buffer to store NAL unit.
  * In this case, we have to get parts of the NALU from the previous buffers stored in pc->buffer and assemble it with the rest from the current buffer.
  *
- * @param[in]  data pointer to the buffer containg new data for current NALU
- * @param[in]  data_size amount of bytes to read from the input buffer
+ * @param[in] s parser context
+ * @param[in] data pointer to the buffer containg new data for current NALU
+ * @param[in] data_size amount of bytes to read from the input buffer
  * @param[out] nalu pointer to the memory block for storing assembled NALU
- * @param[in]  nalu assembled NALU length
- *
+ * @param[in] nalu_size assembled NALU length
+ * @param[in ] avctx codec context
  */
 static int evc_assemble_nalu(AVCodecParserContext *s, const uint8_t *data, int data_size,
-                                                      uint8_t *nalu, int nalu_size,
-                                                      AVCodecContext* avctx)
+                             uint8_t *nalu, int nalu_size,
+                             AVCodecContext *avctx)
 {
     EVCParserContext *ctx = s->priv_data;
     ParseContext     *pc = &ctx->pc;
@@ -963,7 +941,7 @@ static int evc_assemble_nalu(AVCodecParserContext *s, const uint8_t *data, int d
     // |  0x02 |  0x03 |  0x04 |  0x05 |  0x06 | ... |  0xA0 | 0xB0 | 0xB1 | 0xB3 |
     // ----------------------------------------------------------------------------
 
-    uint8_t* prev_data = pc->buffer + ctx->bytes_read;
+    uint8_t *prev_data = pc->buffer + ctx->bytes_read;
     int prev_data_size = pc->index - ctx->bytes_read;
 
     memcpy(nalu, prev_data, prev_data_size);
@@ -976,19 +954,16 @@ static int end_of_access_unit_found(AVCodecParserContext *s, AVCodecContext *avc
 {
     EVCParserContext *ctx = s->priv_data;
 
-    if (avctx->profile==0) { // BASELINE profile
-        if(ctx->nalu_type == EVC_NOIDR_NUT || ctx->nalu_type == EVC_IDR_NUT) {
+    if (avctx->profile == 0) { // BASELINE profile
+        if (ctx->nalu_type == EVC_NOIDR_NUT || ctx->nalu_type == EVC_IDR_NUT)
             return 1;
-        }
     } else { // MAIN profile
         EVCParserContext *ev = s->priv_data;
-        if(ctx->nalu_type == EVC_NOIDR_NUT) {
-            if(ev->poc.PicOrderCntVal != ev->poc.prevPicOrderCntVal) {
+        if (ctx->nalu_type == EVC_NOIDR_NUT) {
+            if (ev->poc.PicOrderCntVal != ev->poc.prevPicOrderCntVal)
                 return 1;
-            }
-        } else if(ctx->nalu_type == EVC_IDR_NUT) {
+        } else if (ctx->nalu_type == EVC_IDR_NUT)
             return 1;
-        }
     }
     return 0;
 }
@@ -996,6 +971,11 @@ static int end_of_access_unit_found(AVCodecParserContext *s, AVCodecContext *avc
 /**
  * Find the end of the current frame in the bitstream.
  * The end of frame is the end of Access Unit.
+ *
+ * @param s parser context
+ * @param buf buffer with field/frame data
+ * @param buf_size size of the buffer
+ * @param avctx codex context
  *
  * @return the position of the first byte of the next frame, or END_NOT_FOUND
  */
@@ -1013,9 +993,9 @@ static int evc_find_frame_end(AVCodecParserContext *s, const uint8_t *buf,
             // Nothing must be read and appended to the data from previous chunks.
             // The previous chunk of data provided the complete NALU prefix or provided the complete NALU.
 
-            if(ctx->nalu_prefix_assembled) { // NALU prefix has been assembled from previous and current chunks of incoming data
-               ctx->nalu_prefix_assembled = 0;
-            } else { // Buffer size is not enough for buffer to store NAL unit 4-bytes prefix (length)
+            if (ctx->nalu_prefix_assembled)   // NALU prefix has been assembled from previous and current chunks of incoming data
+                ctx->nalu_prefix_assembled = 0;
+            else { // Buffer size is not enough for buffer to store NAL unit 4-bytes prefix (length)
                 if (data_size < EVC_NALU_LENGTH_PREFIX_SIZE) {
                     ctx->to_read = EVC_NALU_LENGTH_PREFIX_SIZE - data_size;
                     ctx->incomplete_nalu_prefix_read = 1;
@@ -1029,7 +1009,7 @@ static int evc_find_frame_end(AVCodecParserContext *s, const uint8_t *buf,
                 data_size -= EVC_NALU_LENGTH_PREFIX_SIZE;
             }
 
-            if (data_size < ctx->nalu_size ) {
+            if (data_size < ctx->nalu_size) {
 
                 ctx->to_read = ctx->nalu_size - data_size;
                 ctx->incomplete_nalu_read = 1;
@@ -1047,7 +1027,7 @@ static int evc_find_frame_end(AVCodecParserContext *s, const uint8_t *buf,
 
             ctx->bytes_read += ctx->nalu_size;
 
-            if(end_of_access_unit_found(s, avctx)) {
+            if (end_of_access_unit_found(s, avctx)) {
 
                 // parser should return buffer that contains complete AU
                 int read_bytes = ctx->bytes_read;
@@ -1097,7 +1077,7 @@ static int evc_find_frame_end(AVCodecParserContext *s, const uint8_t *buf,
                     // assemble NAL unit using data from previous data chunks (pc->buffer) and the current one (data)
                     evc_assemble_nalu(s, data, ctx->to_read, nalu, ctx->nalu_size, avctx);
 
-                    if (parse_nal_unit(s, nalu , ctx->nalu_size, avctx) != 0) {
+                    if (parse_nal_unit(s, nalu, ctx->nalu_size, avctx) != 0) {
                         av_log(avctx, AV_LOG_ERROR, "Parsing of NAL unit failed\n");
                         return AVERROR_INVALIDDATA;
                     }
@@ -1112,7 +1092,7 @@ static int evc_find_frame_end(AVCodecParserContext *s, const uint8_t *buf,
 
                     ctx->incomplete_nalu_read = 0;
 
-                    if(end_of_access_unit_found(s, avctx)) {
+                    if (end_of_access_unit_found(s, avctx)) {
 
                         // parser should return buffer that contains complete AU
                         int read_bytes = ctx->to_read;
@@ -1124,7 +1104,7 @@ static int evc_find_frame_end(AVCodecParserContext *s, const uint8_t *buf,
                     }
 
                     // reset variable storing amount of bytes to read from the new data chunk
-                     ctx->to_read = 0;
+                    ctx->to_read = 0;
 
                     continue;
                 }

@@ -40,6 +40,8 @@
 #include "codec_internal.h"
 #include "profiles.h"
 #include "decode.h"
+#include "libxevd_pq.h"
+#include "libxevd_mp.h"
 
 #define XEVD_PARAM_BAD_NAME -1
 #define XEVD_PARAM_BAD_VALUE -2
@@ -54,7 +56,19 @@ typedef struct XevdContext {
 
     XEVD id;            // XEVD instance identifier @see xevd.h
     XEVD_CDSC cdsc;     // decoding parameters @see xevd.h
+    int coded_picture_number;
+    struct EvcPriorityQueue* pq;
+    struct EvcMemPool* mp_fm; // memory pool for FrameMetaData elements
+    struct EvcMemPool* mp_pq; // memory pool for Protoity Queue elements
 } XevdContext;
+
+typedef struct FrameMetaData {
+    int pts;                    // Presentation timestamp in time_base units
+    int pkt_pts;                // PTS copied from the AVPacket that was decoded to produce this frame
+    int64_t pkt_dts;            // DTS copied from the AVPacket that triggered returning this frame
+    int coded_picture_number;   // picture number in bitstream order
+    int display_picture_number; // picture number in display order
+} FrameMetaData;
 
 /**
  * The function populates the XEVD_CDSC structure.
@@ -240,6 +254,10 @@ static av_cold int libxevd_init(AVCodecContext *avctx)
         return AVERROR_EXTERNAL;
     }
 
+    xectx->pq = evc_pq_create(20);
+    xectx->mp_fm = evc_mp_create(20, sizeof(struct FrameMetaData));
+    xectx->mp_pq = evc_mp_create(20, sizeof(struct EvcPriorityQueueElement));
+
     return 0;
 }
 
@@ -267,7 +285,24 @@ static int libxevd_receive_frame(AVCodecContext *avctx, AVFrame *frame)
         if (XEVD_SUCCEEDED(ret)) {
             if (imgb) {
 
-                int ret = libxevd_image_copy(avctx, imgb, frame);
+                struct FrameMetaData *frame_meta = NULL;
+                int ret;
+                struct EvcPriorityQueueElement* pq_element = evc_pq_dequeue(xectx->pq);
+
+                frame_meta = ((struct FrameMetaData *)pq_element->value);
+
+                frame->coded_picture_number = frame_meta->coded_picture_number;
+                frame->display_picture_number = frame_meta->display_picture_number;
+                // frame->pkt_dts = frame_meta->coded_picture_number;
+                av_log(avctx, AV_LOG_ERROR, "************** frame->pts %ld \n",frame->pts);
+                frame->pts = frame_meta->display_picture_number;
+
+                av_log(avctx, AV_LOG_ERROR, "************** frame->pts %ld | %ld | %d\n",frame->pts, frame_meta->display_picture_number, frame->coded_picture_number);
+
+                ret = libxevd_image_copy(avctx, imgb, frame);
+
+                evc_mp_free(xectx->mp_fm, frame_meta);
+                evc_mp_free(xectx->mp_pq, pq_element);
 
                 // xevd_pull uses pool of objects of type XEVD_IMGB.
                 // The pool size is equal MAX_PB_SIZE (26), so release object when it is no more needed
@@ -324,6 +359,8 @@ static int libxevd_receive_frame(AVCodecContext *avctx, AVFrame *frame)
                 bitb.ts[2] = 0;
                 bitb.ts[3] = 0;
 
+                av_log(avctx, AV_LOG_ERROR, "pkt.pts %ld | pkt.dts %ld\n", pkt.pts, pkt.dts);
+
                 /* main decoding block */
                 xevd_ret = xevd_decode(xectx->id, &bitb, &stat);
                 if (XEVD_FAILED(xevd_ret)) {
@@ -338,6 +375,35 @@ static int libxevd_receive_frame(AVCodecContext *avctx, AVFrame *frame)
                 if (stat.nalu_type == XEVD_NUT_SPS) { // EVC stream parameters changed
                     if ((ret = export_stream_params(xectx, avctx)) != 0)
                         goto ERR;
+                } else if (stat.nalu_type == XEVD_NUT_IDR || stat.nalu_type == XEVD_NUT_NONIDR) {
+                    // av_log(avctx, AV_LOG_INFO, "coded_picture_number: %d | stat.poc: %d\n", xectx->coded_picture_number, stat.poc);
+
+                    struct FrameMetaData *frame_meta = (struct FrameMetaData*)evc_mp_alloc(xectx->mp_fm, sizeof(struct FrameMetaData), true);
+                    struct EvcPriorityQueueElement* el = (struct EvcPriorityQueueElement*)evc_mp_alloc(xectx->mp_pq, sizeof(struct EvcPriorityQueueElement), true);
+
+                    AVRational timebase;
+                    timebase.num = 1;
+                    timebase.den = avctx->pkt_timebase.den/pkt.duration; // avctx->pkt_timebase.den = 1200000 ; pkt.duration = 48000 for fps=25 => 1200000/48000=25
+
+                    av_log(avctx, AV_LOG_INFO, "--- > pkt.pts: %ld | pkt.dts: %ld | pkt.duration: %ld | pkt.time_base: %d %d %d\n", pkt.pts, pkt.dts, pkt.duration, pkt.time_base.den, avctx->pkt_timebase.den, avctx->time_base.den);
+                    av_packet_rescale_ts(&pkt, avctx->pkt_timebase, timebase);
+
+                    frame_meta->coded_picture_number = xectx->coded_picture_number;
+                    frame_meta->display_picture_number = stat.poc;
+                    frame_meta->pkt_pts = stat.poc;
+                    frame_meta->pkt_dts = xectx->coded_picture_number;
+                    frame_meta->pts = pkt.pts;
+
+                    av_log(avctx, AV_LOG_INFO, "*** > pkt.pts: %ld | pkt.dts: %ld | pkt.duration: %ld | avctx->framerate: %d %d %d\n", pkt.pts, pkt.dts, pkt.duration, avctx->framerate.num, avctx->pkt_timebase.den, avctx->time_base.den);
+                    av_log(avctx, AV_LOG_INFO, "--- > delay: %ld \n", avctx->delay);
+                    xectx->coded_picture_number++;
+
+                    // el = (struct EvcPriorityQueueElement*)malloc(sizeof(EvcPriorityQueueElement));
+
+                    el->key = stat.poc;
+                    el->value = frame_meta;
+
+                    evc_pq_enqueue(xectx->pq, el);
                 }
 
                 if (stat.read != dec_read_bytes) {
@@ -369,6 +435,10 @@ static av_cold int libxevd_close(AVCodecContext *avctx)
         xevd_delete(xectx->id);
         xectx->id = NULL;
     }
+    evc_pq_destroy(xectx->pq);
+
+    evc_mp_destroy(xectx->mp_fm);
+    evc_mp_destroy(xectx->mp_pq);
 
     return 0;
 }
@@ -395,5 +465,5 @@ const FFCodec ff_libxevd_decoder = {
     .p.capabilities     = AV_CODEC_CAP_DELAY | AV_CODEC_CAP_OTHER_THREADS | AV_CODEC_CAP_AVOID_PROBING,
     .p.profiles         = NULL_IF_CONFIG_SMALL(ff_evc_profiles),
     .p.wrapper_name     = "libxevd",
-    .caps_internal      = FF_CODEC_CAP_INIT_CLEANUP | FF_CODEC_CAP_NOT_INIT_THREADSAFE,
+    .caps_internal      = FF_CODEC_CAP_INIT_CLEANUP | FF_CODEC_CAP_NOT_INIT_THREADSAFE | FF_CODEC_CAP_SETS_PKT_DTS,
 };

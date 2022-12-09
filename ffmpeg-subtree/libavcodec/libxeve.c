@@ -413,9 +413,9 @@ static av_cold int libxeve_init(AVCodecContext *avctx)
 /**
   * Encode raw data frame into EVC packet
   *
-  * @param[in] avctx codec context
-  * @param[out] pkt output AVPacket containing encoded data
-  * @param[in] frame AVFrame containing the raw data to be encoded
+  * @param[in]  avctx codec context
+  * @param[out] avpkt output AVPacket containing encoded data
+  * @param[in]  frame AVFrame containing the raw data to be encoded
   * @param[out] got_packet encoder sets to 0 or 1 to indicate that a
   *                         non-empty packet was returned in pkt
   *
@@ -449,8 +449,8 @@ static int libxeve_encode(AVCodecContext *avctx, AVPacket *avpkt,
             imgb->s[i] = frame->linesize[i];
         }
 
-        imgb->ts[0] = frame->pts;
-        imgb->ts[1] = 0;
+        imgb->ts[XEVE_TS_PTS] = frame->pts;
+        imgb->ts[XEVE_TS_DTS] = 0;
 
         /* push image to encoder */
         ret = xeve_push(xectx->id, imgb);
@@ -482,8 +482,11 @@ static int libxeve_encode(AVCodecContext *avctx, AVPacket *avpkt,
 
                 memcpy(avpkt->data, xectx->bitb.addr, xectx->stat.write);
 
-                avpkt->pts = xectx->bitb.ts[0];
-                avpkt->dts = xectx->bitb.ts[1];
+                avpkt->time_base.num = 1;
+                avpkt->time_base.den = xectx->cdsc.param.fps;
+
+                avpkt->pts = xectx->bitb.ts[XEVE_TS_PTS];
+                avpkt->dts = xectx->bitb.ts[XEVE_TS_DTS];
 
                 switch(xectx->stat.stype) {
                 case XEVE_ST_I:

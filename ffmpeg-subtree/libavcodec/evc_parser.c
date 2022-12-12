@@ -585,11 +585,6 @@ static EVCParserSPS *parse_sps(const uint8_t *bs, int bs_size, EVCParserContext 
             for (int i = 0; i < sps->num_ref_pic_list_in_sps[1]; ++i)
                 ref_pic_list_struct(&gb, &sps->rpls[1][i]);
         }
-        else
-        {
-            assert(!"hasn't been implemented yet");
-            //TBD: Basically copy everything from sps->rpls_l0 to sps->rpls_l1
-        }
     }
 
     sps->picture_cropping_flag = get_bits(&gb, 1);

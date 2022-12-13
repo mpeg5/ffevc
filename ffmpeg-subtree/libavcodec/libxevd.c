@@ -54,6 +54,7 @@ typedef struct XevdContext {
 
     XEVD id;            // XEVD instance identifier @see xevd.h
     XEVD_CDSC cdsc;     // decoding parameters @see xevd.h
+    int coded_picture_number;
 } XevdContext;
 
 /**
@@ -267,7 +268,10 @@ static int libxevd_receive_frame(AVCodecContext *avctx, AVFrame *frame)
         if (XEVD_SUCCEEDED(ret)) {
             if (imgb) {
 
-                int ret = libxevd_image_copy(avctx, imgb, frame);
+                frame->coded_picture_number = imgb->ts[XEVD_TS_DTS];
+                frame->display_picture_number = imgb->ts[XEVD_TS_PTS];
+
+                ret = libxevd_image_copy(avctx, imgb, frame);
 
                 // xevd_pull uses pool of objects of type XEVD_IMGB.
                 // The pool size is equal MAX_PB_SIZE (26), so release object when it is no more needed
@@ -318,11 +322,7 @@ static int libxevd_receive_frame(AVCodecContext *avctx, AVFrame *frame)
 
                 bitb.addr = pkt.data + bs_read_pos;
                 bitb.ssize = nalu_size;
-
-                bitb.ts[0] = pkt.pts;
-                bitb.ts[1] = pkt.dts;
-                bitb.ts[2] = 0;
-                bitb.ts[3] = 0;
+                bitb.ts[XEVD_TS_DTS] = xectx->coded_picture_number;
 
                 /* main decoding block */
                 xevd_ret = xevd_decode(xectx->id, &bitb, &stat);
@@ -338,6 +338,8 @@ static int libxevd_receive_frame(AVCodecContext *avctx, AVFrame *frame)
                 if (stat.nalu_type == XEVD_NUT_SPS) { // EVC stream parameters changed
                     if ((ret = export_stream_params(xectx, avctx)) != 0)
                         goto ERR;
+                } else if (stat.nalu_type == XEVD_NUT_IDR || stat.nalu_type == XEVD_NUT_NONIDR) {
+                    xectx->coded_picture_number++;
                 }
 
                 if (stat.read != dec_read_bytes) {
@@ -369,7 +371,6 @@ static av_cold int libxevd_close(AVCodecContext *avctx)
         xevd_delete(xectx->id);
         xectx->id = NULL;
     }
-
     return 0;
 }
 

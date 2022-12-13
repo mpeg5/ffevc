@@ -27,6 +27,11 @@
 #include "golomb.h"
 #include "evc.h"
 
+#define EVC_MAX_QP_TABLE_SIZE   58
+
+#define EXTENDED_SAR            255
+#define NUM_CPB                 32
+
 // rpl structure
 typedef struct RefPicListStruct {
     int poc;
@@ -37,6 +42,73 @@ typedef struct RefPicListStruct {
     char pic_type;
 
 } RefPicListStruct;
+
+// chromaQP table structure to be signalled in SPS
+typedef struct ChromaQpTable
+{
+    int chroma_qp_table_present_flag;       // u(1)
+    int same_qp_table_for_chroma;           // u(1)
+    int global_offset_flag;                 // u(1)
+    int num_points_in_qp_table_minus1[2];   // ue(v)
+    int delta_qp_in_val_minus1[2][EVC_MAX_QP_TABLE_SIZE];   // u(6)
+    int delta_qp_out_val[2][EVC_MAX_QP_TABLE_SIZE];         // se(v)
+} ChromaQpTable;
+
+// Hypothetical Reference Decoder (HRD) parameters, part of VUI
+typedef struct HRDParameters
+{
+    int cpb_cnt_minus1;                             // ue(v)
+    int bit_rate_scale;                             // u(4)
+    int cpb_size_scale;                             // u(4)
+    int bit_rate_value_minus1[NUM_CPB];             // ue(v)
+    int cpb_size_value_minus1[NUM_CPB];             // ue(v)
+    int cbr_flag[NUM_CPB];                          // u(1)
+    int initial_cpb_removal_delay_length_minus1;    // u(5)
+    int cpb_removal_delay_length_minus1;            // u(5)
+    int dpb_output_delay_length_minus1;             // u(5)
+    int time_offset_length;                         // u(5)
+} HRDParameters;
+
+// video usability information (VUI) part of SPS
+typedef struct VUIParameters
+{
+    int aspect_ratio_info_present_flag;             // u(1)
+    int aspect_ratio_idc;                           // u(8)
+    int sar_width;                                  // u(16)
+    int sar_height;                                 // u(16)
+    int overscan_info_present_flag;                 // u(1)
+    int overscan_appropriate_flag;                  // u(1)
+    int video_signal_type_present_flag;             // u(1)
+    int video_format;                               // u(3)
+    int video_full_range_flag;                      // u(1)
+    int colour_description_present_flag;            // u(1)
+    int colour_primaries;                           // u(8)
+    int transfer_characteristics;                   // u(8)
+    int matrix_coefficients;                        // u(8)
+    int chroma_loc_info_present_flag;               // u(1)
+    int chroma_sample_loc_type_top_field;           // ue(v)
+    int chroma_sample_loc_type_bottom_field;        // ue(v)
+    int neutral_chroma_indication_flag;             // u(1)
+    int field_seq_flag;                             // u(1)
+    int timing_info_present_flag;                   // u(1)
+    int num_units_in_tick;                          // u(32)
+    int time_scale;                                 // u(32)
+    int fixed_pic_rate_flag;                        // u(1)
+    int nal_hrd_parameters_present_flag;            // u(1)
+    int vcl_hrd_parameters_present_flag;            // u(1)
+    int low_delay_hrd_flag;                         // u(1)
+    int pic_struct_present_flag;                    // u(1)
+    int bitstream_restriction_flag;                 // u(1)
+    int motion_vectors_over_pic_boundaries_flag;    // u(1)
+    int max_bytes_per_pic_denom;                    // ue(v)
+    int max_bits_per_mb_denom;                      // ue(v)
+    int log2_max_mv_length_horizontal;              // ue(v)
+    int log2_max_mv_length_vertical;                // ue(v)
+    int num_reorder_pics;                           // ue(v)
+    int max_dec_pic_buffering;                      // ue(v)
+
+    HRDParameters hrd_parameters;
+} VUIParameters;
 
 // The sturcture reflects SPS RBSP(raw byte sequence payload) layout
 // @see ISO_IEC_23094-1 section 7.3.2.1
@@ -102,7 +174,7 @@ typedef struct EVCParserSPS {
     int long_term_ref_pic_flag;           // u(1)
     int rpl1_same_as_rpl0_flag;           // u(1)
     int num_ref_pic_list_in_sps[2];       // ue(v)
-    RefPicListStruct rpls[2][EVC_MAX_NUM_RPLS];
+    struct RefPicListStruct rpls[2][EVC_MAX_NUM_RPLS];
 
     int picture_cropping_flag;      // u(1)
     int picture_crop_left_offset;   // ue(v)
@@ -110,14 +182,11 @@ typedef struct EVCParserSPS {
     int picture_crop_top_offset;    // ue(v)
     int picture_crop_bottom_offset; // ue(v)
 
-    // @note
-    // Currently the structure does not reflect the entire SPS RBSP layout.
-    // It contains only the fields that are necessary to read from the NAL unit all the values
-    // necessary for the correct initialization of the AVCodecContext structure.
+    struct ChromaQpTable chroma_qp_table_struct;
 
-    // @note
-    // If necessary, add the missing fields to the structure to reflect
-    // the contents of the entire NAL unit of the SPS type
+    int vui_parameters_present_flag;    // u(1)
+
+    struct VUIParameters vui_parameters;
 
 } EVCParserSPS;
 
@@ -213,6 +282,7 @@ typedef struct EVCParserContext {
     int nalu_prefix_assembled;      // the flag is set to when NALU prefix has been assembled from last chunk and current chunk of incoming data
     int nalu_type;                  // the current NALU type
     int nalu_size;                  // the current NALU size
+    int time_base;
 
     EVCParserPoc poc;
 
@@ -276,6 +346,131 @@ static int get_temporal_id(const uint8_t *bits, int bits_size, AVCodecContext *a
     }
 
     return temporal_id;
+}
+
+// @see ISO_IEC_23094-1 (7.3.7 Reference picture list structure syntax)
+static int ref_pic_list_struct(GetBitContext* gb, RefPicListStruct* rpl)
+{
+    uint32_t delta_poc_st, strp_entry_sign_flag = 0;
+    rpl->ref_pic_num = get_ue_golomb(gb);
+    if (rpl->ref_pic_num > 0)
+    {
+        delta_poc_st = get_ue_golomb(gb);
+
+        rpl->ref_pics[0] = delta_poc_st;
+        if (rpl->ref_pics[0] != 0)
+        {
+            strp_entry_sign_flag = get_bits(gb, 1);
+
+            rpl->ref_pics[0] *= 1 - (strp_entry_sign_flag << 1);
+        }
+    }
+
+    for (int i = 1; i < rpl->ref_pic_num; ++i)
+    {
+        delta_poc_st = get_ue_golomb(gb);
+        if (delta_poc_st != 0) {
+            strp_entry_sign_flag = get_bits(gb, 1);
+        }
+        rpl->ref_pics[i] = rpl->ref_pics[i - 1] + delta_poc_st * (1 - (strp_entry_sign_flag << 1));
+    }
+
+    return 0;
+}
+
+// @see  ISO_IEC_23094-1 (E.2.2 HRD parameters syntax)
+static int hrd_parameters(GetBitContext* gb, HRDParameters* hrd) {
+    hrd->cpb_cnt_minus1 = get_ue_golomb(gb);
+    hrd->bit_rate_scale = get_bits(gb, 4);
+    hrd->cpb_size_scale = get_bits(gb, 4);
+    for (int SchedSelIdx = 0; SchedSelIdx <= hrd->cpb_cnt_minus1; SchedSelIdx++)
+    {
+        hrd->bit_rate_value_minus1[SchedSelIdx] = get_ue_golomb(gb);
+        hrd->cpb_size_value_minus1[SchedSelIdx] = get_ue_golomb(gb);
+        hrd->cbr_flag[SchedSelIdx] = get_bits(gb, 1);
+    }
+    hrd->initial_cpb_removal_delay_length_minus1 = get_bits(gb, 5);
+    hrd->cpb_removal_delay_length_minus1 = get_bits(gb, 5);
+    hrd->cpb_removal_delay_length_minus1 = get_bits(gb, 5);
+    hrd->time_offset_length = get_bits(gb, 5);
+
+    return 0;
+}
+
+// @see  ISO_IEC_23094-1 (E.2.1 VUI parameters syntax)
+static int vui_parameters(GetBitContext* gb, VUIParameters* vui) {
+    vui->aspect_ratio_info_present_flag = get_bits(gb, 1);
+    if (vui->aspect_ratio_info_present_flag)
+    {
+        vui->aspect_ratio_idc = get_bits(gb, 8);
+        if (vui->aspect_ratio_idc == EXTENDED_SAR)
+        {
+            vui->sar_width = get_bits(gb, 16);
+            vui->sar_height = get_bits(gb, 16);
+        }
+    }
+    vui->overscan_info_present_flag = get_bits(gb, 1);
+    if (vui->overscan_info_present_flag)
+    {
+        vui->overscan_appropriate_flag = get_bits(gb, 1);
+    }
+    vui->video_signal_type_present_flag = get_bits(gb, 1);
+    if (vui->video_signal_type_present_flag)
+    {
+        vui->video_format = get_bits(gb, 3);
+        vui->video_full_range_flag = get_bits(gb, 1);
+        vui->colour_description_present_flag = get_bits(gb, 1);
+        if (vui->colour_description_present_flag)
+        {
+            vui->colour_primaries = get_bits(gb, 8);
+            vui->transfer_characteristics = get_bits(gb, 8);
+            vui->matrix_coefficients = get_bits(gb, 8);
+        }
+    }
+    vui->chroma_loc_info_present_flag = get_bits(gb, 1);
+    if (vui->chroma_loc_info_present_flag)
+    {
+        vui->chroma_sample_loc_type_top_field = get_ue_golomb(gb);
+        vui->chroma_sample_loc_type_bottom_field = get_ue_golomb(gb);
+    }
+    vui->neutral_chroma_indication_flag = get_bits(gb, 1);
+
+    vui->field_seq_flag = get_bits(gb, 1);
+
+    vui->timing_info_present_flag = get_bits(gb, 1);
+    if (vui->timing_info_present_flag)
+    {
+        vui->num_units_in_tick = get_bits(gb, 32);
+        vui->time_scale = get_bits(gb, 32);
+        vui->fixed_pic_rate_flag = get_bits(gb, 1);
+    }
+    vui->nal_hrd_parameters_present_flag = get_bits(gb, 1);
+    if (vui->nal_hrd_parameters_present_flag)
+    {
+        hrd_parameters(gb, &vui->hrd_parameters);
+    }
+    vui->vcl_hrd_parameters_present_flag = get_bits(gb, 1);
+    if (vui->vcl_hrd_parameters_present_flag)
+    {
+        hrd_parameters(gb, &vui->hrd_parameters);
+    }
+    if (vui->nal_hrd_parameters_present_flag || vui->vcl_hrd_parameters_present_flag)
+    {
+        vui->low_delay_hrd_flag = get_bits(gb, 1);
+    }
+    vui->pic_struct_present_flag = get_bits(gb, 1);
+    vui->bitstream_restriction_flag = get_bits(gb, 1);
+    if (vui->bitstream_restriction_flag) {
+        vui->motion_vectors_over_pic_boundaries_flag = get_bits(gb, 1);
+        vui->max_bytes_per_pic_denom = get_ue_golomb(gb);
+        vui->max_bits_per_mb_denom = get_ue_golomb(gb);
+        vui->log2_max_mv_length_horizontal = get_ue_golomb(gb);
+        vui->log2_max_mv_length_vertical = get_ue_golomb(gb);
+        vui->num_reorder_pics = get_ue_golomb(gb);
+        vui->max_dec_pic_buffering = get_ue_golomb(gb);
+    }
+
+    return 0;
 }
 
 // @see ISO_IEC_23094-1 (7.3.2.1 SPS RBSP syntax)
@@ -372,6 +567,58 @@ static EVCParserSPS *parse_sps(const uint8_t *bs, int bs_size, EVCParserContext 
         if (sps->log2_sub_gop_length == 0)
             sps->log2_ref_pic_gap_length = get_ue_golomb(&gb);
     }
+
+    if (!sps->sps_rpl_flag) {
+        sps->max_num_tid0_ref_pics = get_ue_golomb(&gb);
+    } else {
+        sps->sps_max_dec_pic_buffering_minus1 = get_ue_golomb(&gb);
+        sps->long_term_ref_pic_flag = get_bits(&gb, 1);
+        sps->rpl1_same_as_rpl0_flag = get_bits(&gb, 1);
+        sps->num_ref_pic_list_in_sps[0] = get_ue_golomb(&gb);
+
+        for (int i = 0; i < sps->num_ref_pic_list_in_sps[0]; ++i)
+            ref_pic_list_struct(&gb, &sps->rpls[0][i]);
+
+        if (!sps->rpl1_same_as_rpl0_flag)
+        {
+            sps->num_ref_pic_list_in_sps[1] = get_ue_golomb(&gb);
+            for (int i = 0; i < sps->num_ref_pic_list_in_sps[1]; ++i)
+                ref_pic_list_struct(&gb, &sps->rpls[1][i]);
+        }
+    }
+
+    sps->picture_cropping_flag = get_bits(&gb, 1);
+
+    if (sps->picture_cropping_flag) {
+        sps->picture_crop_left_offset = get_ue_golomb(&gb);
+        sps->picture_crop_right_offset = get_ue_golomb(&gb);
+        sps->picture_crop_top_offset = get_ue_golomb(&gb);
+        sps->picture_crop_bottom_offset = get_ue_golomb(&gb);
+    }
+
+    if (sps->chroma_format_idc != 0)
+    {
+        sps->chroma_qp_table_struct.chroma_qp_table_present_flag = get_bits(&gb, 1);
+
+        if (sps->chroma_qp_table_struct.chroma_qp_table_present_flag)
+        {
+            sps->chroma_qp_table_struct.same_qp_table_for_chroma = get_bits(&gb, 1);
+            sps->chroma_qp_table_struct.global_offset_flag = get_bits(&gb, 1);
+            for (int i = 0; i < (sps->chroma_qp_table_struct.same_qp_table_for_chroma ? 1 : 2); i++)
+            {
+                sps->chroma_qp_table_struct.num_points_in_qp_table_minus1[i] = get_ue_golomb(&gb);;
+                for (int j = 0; j <= sps->chroma_qp_table_struct.num_points_in_qp_table_minus1[i]; j++)
+                {
+                    sps->chroma_qp_table_struct.delta_qp_in_val_minus1[i][j] = get_bits(&gb, 6);
+                    sps->chroma_qp_table_struct.delta_qp_out_val[i][j] = get_se_golomb(&gb);
+                }
+            }
+        }
+    }
+
+    sps->vui_parameters_present_flag = get_bits(&gb, 1);
+    if (sps->vui_parameters_present_flag)
+        vui_parameters(&gb, &(sps->vui_parameters));
 
     // @note
     // If necessary, add the missing fields to the EVCParserSPS structure
@@ -624,6 +871,7 @@ static int parse_nal_unit(AVCodecParserContext *s, const uint8_t *buf,
 
     if (nalu_type == EVC_SPS_NUT) {
         EVCParserSPS *sps;
+        int SubGopLength;
 
         sps = parse_sps(data, nalu_size, ev);
         if (!sps) {
@@ -633,11 +881,18 @@ static int parse_nal_unit(AVCodecParserContext *s, const uint8_t *buf,
 
         s->coded_width         = sps->pic_width_in_luma_samples;
         s->coded_height        = sps->pic_height_in_luma_samples;
-        s->width               = sps->pic_width_in_luma_samples;
-        s->height              = sps->pic_height_in_luma_samples;
+        s->width               = sps->pic_width_in_luma_samples  - sps->picture_crop_left_offset - sps->picture_crop_right_offset;
+        s->height              = sps->pic_height_in_luma_samples - sps->picture_crop_top_offset  - sps->picture_crop_bottom_offset;
+
+        SubGopLength = (int)pow(2.0, sps->log2_sub_gop_length);
+        avctx->gop_size = SubGopLength;
+
+        avctx->delay = (sps->sps_max_dec_pic_buffering_minus1)?sps->sps_max_dec_pic_buffering_minus1-1:SubGopLength+sps->max_num_tid0_ref_pics-1;
 
         if (sps->profile_idc == 1) avctx->profile = FF_PROFILE_EVC_MAIN;
         else avctx->profile = FF_PROFILE_EVC_BASELINE;
+
+        ev->time_base = avctx->time_base.den;
 
         switch (sps->chroma_format_idc) {
             case 0: /* YCBCR400_10LE */
@@ -893,7 +1148,7 @@ static int evc_assemble_nalu(AVCodecParserContext *s, const uint8_t *data, int d
     //    - The pc->index is the index of the element located right next to the last element of the current NALU in the pc->buffer.
     //    - The elements of pc->buffer located before ctx->bytes_read index contain previously read NALUs of the current Access Unit.
     //
-    // 2. buf contains the rest of the NAL unit bytes
+    // 2. buf contains the rest of the NAL unit bytestime_base
     //
     //    - ctx->to_read number of bytes to read from buf (the index of the element right next to the last element to read)
     //

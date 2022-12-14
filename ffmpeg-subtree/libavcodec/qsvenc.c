@@ -329,6 +329,22 @@ static void dump_video_param(AVCodecContext *avctx, QSVEncContext *q,
                "MinQPI: %"PRIu8"; MaxQPI: %"PRIu8"; MinQPP: %"PRIu8"; MaxQPP: %"PRIu8"; MinQPB: %"PRIu8"; MaxQPB: %"PRIu8"\n",
                co2->MinQPI, co2->MaxQPI, co2->MinQPP, co2->MaxQPP, co2->MinQPB, co2->MaxQPB);
         av_log(avctx, AV_LOG_VERBOSE, "DisableDeblockingIdc: %"PRIu32" \n", co2->DisableDeblockingIdc);
+
+        switch (co2->SkipFrame) {
+        case MFX_SKIPFRAME_NO_SKIP:
+            av_log(avctx, AV_LOG_VERBOSE, "SkipFrame: no_skip\n");
+            break;
+        case MFX_SKIPFRAME_INSERT_DUMMY:
+            av_log(avctx, AV_LOG_VERBOSE, "SkipFrame: insert_dummy\n");
+            break;
+        case MFX_SKIPFRAME_INSERT_NOTHING:
+            av_log(avctx, AV_LOG_VERBOSE, "SkipFrame: insert_nothing\n");
+            break;
+        case MFX_SKIPFRAME_BRC_ONLY:
+            av_log(avctx, AV_LOG_VERBOSE, "SkipFrame: brc_only\n");
+            break;
+        default: break;
+        }
     }
 
     if (co3) {
@@ -628,6 +644,12 @@ static int check_enc_param(AVCodecContext *avctx, QSVEncContext *q)
     return 1;
 }
 
+static int is_strict_gop(QSVEncContext *q) {
+    if (q->adaptive_b == 0 && q->adaptive_i == 0)
+        return 1;
+    return 0;
+}
+
 static int init_video_param_jpeg(AVCodecContext *avctx, QSVEncContext *q)
 {
     enum AVPixelFormat sw_format = avctx->pix_fmt == AV_PIX_FMT_QSV ?
@@ -709,8 +731,11 @@ static int init_video_param(AVCodecContext *avctx, QSVEncContext *q)
         return AVERROR_BUG;
     q->param.mfx.CodecId = ret;
 
-    if (avctx->level > 0)
+    if (avctx->level > 0) {
         q->param.mfx.CodecLevel = avctx->level;
+        if (avctx->codec_id == AV_CODEC_ID_HEVC && avctx->level >= MFX_LEVEL_HEVC_4)
+            q->param.mfx.CodecLevel |= q->tier;
+    }
 
     if (avctx->compression_level == FF_COMPRESSION_DEFAULT) {
         avctx->compression_level = q->preset;
@@ -736,7 +761,8 @@ static int init_video_param(AVCodecContext *avctx, QSVEncContext *q)
     q->old_gop_size                 = avctx->gop_size;
     q->param.mfx.GopRefDist         = FFMAX(-1, avctx->max_b_frames) + 1;
     q->param.mfx.GopOptFlag         = avctx->flags & AV_CODEC_FLAG_CLOSED_GOP ?
-                                      MFX_GOP_CLOSED : MFX_GOP_STRICT;
+                                      MFX_GOP_CLOSED : is_strict_gop(q) ?
+                                      MFX_GOP_STRICT : 0;
     q->param.mfx.IdrInterval        = q->idr_interval;
     q->param.mfx.NumSlice           = avctx->slices;
     q->param.mfx.NumRefFrame        = FFMAX(0, avctx->refs);
@@ -991,6 +1017,8 @@ static int init_video_param(AVCodecContext *avctx, QSVEncContext *q)
             q->old_max_qp_b = q->max_qp_b;
             if (q->mbbrc >= 0)
                 q->extco2.MBBRC = q->mbbrc ? MFX_CODINGOPTION_ON : MFX_CODINGOPTION_OFF;
+            if (q->skip_frame >= 0)
+                q->extco2.SkipFrame = q->skip_frame;
 
             q->extco2.Header.BufferId = MFX_EXTBUFF_CODING_OPTION2;
             q->extco2.Header.BufferSz = sizeof(q->extco2);
@@ -1622,25 +1650,16 @@ int ff_qsv_enc_init(AVCodecContext *avctx, QSVEncContext *q)
     return 0;
 }
 
-static void free_encoder_ctrl_payloads(mfxEncodeCtrl* enc_ctrl)
+static void free_encoder_ctrl(mfxEncodeCtrl* enc_ctrl)
 {
     if (enc_ctrl) {
-        int i;
-        for (i = 0; i < enc_ctrl->NumPayload && i < QSV_MAX_ENC_PAYLOAD; i++) {
+        for (int i = 0; i < enc_ctrl->NumPayload && i < QSV_MAX_ENC_PAYLOAD; i++)
             av_freep(&enc_ctrl->Payload[i]);
-        }
-        enc_ctrl->NumPayload = 0;
-    }
-}
 
-static void free_encoder_ctrl_extparam(mfxEncodeCtrl* enc_ctrl)
-{
-    if (enc_ctrl) {
-        int i;
-        for (i = 0; i < enc_ctrl->NumExtParam && i < QSV_MAX_ENC_EXTPARAM; i++) {
-            if (enc_ctrl->ExtParam[i])
-                av_freep(&(enc_ctrl->ExtParam[i]));
-        }
+        for (int i = 0; i < enc_ctrl->NumExtParam && i < QSV_MAX_ENC_EXTPARAM; i++)
+            av_freep(&enc_ctrl->ExtParam[i]);
+
+        enc_ctrl->NumPayload = 0;
         enc_ctrl->NumExtParam = 0;
     }
 }
@@ -1650,8 +1669,7 @@ static void clear_unused_frames(QSVEncContext *q)
     QSVFrame *cur = q->work_frames;
     while (cur) {
         if (cur->used && !cur->surface.Data.Locked) {
-            free_encoder_ctrl_payloads(&cur->enc_ctrl);
-            free_encoder_ctrl_extparam(&cur->enc_ctrl);
+            free_encoder_ctrl(&cur->enc_ctrl);
             //do not reuse enc_ctrl from previous frame
             memset(&cur->enc_ctrl, 0, sizeof(cur->enc_ctrl));
             cur->enc_ctrl.Payload = cur->payloads;
@@ -1919,6 +1937,19 @@ static int set_roi_encode_ctrl(AVCodecContext *avctx, const AVFrame *frame,
         enc_ctrl->NumExtParam++;
     }
     return 0;
+}
+
+static void set_skip_frame_encode_ctrl(AVCodecContext *avctx, const AVFrame *frame,
+                               mfxEncodeCtrl *enc_ctrl)
+{
+    AVDictionaryEntry* skip_frame_dict = NULL;
+    if (!frame->metadata)
+        return;
+    skip_frame_dict = av_dict_get(frame->metadata, "qsv_skip_frame", NULL, 0);
+    if (!skip_frame_dict)
+        return;
+    enc_ctrl->SkipFrame = strtol(skip_frame_dict->value, NULL, 10);
+    return;
 }
 
 static int update_qp(AVCodecContext *avctx, QSVEncContext *q)
@@ -2281,8 +2312,8 @@ static int encode_frame(AVCodecContext *avctx, QSVEncContext *q,
         pkt.bs->ExtParam = enc_buf;
     }
 
-    if (q->set_encode_ctrl_cb) {
-        q->set_encode_ctrl_cb(avctx, frame, &qsv_frame->enc_ctrl);
+    if (q->set_encode_ctrl_cb && enc_ctrl) {
+        q->set_encode_ctrl_cb(avctx, frame, enc_ctrl);
     }
 
     if ((avctx->codec_id == AV_CODEC_ID_H264 ||
@@ -2292,6 +2323,11 @@ static int encode_frame(AVCodecContext *avctx, QSVEncContext *q,
         if (ret < 0)
             goto free;
     }
+    if ((avctx->codec_id == AV_CODEC_ID_H264 ||
+         avctx->codec_id == AV_CODEC_ID_H265) &&
+         q->skip_frame != MFX_SKIPFRAME_NO_SKIP &&
+         enc_ctrl && QSV_RUNTIME_VERSION_ATLEAST(q->ver, 1, 13))
+        set_skip_frame_encode_ctrl(avctx, frame, enc_ctrl);
 
     pkt.sync = av_mallocz(sizeof(*pkt.sync));
     if (!pkt.sync)
@@ -2419,8 +2455,7 @@ int ff_qsv_enc_close(AVCodecContext *avctx, QSVEncContext *q)
     while (cur) {
         q->work_frames = cur->next;
         av_frame_free(&cur->frame);
-        free_encoder_ctrl_extparam(&cur->enc_ctrl);
-        free_encoder_ctrl_payloads(&cur->enc_ctrl);
+        free_encoder_ctrl(&cur->enc_ctrl);
         av_freep(&cur);
         cur = q->work_frames;
     }

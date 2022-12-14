@@ -24,7 +24,6 @@ OBJS-$(CONFIG_HUFFYUVDSP)              += x86/huffyuvdsp_init.o
 OBJS-$(CONFIG_HUFFYUVENCDSP)           += x86/huffyuvencdsp_init.o
 OBJS-$(CONFIG_IDCTDSP)                 += x86/idctdsp_init.o
 OBJS-$(CONFIG_LPC)                     += x86/lpc_init.o
-OBJS-$(CONFIG_MDCT15)                  += x86/mdct15_init.o
 OBJS-$(CONFIG_ME_CMP)                  += x86/me_cmp_init.o
 OBJS-$(CONFIG_MPEGAUDIODSP)            += x86/mpegaudiodsp.o
 OBJS-$(CONFIG_MPEGVIDEO)               += x86/mpegvideo.o
@@ -127,7 +126,6 @@ X86ASM-OBJS-$(CONFIG_LLAUDDSP)         += x86/lossless_audiodsp.o
 X86ASM-OBJS-$(CONFIG_LLVIDDSP)         += x86/lossless_videodsp.o
 X86ASM-OBJS-$(CONFIG_LLVIDENCDSP)      += x86/lossless_videoencdsp.o
 X86ASM-OBJS-$(CONFIG_LPC)              += x86/lpc.o
-X86ASM-OBJS-$(CONFIG_MDCT15)           += x86/mdct15.o
 X86ASM-OBJS-$(CONFIG_ME_CMP)           += x86/me_cmp.o
 X86ASM-OBJS-$(CONFIG_MPEGAUDIODSP)     += x86/imdct36.o
 X86ASM-OBJS-$(CONFIG_MPEGVIDEOENC)     += x86/mpegvideoencdsp.o
@@ -140,8 +138,11 @@ X86ASM-OBJS-$(CONFIG_QPELDSP)          += x86/qpeldsp.o                 \
 X86ASM-OBJS-$(CONFIG_RV34DSP)          += x86/rv34dsp.o
 X86ASM-OBJS-$(CONFIG_VC1DSP)           += x86/vc1dsp_loopfilter.o       \
                                           x86/vc1dsp_mc.o
-X86ASM-OBJS-$(CONFIG_IDCTDSP)          += x86/simple_idct10.o           \
-                                          x86/simple_idct.o
+ifdef ARCH_X86_64
+X86ASM-OBJS-$(CONFIG_IDCTDSP)          += x86/simple_idct10.o
+else
+X86ASM-OBJS-$(CONFIG_IDCTDSP)          += x86/simple_idct.o
+endif
 X86ASM-OBJS-$(CONFIG_VIDEODSP)         += x86/videodsp.o
 X86ASM-OBJS-$(CONFIG_VP3DSP)           += x86/vp3dsp.o
 X86ASM-OBJS-$(CONFIG_VP8DSP)           += x86/vp8dsp.o                  \

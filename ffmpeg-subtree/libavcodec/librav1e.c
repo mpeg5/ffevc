@@ -243,10 +243,9 @@ static av_cold int librav1e_encode_init(AVCodecContext *avctx)
     }
 
     {
-        AVDictionaryEntry *en = NULL;
-        while ((en = av_dict_get(ctx->rav1e_opts, "", en, AV_DICT_IGNORE_SUFFIX))) {
-            int parse_ret = rav1e_config_parse(cfg, en->key, en->value);
-            if (parse_ret < 0)
+        const AVDictionaryEntry *en = NULL;
+        while ((en = av_dict_iterate(ctx->rav1e_opts, en))) {
+            if (rav1e_config_parse(cfg, en->key, en->value) < 0)
                 av_log(avctx, AV_LOG_WARNING, "Invalid value for %s: %s.\n", en->key, en->value);
         }
     }

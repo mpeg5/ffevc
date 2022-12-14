@@ -350,6 +350,19 @@ terminates. Default value is 0.
 If set to 1, force the filter to extend the last frame of secondary streams
 until the end of the primary stream. A value of 0 disables this behavior.
 Default value is 1.
+
+@item ts_sync_mode
+How strictly to sync streams based on secondary input timestamps; it accepts
+one of the following values:
+
+@table @option
+@item default
+Frame from secondary input with the nearest lower or equal timestamp to the
+primary input frame.
+@item nearest
+Frame from secondary input with the absolute nearest timestamp to the primary
+input frame.
+@end table
 @end table
 
 @c man end OPTIONS FOR FILTERS WITH SEVERAL INPUTS
@@ -1689,6 +1702,13 @@ Default value is auto.
 Apply reverb to stream using mono IR file as second input, complete command using ffmpeg:
 @example
 ffmpeg -i input.wav -i middle_tunnel_1way_mono.wav -lavfi afir output.wav
+@end example
+
+@item
+Apply true stereo processing given input stereo stream, and two stereo impulse responses for left and right channel,
+the impulse response files are files with names l_ir.wav and r_ir.wav:
+@example
+"pan=4C|c0=FL|c1=FL|c2=FR|c3=FR[a];amovie=l_ir.wav[LIR];amovie=r_ir.wav[RIR];[LIR][RIR]amerge[ir];[a][ir]afir=irfmt=input:gtype=gn:irgain=-5dB,pan=stereo|FL<c0+c2|FR<c1+c3"
 @end example
 @end itemize
 
@@ -4587,6 +4607,33 @@ Using >0 and <1 values will make less conservative gain adjustments, like
 when framelen option is set to smaller value, if framelen option value is
 compensated for non-zero overlap then gain adjustments will be smoother across time
 compared to zero overlap case.
+
+@item curve, v
+Specify the peak mapping curve expression which is going to be used when calculating
+gain applied to frames. The max output frame gain will still be limited by other
+options mentioned previously for this filter.
+
+The expression can contain the following constants:
+
+@table @option
+@item ch
+current channel number
+
+@item sn
+current sample number
+
+@item nb_channels
+number of channels
+
+@item t
+timestamp expressed in seconds
+
+@item sr
+sample rate
+
+@item p
+current frame peak value
+@end table
 @end table
 
 @subsection Commands
@@ -6338,6 +6385,10 @@ option. When enabled any half-cycle of samples with their local peak value below
 Link channels when calculating gain applied to each filtered channel sample, by default is disabled.
 When disabled each filtered channel gain calculation is independent, otherwise when this option
 is enabled the minimum of all possible gains for each filtered channel is used.
+
+@item rms, m
+Set the expansion target RMS value. This specifies the highest allowed RMS level for the normalized
+audio input. Default value is 0.0, thus disabled. Allowed range is from 0.0 to 1.0.
 @end table
 
 @subsection Commands
@@ -6639,9 +6690,19 @@ In @var{add} mode, LFE channel is created from input audio and added to output.
 In @var{sub} mode, LFE channel is created from input audio and added to output but
 also all non-LFE output channels are subtracted with output LFE channel.
 
+@item smooth
+Set temporal smoothness strength, used to gradually change factors when transforming
+stereo sound in time. Allowed range is from @var{0.0} to @var{1.0}.
+Useful to improve output quality with @var{focus} option values greater than @var{0.0}.
+Default is @var{0.0}. Only values inside this range and without edges are effective.
+
 @item angle
 Set angle of stereo surround transform, Allowed range is from @var{0} to @var{360}.
 Default is @var{90}.
+
+@item focus
+Set focus of stereo surround transform, Allowed range is from @var{-1} to @var{1}.
+Default is @var{0}.
 
 @item fc_in
 Set front center input volume. By default, this is @var{1}.
@@ -7986,6 +8047,25 @@ The command accepts the same syntax of the corresponding option.
 
 If the specified expression is not valid, it is kept at its current
 value.
+
+@section backgroundkey
+
+Turns a static background into transparency.
+
+The filter accepts the following option:
+
+@table @option
+@item threshold
+Threshold for scene change detection.
+@item similarity
+Similarity percentage with the background.
+@item blend
+Set the blend amount for pixels that are not similar.
+@end table
+
+@subsection Commands
+
+This filter supports the all above options as @ref{commands}.
 
 @section bbox
 
@@ -10036,6 +10116,30 @@ given as complete and escaped command-line for Apple's standard bash shell:
 ffmpeg -f lavfi -i nullsrc=s=100x100,coreimage=filter=CIQRCodeGenerator@@inputMessage=https\\\\\://FFmpeg.org/@@inputCorrectionLevel=H -frames:v 1 QRCode.png
 @end example
 @end itemize
+
+@section corr
+
+Obtain the correlation between two input videos.
+
+This filter takes two input videos.
+
+Both input videos must have the same resolution and pixel format for
+this filter to work correctly. Also it assumes that both inputs
+have the same number of frames, which are compared one by one.
+
+The obtained per component, average, min and max correlation is printed through
+the logging system.
+
+The filter stores the calculated correlation of each frame in frame metadata.
+
+This filter also supports the @ref{framesync} options.
+
+In the below example the input file @file{main.mpg} being processed is compared
+with the reference file @file{ref.mpg}.
+
+@example
+ffmpeg -i main.mpg -i ref.mpg -lavfi corr -f null -
+@end example
 
 @section cover_rect
 
@@ -15010,6 +15114,8 @@ the logging system.
 
 The filter stores the calculated identity scores of each frame in frame metadata.
 
+This filter also supports the @ref{framesync} options.
+
 In the below example the input file @file{main.mpg} being processed is compared
 with the reference file @file{ref.mpg}.
 
@@ -15527,9 +15633,10 @@ will be performed.
 Work the same as the identical @ref{scale} filter options.
 
 @item normalize_sar
-If enabled (the default), output frames will always have a pixel aspect ratio
-of 1:1. If disabled, any aspect ratio mismatches, including those from e.g.
-anamorphic video sources, are forwarded to the output pixel aspect ratio.
+If enabled, output frames will always have a pixel aspect ratio of 1:1. This
+will introduce padding/cropping as necessary. If disabled (the default), any
+aspect ratio mismatches, including those from e.g. anamorphic video sources,
+are forwarded to the output pixel aspect ratio.
 
 @item pad_crop_ratio
 Specifies a ratio (between @code{0.0} and @code{1.0}) between padding and
@@ -17140,6 +17247,8 @@ The obtained per component, average, min and max MSAD is printed through
 the logging system.
 
 The filter stores the calculated MSAD of each frame in frame metadata.
+
+This filter also supports the @ref{framesync} options.
 
 In the below example the input file @file{main.mpg} being processed is compared
 with the reference file @file{ref.mpg}.
@@ -18886,6 +18995,7 @@ Available LUTs:
 @item nominal
 @item preferred
 @item total
+@item spectral
 @end table
 
 @item opacity
@@ -22131,6 +22241,10 @@ The filter accepts the following options:
 Set the frames batch size to analyze; in a set of @var{n} frames, the filter
 will pick one of them, and then handle the next batch of @var{n} frames until
 the end. Default is @code{100}.
+
+@item log
+Set the log level to display picked frame stats.
+Default is @code{info}.
 @end table
 
 Since the filter keeps track of the whole frames sequence, a bigger @var{n}
@@ -23981,6 +24095,8 @@ have the same number of frames, which are compared one by one.
 The obtained average VIF score is printed through the logging system.
 
 The filter stores the calculated VIF score of each frame.
+
+This filter also supports the @ref{framesync} options.
 
 In the below example the input file @file{main.mpg} being processed is compared
 with the reference file @file{ref.mpg}.
@@ -26297,35 +26413,63 @@ To use vaapi filters, you need to setup the vaapi device correctly. For more inf
 Overlay one video on the top of another.
 
 It takes two inputs and has one output. The first input is the "main" video on which the second input is overlaid.
-This filter requires same memory layout for all the inputs. So, format conversion may be needed.
 
 The filter accepts the following options:
 
 @table @option
-
 @item x
-Set the x coordinate of the overlaid video on the main video.
-Default value is @code{0}.
-
 @item y
-Set the y coordinate of the overlaid video on the main video.
-Default value is @code{0}.
+Set expressions for the x and y coordinates of the overlaid video
+on the main video.
+
+Default value is "0" for both expressions.
 
 @item w
-Set the width of the overlaid video on the main video.
-Default value is the width of input overlay video.
-
 @item h
-Set the height of the overlaid video on the main video.
-Default value is the height of input overlay video.
+Set expressions for the width and height the overlaid video
+on the main video.
+
+Default values are 'overlay_iw' for 'w' and 'overlay_ih*w/overlay_iw' for 'h'.
+
+The expressions can contain the following parameters:
+
+@table @option
+
+@item main_w, W
+@item main_h, H
+The main input width and height.
+
+@item overlay_iw
+@item overlay_ih
+The overlay input width and height.
+
+@item overlay_w, w
+@item overlay_h, h
+The overlay output width and height.
+
+@item overlay_x, x
+@item overlay_y, y
+Position of the overlay layer inside of main
+
+@end table
 
 @item alpha
 Set transparency of overlaid video. Allowed range is 0.0 to 1.0.
 Higher value means lower transparency.
 Default value is @code{1.0}.
 
+@item eof_action
+See @ref{framesync}.
+
+@item shortest
+See @ref{framesync}.
+
+@item repeatlast
+See @ref{framesync}.
+
 @end table
 
+This filter also supports the @ref{framesync} options.
 @subsection Examples
 
 @itemize
@@ -27927,6 +28071,8 @@ Force the frame logging level.
 
 Available values are:
 @table @samp
+@item quiet
+logging disabled
 @item info
 information logging level
 @item verbose
@@ -29182,6 +29328,105 @@ axisfile=myaxis.png:basefreq=40:endfreq=10000
 @end example
 @end itemize
 
+@section showcwt
+
+Convert input audio to video output representing frequency spectrum
+using Continuous Wavelet Transform and Morlet wavelet.
+
+The filter accepts the following options:
+
+@table @option
+@item size, s
+Specify the video size for the output. For the syntax of this option,
+check the @ref{video size syntax,,"Video size" section in the ffmpeg-utils manual,ffmpeg-utils}.
+Default value is @code{640x512}.
+
+@item rate, r
+Set the output frame rate. Default value is @code{25}.
+
+@item scale
+Set the frequency scale used. Allowed values are:
+
+@table @option
+@item linear
+@item log2
+@item bark
+@item mel
+@item erbs
+@end table
+Default value is @code{linear}.
+
+@item min
+Set the minimum frequency that will be used in output.
+Default is @code{20} Hz.
+
+@item max
+Set the maximum frequency that will be used in output.
+Default is @code{20000} Hz. The real frequency upper limit
+depends on input audio's sample rate and such will be enforced
+on this value when it is set to value greater than Nyquist frequency.
+
+@item logb
+Set the logarithmic basis for brightness strength when
+mapping calculated magnitude values to pixel values.
+Allowed range is from @code{0} to @code{1}.
+Default value is @code{0.0001}.
+
+@item deviation
+Set the frequency deviation.
+Lower values than @code{1} are more frequency oriented,
+while higher values than @code{1} are more time oriented.
+Allowed range is from @code{0} to @code{10}.
+Default value is @code{1}.
+
+@item pps
+Set the number of pixel output per each second in one row.
+Allowed range is from @code{1} to @code{1024}.
+Default value is @code{64}.
+
+@item mode
+Set the output visual mode. Allowed values are:
+
+@table @option
+@item magnitude
+Show magnitude.
+@item phase
+Show only phase.
+@item magphase
+Show combination of magnitude and phase.
+Magnitude is mapped to brightness and phase to color.
+@item channel
+Show unique color per channel magnitude.
+@item stereo
+Show unique color per stereo difference.
+@end table
+
+Default value is @code{magnitude}.
+
+@item slide
+Set the output slide method. Allowed values are:
+
+@table @option
+@item replace
+@item scroll
+@item frame
+@end table
+
+@item direction
+Set the direction method for output slide method. Allowed values are:
+
+@table @option
+@item lr
+Direction from left to right.
+@item rl
+Direction from right to left.
+@item ud
+Direction from up to down.
+@item du
+Direction from down to up.
+@end table
+@end table
+
 @section showfreqs
 
 Convert input audio to video output representing the audio power spectrum.
@@ -29366,11 +29611,6 @@ It accepts the following values:
 @end table
 
 Default value is @code{hann}.
-
-@item overlap
-Set ratio of overlap window. Default value is @code{0.5}.
-When value is @code{1} overlap is set to recommended size for specific
-window function currently used.
 
 @item rate, r
 Set output framerate.

@@ -45,11 +45,6 @@ static Muxer *mux_from_of(OutputFile *of)
     return (Muxer*)of;
 }
 
-static MuxStream *ms_from_ost(OutputStream *ost)
-{
-    return (MuxStream*)ost;
-}
-
 static int64_t filesize(AVIOContext *pb)
 {
     int64_t ret = -1;
@@ -672,13 +667,12 @@ static void ost_free(OutputStream **post)
     av_packet_free(&ost->pkt);
     av_dict_free(&ost->encoder_opts);
 
-    av_freep(&ost->forced_keyframes);
-    av_expr_free(ost->forced_keyframes_pexpr);
+    av_freep(&ost->kf.pts);
+    av_expr_free(ost->kf.pexpr);
+
     av_freep(&ost->avfilter);
     av_freep(&ost->logfile_prefix);
-    av_freep(&ost->forced_kf_pts);
     av_freep(&ost->apad);
-    av_freep(&ost->disposition);
 
 #if FFMPEG_OPT_MAP_CHANNEL
     av_freep(&ost->audio_channels_map);
@@ -740,12 +734,4 @@ int64_t of_filesize(OutputFile *of)
 {
     Muxer *mux = mux_from_of(of);
     return atomic_load(&mux->last_filesize);
-}
-
-AVChapter * const *
-of_get_chapters(OutputFile *of, unsigned int *nb_chapters)
-{
-    Muxer *mux = mux_from_of(of);
-    *nb_chapters = mux->fc->nb_chapters;
-    return mux->fc->chapters;
 }

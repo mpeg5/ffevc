@@ -56,16 +56,17 @@ static const struct pl_tone_map_function * const tonemapping_funcs[TONE_MAP_COUN
 typedef struct LibplaceboContext {
     /* lavfi vulkan*/
     FFVulkanContext vkctx;
-    int initialized;
 
     /* libplacebo */
     pl_log log;
     pl_vulkan vulkan;
     pl_gpu gpu;
     pl_renderer renderer;
+    pl_tex tex[8];
 
     /* settings */
     char *out_format_string;
+    enum AVPixelFormat out_format;
     char *w_expr;
     char *h_expr;
     AVRational target_sar;
@@ -215,6 +216,8 @@ static int find_scaler(AVFilterContext *avctx,
     return AVERROR(EINVAL);
 }
 
+static void libplacebo_uninit(AVFilterContext *avctx);
+
 static int libplacebo_init(AVFilterContext *avctx)
 {
     LibplaceboContext *s = avctx->priv;
@@ -229,6 +232,18 @@ static int libplacebo_init(AVFilterContext *avctx)
     if (!s->log)
         return AVERROR(ENOMEM);
 
+    if (s->out_format_string) {
+        s->out_format = av_get_pix_fmt(s->out_format_string);
+        if (s->out_format == AV_PIX_FMT_NONE) {
+            av_log(avctx, AV_LOG_ERROR, "Invalid output format: %s\n",
+                   s->out_format_string);
+            libplacebo_uninit(avctx);
+            return AVERROR(EINVAL);
+        }
+    } else {
+        s->out_format = AV_PIX_FMT_NONE;
+    }
+
     /* Note: s->vulkan etc. are initialized later, when hwctx is available */
     return 0;
 }
@@ -237,9 +252,25 @@ static int init_vulkan(AVFilterContext *avctx)
 {
     int err = 0;
     LibplaceboContext *s = avctx->priv;
-    const AVVulkanDeviceContext *hwctx = s->vkctx.hwctx;
+    const AVHWDeviceContext *avhwctx;
+    const AVVulkanDeviceContext *hwctx;
     uint8_t *buf = NULL;
     size_t buf_len;
+
+    if (!avctx->hw_device_ctx) {
+        av_log(s, AV_LOG_ERROR, "Missing vulkan hwdevice for vf_libplacebo.\n");
+        return AVERROR(EINVAL);
+    }
+
+    avhwctx = avctx->hw_device_ctx->data;
+
+    if (avhwctx->type != AV_HWDEVICE_TYPE_VULKAN) {
+        av_log(s, AV_LOG_ERROR, "Expected vulkan hwdevice for vf_libplacebo, got %s.\n",
+            av_hwdevice_get_type_name(avhwctx->type));
+        return AVERROR(EINVAL);
+    }
+
+    hwctx = avhwctx->hwctx;
 
     /* Import libavfilter vulkan context into libplacebo */
     s->vulkan = pl_vulkan_import(s->log, pl_vulkan_import_params(
@@ -289,7 +320,6 @@ static int init_vulkan(AVFilterContext *avctx)
 fail:
     if (buf)
         av_file_unmap(buf, buf_len);
-    s->initialized =  1;
     return err;
 }
 
@@ -297,13 +327,14 @@ static void libplacebo_uninit(AVFilterContext *avctx)
 {
     LibplaceboContext *s = avctx->priv;
 
+    for (int i = 0; i < FF_ARRAY_ELEMS(s->tex); i++)
+        pl_tex_destroy(s->gpu, &s->tex[i]);
     for (int i = 0; i < s->num_hooks; i++)
         pl_mpv_user_shader_destroy(&s->hooks[i]);
     pl_renderer_destroy(&s->renderer);
     pl_vulkan_destroy(&s->vulkan);
     pl_log_destroy(&s->log);
     ff_vk_uninit(&s->vkctx);
-    s->initialized = 0;
     s->gpu = NULL;
 }
 
@@ -313,17 +344,23 @@ static int process_frames(AVFilterContext *avctx, AVFrame *out, AVFrame *in)
     LibplaceboContext *s = avctx->priv;
     struct pl_render_params params;
     enum pl_tone_map_mode tonemapping_mode = s->tonemapping_mode;
+    const AVPixFmtDescriptor *outdesc = av_pix_fmt_desc_get(out->format);
     enum pl_gamut_mode gamut_mode = s->gamut_mode;
     struct pl_frame image, target;
     ok = pl_map_avframe_ex(s->gpu, &image, pl_avframe_params(
         .frame    = in,
+        .tex      = s->tex,
         .map_dovi = s->apply_dovi,
     ));
 
-    ok &= pl_map_avframe_ex(s->gpu, &target, pl_avframe_params(
-        .frame    = out,
-        .map_dovi = false,
-    ));
+    if (outdesc->flags & AV_PIX_FMT_FLAG_HWACCEL) {
+        ok &= pl_map_avframe_ex(s->gpu, &target, pl_avframe_params(
+            .frame    = out,
+            .map_dovi = false,
+        ));
+    } else {
+        ok &= pl_frame_recreate_from_avframe(s->gpu, &target, s->tex + 4, out);
+    }
 
     if (!ok) {
         err = AVERROR_EXTERNAL;
@@ -426,7 +463,13 @@ static int process_frames(AVFilterContext *avctx, AVFrame *out, AVFrame *in)
 
     pl_render_image(s->renderer, &image, &target, &params);
     pl_unmap_avframe(s->gpu, &image);
-    pl_unmap_avframe(s->gpu, &target);
+
+    if (outdesc->flags & AV_PIX_FMT_FLAG_HWACCEL) {
+        pl_unmap_avframe(s->gpu, &target);
+    } else if (!pl_download_avframe(s->gpu, &target, out)) {
+        err = AVERROR_EXTERNAL;
+        goto fail;
+    }
 
     /* Flush the command queues for performance */
     pl_gpu_flush(s->gpu);
@@ -452,8 +495,6 @@ static int filter_frame(AVFilterLink *link, AVFrame *in)
     }
 
     pl_log_level_update(s->log, get_log_level());
-    if (!s->initialized)
-        RET(init_vulkan(ctx));
 
     RET(av_frame_copy_props(out, in));
     out->width = outlink->w;
@@ -505,6 +546,65 @@ fail:
     return err;
 }
 
+static int libplacebo_query_format(AVFilterContext *ctx)
+{
+    int err = 0;
+    LibplaceboContext *s = ctx->priv;
+    const AVPixFmtDescriptor *desc = NULL;
+    AVFilterFormats *formats = NULL;
+
+    RET(init_vulkan(ctx));
+
+    while ((desc = av_pix_fmt_desc_next(desc))) {
+        enum AVPixelFormat pixfmt = av_pix_fmt_desc_get_id(desc);
+
+#if PL_API_VER < 232
+        // Older libplacebo can't handle >64-bit pixel formats, so safe-guard
+        // this to prevent triggering an assertion
+        if (av_get_bits_per_pixel(desc) > 64)
+            continue;
+#endif
+
+        if (pl_test_pixfmt(s->gpu, pixfmt)) {
+            if ((err = ff_add_format(&formats, pixfmt)) < 0)
+                return err;
+        }
+    }
+
+    RET(ff_formats_ref(formats, &ctx->inputs[0]->outcfg.formats));
+
+    if (s->out_format != AV_PIX_FMT_NONE) {
+        /* Support only requested format, and hwaccel (vulkan) */
+        const enum AVPixelFormat out_fmts[] = {
+            s->out_format, AV_PIX_FMT_VULKAN, AV_PIX_FMT_NONE,
+        };
+        RET(ff_formats_ref(ff_make_format_list(out_fmts),
+                           &ctx->outputs[0]->incfg.formats));
+    } else {
+        /* Support all formats */
+        RET(ff_formats_ref(formats, &ctx->outputs[0]->incfg.formats));
+    }
+
+    return 0;
+
+fail:
+    return err;
+}
+
+static int libplacebo_config_input(AVFilterLink *inlink)
+{
+    AVFilterContext *avctx = inlink->dst;
+    LibplaceboContext *s   = avctx->priv;
+
+    if (inlink->format == AV_PIX_FMT_VULKAN)
+        return ff_vk_filter_config_input(inlink);
+
+    /* Forward this to the vkctx for format selection */
+    s->vkctx.input_format = inlink->format;
+
+    return 0;
+}
+
 static int libplacebo_config_output(AVFilterLink *outlink)
 {
     int err;
@@ -514,22 +614,21 @@ static int libplacebo_config_output(AVFilterLink *outlink)
     AVHWFramesContext *hwfc;
     AVVulkanFramesContext *vkfc;
     AVRational scale_sar;
-    int *out_w = &s->vkctx.output_width;
-    int *out_h = &s->vkctx.output_height;
 
     RET(ff_scale_eval_dimensions(s, s->w_expr, s->h_expr, inlink, outlink,
-                                 out_w, out_h));
+                                 &outlink->w, &outlink->h));
 
-    ff_scale_adjust_dimensions(inlink, out_w, out_h,
+    ff_scale_adjust_dimensions(inlink, &outlink->w, &outlink->h,
                                s->force_original_aspect_ratio,
                                s->force_divisible_by);
 
-    scale_sar = (AVRational){outlink->h * inlink->w, *out_w * *out_h};
+    scale_sar = (AVRational){outlink->h * inlink->w, outlink->w * inlink->h};
     if (inlink->sample_aspect_ratio.num)
         scale_sar = av_mul_q(scale_sar, inlink->sample_aspect_ratio);
 
     if (s->normalize_sar) {
         /* Apply all SAR during scaling, so we don't need to set the out SAR */
+        outlink->sample_aspect_ratio = (AVRational){ 1, 1 };
         s->target_sar = scale_sar;
     } else {
         /* This is consistent with other scale_* filters, which only
@@ -539,17 +638,17 @@ static int libplacebo_config_output(AVFilterLink *outlink)
             outlink->sample_aspect_ratio = scale_sar;
     }
 
-    if (s->out_format_string) {
-        s->vkctx.output_format = av_get_pix_fmt(s->out_format_string);
-        if (s->vkctx.output_format == AV_PIX_FMT_NONE) {
-            av_log(avctx, AV_LOG_ERROR, "Invalid output format.\n");
-            return AVERROR(EINVAL);
-        }
-    } else {
-        /* Default to re-using the input format */
-        s->vkctx.output_format = s->vkctx.input_format;
-    }
+    if (outlink->format != AV_PIX_FMT_VULKAN)
+        return 0;
 
+    s->vkctx.output_width = outlink->w;
+    s->vkctx.output_height = outlink->h;
+    /* Default to re-using the input format */
+    if (s->out_format == AV_PIX_FMT_NONE || s->out_format == AV_PIX_FMT_VULKAN) {
+        s->vkctx.output_format = s->vkctx.input_format;
+    } else {
+        s->vkctx.output_format = s->out_format;
+    }
     RET(ff_vk_filter_config_output(outlink));
     hwfc = (AVHWFramesContext *) outlink->hw_frames_ctx->data;
     vkfc = hwfc->hwctx;
@@ -574,7 +673,7 @@ static const AVOption libplacebo_options[] = {
         { "decrease", NULL, 0, AV_OPT_TYPE_CONST, {.i64 = 1 }, 0, 0, STATIC, "force_oar" },
         { "increase", NULL, 0, AV_OPT_TYPE_CONST, {.i64 = 2 }, 0, 0, STATIC, "force_oar" },
     { "force_divisible_by", "enforce that the output resolution is divisible by a defined integer when force_original_aspect_ratio is used", OFFSET(force_divisible_by), AV_OPT_TYPE_INT, { .i64 = 1 }, 1, 256, STATIC },
-    { "normalize_sar", "force SAR normalization to 1:1", OFFSET(normalize_sar), AV_OPT_TYPE_BOOL, {.i64 = 1}, 0, 1, STATIC },
+    { "normalize_sar", "force SAR normalization to 1:1", OFFSET(normalize_sar), AV_OPT_TYPE_BOOL, {.i64 = 0}, 0, 1, STATIC },
     { "pad_crop_ratio", "ratio between padding and cropping when normalizing SAR (0=pad, 1=crop)", OFFSET(pad_crop_ratio), AV_OPT_TYPE_FLOAT, {.dbl=0.0}, 0.0, 1.0, DYNAMIC },
 
     {"colorspace", "select colorspace", OFFSET(colorspace), AV_OPT_TYPE_INT, {.i64=-1}, -1, AVCOL_SPC_NB-1, DYNAMIC, "colorspace"},
@@ -734,7 +833,7 @@ static const AVFilterPad libplacebo_inputs[] = {
         .name         = "default",
         .type         = AVMEDIA_TYPE_VIDEO,
         .filter_frame = &filter_frame,
-        .config_props = &ff_vk_filter_config_input,
+        .config_props = &libplacebo_config_input,
     },
 };
 
@@ -755,7 +854,7 @@ const AVFilter ff_vf_libplacebo = {
     .process_command = &ff_filter_process_command,
     FILTER_INPUTS(libplacebo_inputs),
     FILTER_OUTPUTS(libplacebo_outputs),
-    FILTER_SINGLE_PIXFMT(AV_PIX_FMT_VULKAN),
+    FILTER_QUERY_FUNC(libplacebo_query_format),
     .priv_class     = &libplacebo_class,
     .flags_internal = FF_FILTER_FLAG_HWFRAME_AWARE,
 };

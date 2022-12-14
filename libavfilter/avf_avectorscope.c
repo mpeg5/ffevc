@@ -117,7 +117,7 @@ AVFILTER_DEFINE_CLASS(avectorscope);
 
 static void draw_dot(AudioVectorScopeContext *s, unsigned x, unsigned y)
 {
-    const int linesize = s->outpicref->linesize[0];
+    const ptrdiff_t linesize = s->outpicref->linesize[0];
     uint8_t *dst;
 
     if (s->zoom > 1) {
@@ -128,7 +128,7 @@ static void draw_dot(AudioVectorScopeContext *s, unsigned x, unsigned y)
         x = FFMIN(x, s->w - 1);
     }
 
-    dst = &s->outpicref->data[0][y * linesize + x * 4];
+    dst = s->outpicref->data[0] + y * linesize + x * 4;
     dst[0] = FFMIN(dst[0] + s->contrast[0], 255);
     dst[1] = FFMIN(dst[1] + s->contrast[1], 255);
     dst[2] = FFMIN(dst[2] + s->contrast[2], 255);
@@ -252,6 +252,8 @@ static int filter_frame(AVFilterLink *inlink, AVFrame *insamples)
 {
     AVFilterContext *ctx = inlink->dst;
     AVFilterLink *outlink = ctx->outputs[0];
+    const int16_t *samples = (const int16_t *)insamples->data[0];
+    const float *samplesf = (const float *)insamples->data[0];
     AudioVectorScopeContext *s = ctx->priv;
     const int hw = s->hw;
     const int hh = s->hh;
@@ -259,7 +261,6 @@ static int filter_frame(AVFilterLink *inlink, AVFrame *insamples)
     unsigned x, y;
     unsigned prev_x = s->prev_x, prev_y = s->prev_y;
     double zoom = s->zoom;
-    int i;
 
     if (!s->outpicref || s->outpicref->width  != outlink->w ||
                          s->outpicref->height != outlink->h) {
@@ -271,7 +272,7 @@ static int filter_frame(AVFilterLink *inlink, AVFrame *insamples)
         }
 
         s->outpicref->sample_aspect_ratio = (AVRational){1,1};
-        for (i = 0; i < outlink->h; i++)
+        for (int i = 0; i < outlink->h; i++)
             memset(s->outpicref->data[0] + i * s->outpicref->linesize[0], 0, outlink->w * 4);
     }
     s->outpicref->pts = av_rescale_q(insamples->pts, inlink->time_base, outlink->time_base);
@@ -284,22 +285,15 @@ static int filter_frame(AVFilterLink *inlink, AVFrame *insamples)
         float max = 0;
 
         switch (insamples->format) {
-        case AV_SAMPLE_FMT_S16: {
-            int16_t *samples = (int16_t *)insamples->data[0];
-
-            for (i = 0; i < insamples->nb_samples * 2; i++) {
+        case AV_SAMPLE_FMT_S16:
+            for (int i = 0; i < insamples->nb_samples * 2; i++) {
                 float sample = samples[i] / (float)INT16_MAX;
                 max = FFMAX(FFABS(sample), max);
             }
-
-            }
             break;
-        case AV_SAMPLE_FMT_FLT: {
-            float *samples = (float *)insamples->data[0];
-
-            for (i = 0; i < insamples->nb_samples * 2; i++) {
-                max = FFMAX(FFABS(samples[i]), max);
-            }
+        case AV_SAMPLE_FMT_FLT:
+            for (int i = 0; i < insamples->nb_samples * 2; i++) {
+                max = FFMAX(FFABS(samplesf[i]), max);
             }
             break;
         default:
@@ -321,19 +315,17 @@ static int filter_frame(AVFilterLink *inlink, AVFrame *insamples)
         zoom = 1. / max;
     }
 
-    for (i = 0; i < insamples->nb_samples; i++) {
-        int16_t *samples = (int16_t *)insamples->data[0] + i * 2;
-        float *samplesf = (float *)insamples->data[0] + i * 2;
+    for (int i = 0; i < insamples->nb_samples; i++) {
         float src[2];
 
         switch (insamples->format) {
         case AV_SAMPLE_FMT_S16:
-            src[0] = samples[0] / (float)INT16_MAX;
-            src[1] = samples[1] / (float)INT16_MAX;
+            src[0] = samples[i*2+0] / (float)INT16_MAX;
+            src[1] = samples[i*2+1] / (float)INT16_MAX;
             break;
         case AV_SAMPLE_FMT_FLT:
-            src[0] = samplesf[0];
-            src[1] = samplesf[1];
+            src[0] = samplesf[i*2+0];
+            src[1] = samplesf[i*2+1];
             break;
         default:
             av_assert2(0);

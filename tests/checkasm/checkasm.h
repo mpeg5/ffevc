@@ -86,6 +86,7 @@ void checkasm_check_vf_eq(void);
 void checkasm_check_vf_gblur(void);
 void checkasm_check_vf_hflip(void);
 void checkasm_check_vf_threshold(void);
+void checkasm_check_vf_sobel(void);
 void checkasm_check_vp8dsp(void);
 void checkasm_check_vp9dsp(void);
 void checkasm_check_videodsp(void);
@@ -296,6 +297,7 @@ int checkasm_check_##type(const char *const file, const int line, \
 
 DECL_CHECKASM_CHECK_FUNC(uint8_t);
 DECL_CHECKASM_CHECK_FUNC(uint16_t);
+DECL_CHECKASM_CHECK_FUNC(uint32_t);
 DECL_CHECKASM_CHECK_FUNC(int16_t);
 DECL_CHECKASM_CHECK_FUNC(int32_t);
 

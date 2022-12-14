@@ -71,6 +71,9 @@ static av_cold int vqc_decode_init(AVCodecContext * avctx)
     static AVOnce init_static_once = AV_ONCE_INIT;
     VqcContext *s = avctx->priv_data;
 
+    if (avctx->width & 15)
+        return AVERROR_PATCHWELCOME;
+
     s->vectors = av_malloc((avctx->width * avctx->height * 3) / 2);
     if (!s->vectors)
         return AVERROR(ENOMEM);
@@ -137,7 +140,7 @@ static void seed_codebooks(VqcContext * s, const int * seed)
     }
 }
 
-static void decode_vectors(VqcContext * s, const uint8_t * buf, int size, int width, int height)
+static int decode_vectors(VqcContext * s, const uint8_t * buf, int size, int width, int height)
 {
     GetBitContext gb;
     uint8_t * vectors = s->vectors;
@@ -155,9 +158,11 @@ static void decode_vectors(VqcContext * s, const uint8_t * buf, int size, int wi
         *dst++ = get_bits(&gb, 8);
 
         while (show_bits(&gb, 2) != 2) {
-
             if (dst >= vectors_end - 1)
-                return;
+                return 0;
+
+            if (get_bits_left(&gb) < 4)
+                return AVERROR_INVALIDDATA;
 
             if (!show_bits(&gb, 4)) {
                 *dst++ = 0;
@@ -182,6 +187,8 @@ static void decode_vectors(VqcContext * s, const uint8_t * buf, int size, int wi
         skip_bits(&gb, 2);
         vectors += 32;
     }
+
+    return 0;
 }
 
 static void load_coeffs(VqcContext * s, const uint8_t * v, int width, int coeff_width)
@@ -392,7 +399,9 @@ static int vqc_decode_frame(AVCodecContext *avctx, AVFrame * rframe,
         avpriv_request_sample(avctx, "gamma=0x%x, contrast=0x%x\n", gamma, contrast);
 
     seed_codebooks(s, seed);
-    decode_vectors(s, buf + 7, avpkt->size - 7, avctx->width, avctx->height);
+    ret = decode_vectors(s, buf + 7, avpkt->size - 7, avctx->width, avctx->height);
+    if (ret < 0)
+        return ret;
     decode_frame(s, avctx->width, avctx->height);
 
     if ((ret = av_frame_ref(rframe, s->frame)) < 0)

@@ -132,23 +132,15 @@ static av_cold int bonk_init(AVCodecContext *avctx)
 static unsigned read_uint_max(BonkContext *s, uint32_t max)
 {
     unsigned value = 0;
-    int i, bits;
 
     if (max == 0)
         return 0;
 
-    if (max >> 31)
-        return 32;
+    av_assert0(max >> 31 == 0);
 
-    bits = 32 - ff_clz(max);
-
-    for (i = 0; i < bits - 1; i++)
+    for (unsigned i = 1; i <= max - value; i+=i)
         if (get_bits1(&s->gb))
-            value += 1 << i;
-
-    if ((value | (1 << (bits - 1))) <= max)
-        if (get_bits1(&s->gb))
-            value += 1 << (bits - 1);
+            value += i;
 
     return value;
 }
@@ -176,8 +168,7 @@ static int intlist_read(BonkContext *s, int *buf, int entries, int base_2_part)
             return AVERROR_INVALIDDATA;
 
         if (!get_bits1(&s->gb)) {
-            if (steplet < 0)
-                break;
+            av_assert0(steplet >= 0);
 
             if (steplet > 0) {
                 bits[x  ].bit   = dominant;
@@ -187,12 +178,13 @@ static int intlist_read(BonkContext *s, int *buf, int entries, int base_2_part)
             if (!dominant)
                 n_zeros += steplet;
 
+            if (step > INT32_MAX*8LL/9 + 1)
+                return AVERROR_INVALIDDATA;
             step += step / 8;
         } else if (steplet > 0) {
             int actual_run = read_uint_max(s, steplet - 1);
 
-            if (actual_run < 0)
-                break;
+            av_assert0(actual_run >= 0);
 
             if (actual_run > 0) {
                 bits[x  ].bit   = dominant;
@@ -211,8 +203,6 @@ static int intlist_read(BonkContext *s, int *buf, int entries, int base_2_part)
         }
 
         if (step < 256) {
-            if (step == 0)
-                return AVERROR_INVALIDDATA;
             step = 65536 / step;
             dominant = !dominant;
         }
@@ -226,6 +216,9 @@ static int intlist_read(BonkContext *s, int *buf, int entries, int base_2_part)
             pos = 0;
             level += 1 << low_bits;
         }
+
+        if (level > 1 << 15)
+            return AVERROR_INVALIDDATA;
 
         if (x >= max_x)
             return AVERROR_INVALIDDATA;
@@ -273,7 +266,7 @@ static int predictor_calc_error(int *k, int *state, int order, int error)
         *state_ptr = &(state[order-2]);
 
     for (i = order-2; i >= 0; i--, k_ptr--, state_ptr--) {
-        int k_value = *k_ptr, state_value = *state_ptr;
+        unsigned k_value = *k_ptr, state_value = *state_ptr;
 
         x -= shift_down(k_value * state_value, LATTICE_SHIFT);
         state_ptr[1] = state_value + shift_down(k_value * x, LATTICE_SHIFT);
@@ -287,10 +280,10 @@ static int predictor_calc_error(int *k, int *state, int order, int error)
     return x;
 }
 
-static void predictor_init_state(int *k, int *state, int order)
+static void predictor_init_state(int *k, unsigned *state, int order)
 {
     for (int i = order - 2; i >= 0; i--) {
-        int x = state[i];
+        unsigned x = state[i];
 
         for (int j = 0, p = i + 1; p < order; j++, p++) {
             int tmp = x + shift_down(k[j] * state[p], LATTICE_SHIFT);
@@ -340,7 +333,7 @@ static int bonk_decode(AVCodecContext *avctx, AVFrame *frame,
 
     skip_bits(gb, s->skip);
     if ((ret = intlist_read(s, s->k, s->n_taps, 0)) < 0)
-        return ret;
+        goto fail;
 
     for (int i = 0; i < s->n_taps; i++)
         s->k[i] *= s->quant[i];
@@ -355,7 +348,7 @@ static int bonk_decode(AVCodecContext *avctx, AVFrame *frame,
 
         predictor_init_state(s->k, state, s->n_taps);
         if ((ret = intlist_read(s, s->input_samples, samples_per_packet, 1)) < 0)
-            return ret;
+            goto fail;
 
         for (int i = 0; i < samples_per_packet; i++) {
             for (int j = 0; j < s->down_sampling - 1; j++) {
@@ -400,6 +393,7 @@ static int bonk_decode(AVCodecContext *avctx, AVFrame *frame,
     n = get_bits_count(gb) / 8;
 
     if (n > buf_size) {
+fail:
         s->bitstream_size = 0;
         s->bitstream_index = 0;
         return AVERROR_INVALIDDATA;

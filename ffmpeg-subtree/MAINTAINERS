@@ -200,8 +200,6 @@ Codecs:
   libvpx*                               James Zern
   libxavs.c                             Stefan Gehrer
   libxavs2.c                            Huiwen Ren
-  libxevd.c                             Dawid Kozinski
-  libxeve.c,                            Dawid Kozinski
   libzvbi-teletextdec.c                 Marton Balint
   lzo.h, lzo.c                          Reimar Doeffinger
   mdec.c                                Michael Niedermayer
@@ -422,9 +420,6 @@ Muxers/Demuxers:
   dv.c                                  Roman Shaposhnik
   electronicarts.c                      Peter Ross
   epafdec.c                             Paul B Mahol
-  evc.c, evc.h                          Dawid Kozinski
-  evcdec.c                              Dawid Kozinski
-  evc_parser.c                          Dawid Kozinski
   ffm*                                  Baptiste Coudurier
   flic.c                                Mike Melanson
   flvdec.c                              Michael Niedermayer

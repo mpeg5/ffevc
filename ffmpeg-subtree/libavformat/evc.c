@@ -223,7 +223,7 @@ static int evcc_array_add_nal_unit(const uint8_t *nal_buf, uint32_t nal_size,
     if (ret < 0)
         return ret;
 
-    array->nalUnit      [numNalus] = (uint8_t*)nal_buf;
+    array->nalUnit      [numNalus] = (uint8_t *)nal_buf;
     array->nalUnitLength[numNalus] = nal_size;
     array->NAL_unit_type           = nal_type;
     array->numNalus++;

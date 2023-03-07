@@ -338,9 +338,8 @@ static int libxevd_receive_frame(AVCodecContext *avctx, AVFrame *frame)
                 if (stat.nalu_type == XEVD_NUT_SPS) { // EVC stream parameters changed
                     if ((ret = export_stream_params(xectx, avctx)) != 0)
                         goto ERR;
-                } else if (stat.nalu_type == XEVD_NUT_IDR || stat.nalu_type == XEVD_NUT_NONIDR) {
+                } else if (stat.nalu_type == XEVD_NUT_IDR || stat.nalu_type == XEVD_NUT_NONIDR)
                     xectx->coded_picture_number++;
-                }
 
                 if (stat.read != dec_read_bytes) {
                     av_log(avctx, AV_LOG_INFO, "Different reading of bitstream (in:%d, read:%d)\n", nalu_size, stat.read);

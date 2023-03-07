@@ -44,8 +44,7 @@ typedef struct RefPicListStruct {
 } RefPicListStruct;
 
 // chromaQP table structure to be signalled in SPS
-typedef struct ChromaQpTable
-{
+typedef struct ChromaQpTable {
     int chroma_qp_table_present_flag;       // u(1)
     int same_qp_table_for_chroma;           // u(1)
     int global_offset_flag;                 // u(1)
@@ -55,8 +54,7 @@ typedef struct ChromaQpTable
 } ChromaQpTable;
 
 // Hypothetical Reference Decoder (HRD) parameters, part of VUI
-typedef struct HRDParameters
-{
+typedef struct HRDParameters {
     int cpb_cnt_minus1;                             // ue(v)
     int bit_rate_scale;                             // u(4)
     int cpb_size_scale;                             // u(4)
@@ -70,8 +68,7 @@ typedef struct HRDParameters
 } HRDParameters;
 
 // video usability information (VUI) part of SPS
-typedef struct VUIParameters
-{
+typedef struct VUIParameters {
     int aspect_ratio_info_present_flag;             // u(1)
     int aspect_ratio_idc;                           // u(8)
     int sar_width;                                  // u(16)
@@ -349,29 +346,25 @@ static int get_temporal_id(const uint8_t *bits, int bits_size, AVCodecContext *a
 }
 
 // @see ISO_IEC_23094-1 (7.3.7 Reference picture list structure syntax)
-static int ref_pic_list_struct(GetBitContext* gb, RefPicListStruct* rpl)
+static int ref_pic_list_struct(GetBitContext *gb, RefPicListStruct *rpl)
 {
     uint32_t delta_poc_st, strp_entry_sign_flag = 0;
     rpl->ref_pic_num = get_ue_golomb(gb);
-    if (rpl->ref_pic_num > 0)
-    {
+    if (rpl->ref_pic_num > 0) {
         delta_poc_st = get_ue_golomb(gb);
 
         rpl->ref_pics[0] = delta_poc_st;
-        if (rpl->ref_pics[0] != 0)
-        {
+        if (rpl->ref_pics[0] != 0) {
             strp_entry_sign_flag = get_bits(gb, 1);
 
             rpl->ref_pics[0] *= 1 - (strp_entry_sign_flag << 1);
         }
     }
 
-    for (int i = 1; i < rpl->ref_pic_num; ++i)
-    {
+    for (int i = 1; i < rpl->ref_pic_num; ++i) {
         delta_poc_st = get_ue_golomb(gb);
-        if (delta_poc_st != 0) {
+        if (delta_poc_st != 0)
             strp_entry_sign_flag = get_bits(gb, 1);
-        }
         rpl->ref_pics[i] = rpl->ref_pics[i - 1] + delta_poc_st * (1 - (strp_entry_sign_flag << 1));
     }
 
@@ -379,12 +372,12 @@ static int ref_pic_list_struct(GetBitContext* gb, RefPicListStruct* rpl)
 }
 
 // @see  ISO_IEC_23094-1 (E.2.2 HRD parameters syntax)
-static int hrd_parameters(GetBitContext* gb, HRDParameters* hrd) {
+static int hrd_parameters(GetBitContext *gb, HRDParameters *hrd)
+{
     hrd->cpb_cnt_minus1 = get_ue_golomb(gb);
     hrd->bit_rate_scale = get_bits(gb, 4);
     hrd->cpb_size_scale = get_bits(gb, 4);
-    for (int SchedSelIdx = 0; SchedSelIdx <= hrd->cpb_cnt_minus1; SchedSelIdx++)
-    {
+    for (int SchedSelIdx = 0; SchedSelIdx <= hrd->cpb_cnt_minus1; SchedSelIdx++) {
         hrd->bit_rate_value_minus1[SchedSelIdx] = get_ue_golomb(gb);
         hrd->cpb_size_value_minus1[SchedSelIdx] = get_ue_golomb(gb);
         hrd->cbr_flag[SchedSelIdx] = get_bits(gb, 1);
@@ -398,38 +391,32 @@ static int hrd_parameters(GetBitContext* gb, HRDParameters* hrd) {
 }
 
 // @see  ISO_IEC_23094-1 (E.2.1 VUI parameters syntax)
-static int vui_parameters(GetBitContext* gb, VUIParameters* vui) {
+static int vui_parameters(GetBitContext *gb, VUIParameters *vui)
+{
     vui->aspect_ratio_info_present_flag = get_bits(gb, 1);
-    if (vui->aspect_ratio_info_present_flag)
-    {
+    if (vui->aspect_ratio_info_present_flag) {
         vui->aspect_ratio_idc = get_bits(gb, 8);
-        if (vui->aspect_ratio_idc == EXTENDED_SAR)
-        {
+        if (vui->aspect_ratio_idc == EXTENDED_SAR) {
             vui->sar_width = get_bits(gb, 16);
             vui->sar_height = get_bits(gb, 16);
         }
     }
     vui->overscan_info_present_flag = get_bits(gb, 1);
     if (vui->overscan_info_present_flag)
-    {
         vui->overscan_appropriate_flag = get_bits(gb, 1);
-    }
     vui->video_signal_type_present_flag = get_bits(gb, 1);
-    if (vui->video_signal_type_present_flag)
-    {
+    if (vui->video_signal_type_present_flag) {
         vui->video_format = get_bits(gb, 3);
         vui->video_full_range_flag = get_bits(gb, 1);
         vui->colour_description_present_flag = get_bits(gb, 1);
-        if (vui->colour_description_present_flag)
-        {
+        if (vui->colour_description_present_flag) {
             vui->colour_primaries = get_bits(gb, 8);
             vui->transfer_characteristics = get_bits(gb, 8);
             vui->matrix_coefficients = get_bits(gb, 8);
         }
     }
     vui->chroma_loc_info_present_flag = get_bits(gb, 1);
-    if (vui->chroma_loc_info_present_flag)
-    {
+    if (vui->chroma_loc_info_present_flag) {
         vui->chroma_sample_loc_type_top_field = get_ue_golomb(gb);
         vui->chroma_sample_loc_type_bottom_field = get_ue_golomb(gb);
     }
@@ -438,26 +425,19 @@ static int vui_parameters(GetBitContext* gb, VUIParameters* vui) {
     vui->field_seq_flag = get_bits(gb, 1);
 
     vui->timing_info_present_flag = get_bits(gb, 1);
-    if (vui->timing_info_present_flag)
-    {
+    if (vui->timing_info_present_flag) {
         vui->num_units_in_tick = get_bits(gb, 32);
         vui->time_scale = get_bits(gb, 32);
         vui->fixed_pic_rate_flag = get_bits(gb, 1);
     }
     vui->nal_hrd_parameters_present_flag = get_bits(gb, 1);
     if (vui->nal_hrd_parameters_present_flag)
-    {
         hrd_parameters(gb, &vui->hrd_parameters);
-    }
     vui->vcl_hrd_parameters_present_flag = get_bits(gb, 1);
     if (vui->vcl_hrd_parameters_present_flag)
-    {
         hrd_parameters(gb, &vui->hrd_parameters);
-    }
     if (vui->nal_hrd_parameters_present_flag || vui->vcl_hrd_parameters_present_flag)
-    {
         vui->low_delay_hrd_flag = get_bits(gb, 1);
-    }
     vui->pic_struct_present_flag = get_bits(gb, 1);
     vui->bitstream_restriction_flag = get_bits(gb, 1);
     if (vui->bitstream_restriction_flag) {
@@ -568,9 +548,9 @@ static EVCParserSPS *parse_sps(const uint8_t *bs, int bs_size, EVCParserContext 
             sps->log2_ref_pic_gap_length = get_ue_golomb(&gb);
     }
 
-    if (!sps->sps_rpl_flag) {
+    if (!sps->sps_rpl_flag)
         sps->max_num_tid0_ref_pics = get_ue_golomb(&gb);
-    } else {
+    else {
         sps->sps_max_dec_pic_buffering_minus1 = get_ue_golomb(&gb);
         sps->long_term_ref_pic_flag = get_bits(&gb, 1);
         sps->rpl1_same_as_rpl0_flag = get_bits(&gb, 1);
@@ -579,8 +559,7 @@ static EVCParserSPS *parse_sps(const uint8_t *bs, int bs_size, EVCParserContext 
         for (int i = 0; i < sps->num_ref_pic_list_in_sps[0]; ++i)
             ref_pic_list_struct(&gb, &sps->rpls[0][i]);
 
-        if (!sps->rpl1_same_as_rpl0_flag)
-        {
+        if (!sps->rpl1_same_as_rpl0_flag) {
             sps->num_ref_pic_list_in_sps[1] = get_ue_golomb(&gb);
             for (int i = 0; i < sps->num_ref_pic_list_in_sps[1]; ++i)
                 ref_pic_list_struct(&gb, &sps->rpls[1][i]);
@@ -596,19 +575,15 @@ static EVCParserSPS *parse_sps(const uint8_t *bs, int bs_size, EVCParserContext 
         sps->picture_crop_bottom_offset = get_ue_golomb(&gb);
     }
 
-    if (sps->chroma_format_idc != 0)
-    {
+    if (sps->chroma_format_idc != 0) {
         sps->chroma_qp_table_struct.chroma_qp_table_present_flag = get_bits(&gb, 1);
 
-        if (sps->chroma_qp_table_struct.chroma_qp_table_present_flag)
-        {
+        if (sps->chroma_qp_table_struct.chroma_qp_table_present_flag) {
             sps->chroma_qp_table_struct.same_qp_table_for_chroma = get_bits(&gb, 1);
             sps->chroma_qp_table_struct.global_offset_flag = get_bits(&gb, 1);
-            for (int i = 0; i < (sps->chroma_qp_table_struct.same_qp_table_for_chroma ? 1 : 2); i++)
-            {
+            for (int i = 0; i < (sps->chroma_qp_table_struct.same_qp_table_for_chroma ? 1 : 2); i++) {
                 sps->chroma_qp_table_struct.num_points_in_qp_table_minus1[i] = get_ue_golomb(&gb);;
-                for (int j = 0; j <= sps->chroma_qp_table_struct.num_points_in_qp_table_minus1[i]; j++)
-                {
+                for (int j = 0; j <= sps->chroma_qp_table_struct.num_points_in_qp_table_minus1[i]; j++) {
                     sps->chroma_qp_table_struct.delta_qp_in_val_minus1[i][j] = get_bits(&gb, 6);
                     sps->chroma_qp_table_struct.delta_qp_out_val[i][j] = get_se_golomb(&gb);
                 }
@@ -887,7 +862,7 @@ static int parse_nal_unit(AVCodecParserContext *s, const uint8_t *buf,
         SubGopLength = (int)pow(2.0, sps->log2_sub_gop_length);
         avctx->gop_size = SubGopLength;
 
-        avctx->delay = (sps->sps_max_dec_pic_buffering_minus1)?sps->sps_max_dec_pic_buffering_minus1-1:SubGopLength+sps->max_num_tid0_ref_pics-1;
+        avctx->delay = (sps->sps_max_dec_pic_buffering_minus1) ? sps->sps_max_dec_pic_buffering_minus1 - 1 : SubGopLength + sps->max_num_tid0_ref_pics - 1;
 
         if (sps->profile_idc == 1) avctx->profile = FF_PROFILE_EVC_MAIN;
         else avctx->profile = FF_PROFILE_EVC_BASELINE;
@@ -895,25 +870,25 @@ static int parse_nal_unit(AVCodecParserContext *s, const uint8_t *buf,
         ev->time_base = avctx->time_base.den;
 
         switch (sps->chroma_format_idc) {
-            case 0: /* YCBCR400_10LE */
-                av_log(avctx, AV_LOG_ERROR, "YCBCR400_10LE: Not supported chroma format\n");
-                s->format = AV_PIX_FMT_GRAY10LE;
-                return -1;
-            case 1: /* YCBCR420_10LE */
-                s->format = AV_PIX_FMT_YUV420P10LE;
-                break;
-            case 2: /* YCBCR422_10LE */
-                av_log(avctx, AV_LOG_ERROR, "YCBCR422_10LE: Not supported chroma format\n");
-                s->format = AV_PIX_FMT_YUV422P10LE;
-                return -1;
-            case 3: /* YCBCR444_10LE */
-                av_log(avctx, AV_LOG_ERROR, "YCBCR444_10LE: Not supported chroma format\n");
-                s->format = AV_PIX_FMT_YUV444P10LE;
-                return -1;
-            default:
-                s->format = AV_PIX_FMT_NONE;
-                av_log(avctx, AV_LOG_ERROR, "Unknown supported chroma format\n");
-                return -1;
+        case 0: /* YCBCR400_10LE */
+            av_log(avctx, AV_LOG_ERROR, "YCBCR400_10LE: Not supported chroma format\n");
+            s->format = AV_PIX_FMT_GRAY10LE;
+            return -1;
+        case 1: /* YCBCR420_10LE */
+            s->format = AV_PIX_FMT_YUV420P10LE;
+            break;
+        case 2: /* YCBCR422_10LE */
+            av_log(avctx, AV_LOG_ERROR, "YCBCR422_10LE: Not supported chroma format\n");
+            s->format = AV_PIX_FMT_YUV422P10LE;
+            return -1;
+        case 3: /* YCBCR444_10LE */
+            av_log(avctx, AV_LOG_ERROR, "YCBCR444_10LE: Not supported chroma format\n");
+            s->format = AV_PIX_FMT_YUV444P10LE;
+            return -1;
+        default:
+            s->format = AV_PIX_FMT_NONE;
+            av_log(avctx, AV_LOG_ERROR, "Unknown supported chroma format\n");
+            return -1;
         }
     } else if (nalu_type == EVC_PPS_NUT) {
         EVCParserPPS *pps;
@@ -941,21 +916,21 @@ static int parse_nal_unit(AVCodecParserContext *s, const uint8_t *buf,
         }
 
         switch (sh->slice_type) {
-            case EVC_SLICE_TYPE_B: {
-                s->pict_type =  AV_PICTURE_TYPE_B;
-                break;
-            }
-            case EVC_SLICE_TYPE_P: {
-                s->pict_type =  AV_PICTURE_TYPE_P;
-                break;
-            }
-            case EVC_SLICE_TYPE_I: {
-                s->pict_type =  AV_PICTURE_TYPE_I;
-                break;
-            }
-            default: {
-                s->pict_type =  AV_PICTURE_TYPE_NONE;
-            }
+        case EVC_SLICE_TYPE_B: {
+            s->pict_type =  AV_PICTURE_TYPE_B;
+            break;
+        }
+        case EVC_SLICE_TYPE_P: {
+            s->pict_type =  AV_PICTURE_TYPE_P;
+            break;
+        }
+        case EVC_SLICE_TYPE_I: {
+            s->pict_type =  AV_PICTURE_TYPE_I;
+            break;
+        }
+        default: {
+            s->pict_type =  AV_PICTURE_TYPE_NONE;
+        }
         }
 
         s->key_frame = (nalu_type == EVC_IDR_NUT) ? 1 : 0;

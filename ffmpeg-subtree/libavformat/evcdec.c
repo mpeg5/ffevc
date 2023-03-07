@@ -42,9 +42,8 @@ static int get_nalu_type(const uint8_t *bits, int bits_size)
     if (bits_size >= EVC_NALU_HEADER_SIZE) {
         unsigned char *p = (unsigned char *)bits;
         // forbidden_zero_bit
-        if ((p[0] & 0x80) != 0) { // Cannot get bitstream information. Malformed bitstream.
+        if ((p[0] & 0x80) != 0)   // Cannot get bitstream information. Malformed bitstream.
             return -1;
-        }
 
         // nal_unit_type
         unit_type_plus1 = (p[0] >> 1) & 0x3F;
@@ -62,14 +61,12 @@ static uint32_t read_nal_unit_length(const uint8_t *bits, int bits_size)
         int t = 0;
         unsigned char *p = (unsigned char *)bits;
 
-        for (int i=0; i<EVC_NALU_LENGTH_PREFIX_SIZE; i++) {
+        for (int i = 0; i < EVC_NALU_LENGTH_PREFIX_SIZE; i++)
             t = (t << 8) | p[i];
-        }
 
         nalu_len = t;
-        if (nalu_len == 0) { // Invalid bitstream size
+        if (nalu_len == 0)   // Invalid bitstream size
             return 0;
-        }
     }
 
     return nalu_len;

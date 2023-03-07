@@ -219,17 +219,17 @@ static int get_conf(AVCodecContext *avctx, XEVE_CDSC *cdsc)
 
     cdsc->param.rc_type = xectx->rc_mode;
 
-    if (xectx->rc_mode == XEVE_RC_CQP) {
+    if (xectx->rc_mode == XEVE_RC_CQP)
         cdsc->param.qp = xectx->qp;
-    } else if (xectx->rc_mode == XEVE_RC_ABR) {
+    else if (xectx->rc_mode == XEVE_RC_ABR) {
         if (avctx->bit_rate / 1000 > INT_MAX || avctx->rc_max_rate / 1000 > INT_MAX) {
             av_log(avctx, AV_LOG_ERROR, "Not supported bitrate bit_rate and rc_max_rate > %d000\n", INT_MAX);
             return AVERROR_INVALIDDATA;
         }
         cdsc->param.bitrate = (int)(avctx->bit_rate / 1000);
-    } else if (xectx->rc_mode == XEVE_RC_CRF) {
+    } else if (xectx->rc_mode == XEVE_RC_CRF)
         cdsc->param.crf = xectx->crf;
-    } else {
+    else {
         av_log(avctx, AV_LOG_ERROR, "Not supported rate control type: %d\n", xectx->rc_mode);
         return AVERROR_INVALIDDATA;
     }
@@ -357,9 +357,9 @@ static av_cold int libxeve_init(AVCodecContext *avctx)
     {
         AVDictionaryEntry *en = NULL;
         while (en = av_dict_get(xectx->xeve_params, "", en, AV_DICT_IGNORE_SUFFIX)) {
-           if ((ret = xeve_param_parse(&cdsc->param, en->key, en->value)) < 0) {
-               av_log(avctx, AV_LOG_WARNING,
-                      "Error parsing option '%s = %s'.\n",
+            if ((ret = xeve_param_parse(&cdsc->param, en->key, en->value)) < 0) {
+                av_log(avctx, AV_LOG_WARNING,
+                       "Error parsing option '%s = %s'.\n",
                        en->key, en->value);
             }
         }

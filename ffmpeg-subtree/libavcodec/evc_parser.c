@@ -792,15 +792,6 @@ static EVCParserSliceHeader *parse_slice_header(const uint8_t *bs, int bs_size, 
     return sh;
 }
 
-/**
- *
- * Parse NAL unit
- *
- * @param s parser context
- * @param buf buffer with field/frame data
- * @param buf_size size of the buffer
- * @param avctx codec context
- */
 static int parse_nal_unit(AVCodecParserContext *s, const uint8_t *buf,
                           int buf_size, AVCodecContext *avctx)
 {
@@ -1014,20 +1005,12 @@ static int parse_nal_unit(AVCodecParserContext *s, const uint8_t *buf,
     return 0;
 }
 
-/**
- * @brief Reconstruct NAL Unit from incomplete data
- *
- * @param[in]  s parser context
- * @param[in]  data pointer to the buffer containg new data for current NALU prefix
- * @param[in]  data_size amount of bytes to read from the input buffer
- * @param[out] nalu_prefix assembled NALU length
- * @param[in ] avctx codec context
- *
- * Assemble the NALU prefix storing NALU length if it has been split between 2 subsequent buffers (input chunks) incoming to the parser.
- * This is the case when the buffer size is not enough for the buffer to store the whole NAL unit prefix.
- * In this case, we have to get part of the prefix from the previous buffer and assemble it with the rest from the current buffer.
- * Then we'll be able to read NAL unit size.
- */
+// Reconstruct NAL Unit from incomplete data
+//
+// Assemble the NALU prefix storing NALU length if it has been split between 2 subsequent buffers (input chunks) incoming to the parser.
+// This is the case when the buffer size is not enough for the buffer to store the whole NAL unit prefix.
+// In this case, we have to get part of the prefix from the previous buffer and assemble it with the rest from the current buffer.
+// Then we'll be able to read NAL unit size.
 static int evc_assemble_nalu_prefix(AVCodecParserContext *s, const uint8_t *data, int data_size,
                                     uint8_t *nalu_prefix, AVCodecContext *avctx)
 {
@@ -1036,50 +1019,6 @@ static int evc_assemble_nalu_prefix(AVCodecParserContext *s, const uint8_t *data
 
     // 1. pc->buffer contains previously read bytes of NALU prefix
     // 2. buf contains the rest of NAL unit prefix bytes
-    //
-    // ~~~~~~~
-    // EXAMPLE
-    // ~~~~~~~
-    //
-    // In the following example we assumed that the number of already read NAL Unit prefix bytes is equal 1
-    //
-    // ----------
-    // pc->buffer -> conatins already read bytes
-    // ----------
-    //              __ pc->index == 1
-    //             |
-    //             V
-    // -------------------------------------------------------
-    // |   0   |   1   |   2   |   3   |   4   | ... |   N   |
-    // -------------------------------------------------------
-    // |  0x00 |  0xXX |  0xXX |  0xXX |  0xXX | ... |  0xXX |
-    // -------------------------------------------------------
-    // |  PREF |       |       |       |       | ... |       |
-    // -------------------------------------------------------
-    //
-    // ----------
-    // buf -> contains newly read bytes
-    // ----------
-    // -------------------------------------------------------
-    // |   0   |   1   |   2   |   3   |   4   | ... |   N   |
-    // -------------------------------------------------------
-    // |  0x00 |  0x00 |  0x3C |  0xXX |  0xXX | ... |  0xXX |
-    // -------------------------------------------------------
-    // |  PREF |  PREF |  PREF |       |       | ... |       |
-    // -------------------------------------------------------
-    //
-    // ----------
-    // nalu_prefix
-    // ----------
-    // ---------------------------------
-    // |   0   |   1   |   2   |   3   |
-    // ---------------------------------
-    // |  0x00 |  0x00 |  0x00 |  0x3C |
-    // ---------------------------------
-    // | NALU LENGTH                   |
-    // ---------------------------------
-    // NAL Unit lenght =  60 (0x0000003C)
-    //
 
     for (int i = 0; i < EVC_NALU_LENGTH_PREFIX_SIZE; i++) {
         if (i < pc->index)
@@ -1091,20 +1030,11 @@ static int evc_assemble_nalu_prefix(AVCodecParserContext *s, const uint8_t *data
     return 0;
 }
 
-/**
- * @brief Reconstruct NALU from incomplete data
- * Assemble NALU if it is split between multiple buffers
- *
- * This is the case when buffer size is not enough for the buffer to store NAL unit.
- * In this case, we have to get parts of the NALU from the previous buffers stored in pc->buffer and assemble it with the rest from the current buffer.
- *
- * @param[in] s parser context
- * @param[in] data pointer to the buffer containg new data for current NALU
- * @param[in] data_size amount of bytes to read from the input buffer
- * @param[out] nalu pointer to the memory block for storing assembled NALU
- * @param[in] nalu_size assembled NALU length
- * @param[in ] avctx codec context
- */
+// Reconstruct NALU from incomplete data
+// Assemble NALU if it is split between multiple buffers
+//
+// This is the case when the buffer size is not enough to store the entire NAL unit.
+// In this scenario, we must retrieve parts of the NALU from the previous buffers stored in pc->buffer and assemble them with the remainder from the current buffer.
 static int evc_assemble_nalu(AVCodecParserContext *s, const uint8_t *data, int data_size,
                              uint8_t *nalu, int nalu_size,
                              AVCodecContext *avctx)
@@ -1112,64 +1042,20 @@ static int evc_assemble_nalu(AVCodecParserContext *s, const uint8_t *data, int d
     EVCParserContext *ctx = s->priv_data;
     ParseContext     *pc = &ctx->pc;
 
-    // 1. pc->buffer contains previously read bytes of the current NALU and previous NALUs that belongs to the current Access Unit.
+    // 1. pc->buffer contains previously read bytes of the current NALU and previous NALUs that belong to the current Access Unit.
     //
-    //    - prevoiusly read bytes are data that came with the previous incoming data chunks
+    //    - previously read bytes are data that came with the previous incoming data chunks.
     //
-    //    - pc->buffer contains bytes of the current NALU that have been already read while processing previous chunks of incoming data
-    //      and already read bytes of previous NALUs belonging to the same Access Unit.
+    //    - pc->buffer contains bytes of the current NALU that have already been read while processing previous chunks of incoming data,
+    //      as well as already read bytes of previous NALUs belonging to the same Access Unit.
     //
-    //    - The ctx->bytes_read is the index of the first element of the current NALU int the pc->buffer.
+    //    - ctx->bytes_read is the index of the the first element of the current NALU int the pc->buffer.
     //    - The pc->index is the index of the element located right next to the last element of the current NALU in the pc->buffer.
     //    - The elements of pc->buffer located before ctx->bytes_read index contain previously read NALUs of the current Access Unit.
     //
     // 2. buf contains the rest of the NAL unit bytestime_base
     //
     //    - ctx->to_read number of bytes to read from buf (the index of the element right next to the last element to read)
-    //
-    // ~~~~~~~
-    // EXAMPLE
-    // ~~~~~~~
-    //
-    // In the following example we assumed that the number of already read NAL Unit bytes is equal 1024-2
-    //
-    // ----------
-    // pc->buffer -> conatins already read bytes from prevois incoming data chunks
-    // ----------
-    //                       __ctx->bytes_read == 2                               __ pc->index == 1024
-    //                      |                                                    |
-    //                      V                                                    V
-    // -------------------------------------------------------------------------------
-    // |   0   |   1   |   2   |   3   |   4   |   5   |   6   | ... |  1023 |  1024 |
-    // -------------------------------------------------------------------------------
-    // |  0x00 |  0x01 |  0x02 |  0x03 |  0x04 |  0x05 |  0x06 | ... |  0xA0 |  0xA1 |
-    // -------------------------------------------------------------------------------
-    // |       |       |  NALU |  NALU |  NALU |  NALU |  NALU | ... |  NALU |       |
-    // -------------------------------------------------------------------------------
-    //
-    // ----------
-    // buf -> contains newly read bytes
-    // ----------
-    //                              __ctx->to_read == 3 (index of the element right next to last one)
-    //                             |
-    //                             V
-    // -------------------------------------------------------
-    // |   0   |   1   |   2   |   3   |   4   | ... |  1023 |
-    // -------------------------------------------------------
-    // |  0xB0 |  0xB1 |  0xB2 |  0xB3 |  0xB4 | ... |  0xFF |
-    // -------------------------------------------------------
-    // |  NALU |  NALU |  NALU |       |       | ... |       |
-    // -------------------------------------------------------
-    //
-    // ----------
-    // nalu (nalu size 1025)
-    // ----------
-    //
-    // ----------------------------------------------------------------------------
-    // |   0   |   1   |   2   |   3   |   4   | ... |  1021 | 1022 | 1023 | 1024 |
-    // ----------------------------------------------------------------------------
-    // |  0x02 |  0x03 |  0x04 |  0x05 |  0x06 | ... |  0xA0 | 0xB0 | 0xB1 | 0xB3 |
-    // ----------------------------------------------------------------------------
 
     uint8_t *prev_data = pc->buffer + ctx->bytes_read;
     int prev_data_size = pc->index - ctx->bytes_read;
@@ -1198,17 +1084,9 @@ static int end_of_access_unit_found(AVCodecParserContext *s, AVCodecContext *avc
     return 0;
 }
 
-/**
- * Find the end of the current frame in the bitstream.
- * The end of frame is the end of Access Unit.
- *
- * @param s parser context
- * @param buf buffer with field/frame data
- * @param buf_size size of the buffer
- * @param avctx codex context
- *
- * @return the position of the first byte of the next frame, or END_NOT_FOUND
- */
+// Find the end of the current frame in the bitstream.
+// The end of frame is the end of Access Unit.
+// Function returns the position of the first byte of the next frame, or END_NOT_FOUND
 static int evc_find_frame_end(AVCodecParserContext *s, const uint8_t *buf,
                               int buf_size, AVCodecContext *avctx)
 {

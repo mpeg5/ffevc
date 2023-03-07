@@ -1949,22 +1949,6 @@ Set the number of slices, used in parallelized encoding. Default value
 is 0. This is only used when @option{slice_mode} is set to
 @samp{fixed}.
 
-@item slice_mode
-Set slice mode. Can assume one of the following possible values:
-
-@table @samp
-@item fixed
-a fixed number of slices
-@item rowmb
-one slice per row of macroblocks
-@item auto
-automatic number of slices according to number of threads
-@item dyn
-dynamic slicing
-@end table
-
-Default value is @samp{auto}.
-
 @item loopfilter
 Enable loop filter, if set to 1 (automatically enabled). To disable
 set a value of 0.
@@ -3850,6 +3834,16 @@ Extended bitrate control.
 
 @item @var{look_ahead_depth}
 Depth of look ahead in number frames, available when extbrc option is enabled.
+
+@item @var{low_delay_brc}
+Setting this flag turns on or off LowDelayBRC feautre in qsv plugin, which provides
+more accurate bitrate control to minimize the variance of bitstream size frame
+by frame. Value: -1-default 0-off 1-on
+
+@item max_frame_size
+Set the allowed max size in bytes for each frame. If the frame size exceeds
+the limitation, encoder will adjust the QP value to control the frame size.
+Invalid in CQP rate control mode.
 @end table
 
 @section snow

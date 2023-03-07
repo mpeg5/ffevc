@@ -1714,6 +1714,12 @@ skip:
     if (!err) {
         avctx->sample_rate = s->sample_rate;
         avctx->bit_rate    = s->bit_rate + s->prev_bit_rate;
+        avctx->profile     = s->eac3_extension_type_a == 1 ? FF_PROFILE_EAC3_DDP_ATMOS : FF_PROFILE_UNKNOWN;
+    }
+
+    if (!avctx->sample_rate) {
+        av_log(avctx, AV_LOG_ERROR, "Could not determine the sample rate\n");
+        return AVERROR_INVALIDDATA;
     }
 
     for (ch = 0; ch < EAC3_MAX_CHANNELS; ch++)

@@ -37,10 +37,15 @@
 typedef struct MuxStream {
     OutputStream ost;
 
+    // name used for logging
+    char log_name[32];
+
     /* the packets are buffered here until the muxer is ready to be initialized */
     AVFifo *muxing_queue;
 
     AVBSFContext *bsf_ctx;
+
+    EncStats stats;
 
     int64_t max_frames;
 
@@ -62,6 +67,9 @@ typedef struct MuxStream {
 
 typedef struct Muxer {
     OutputFile of;
+
+    // name used for logging
+    char log_name[32];
 
     AVFormatContext *fc;
 

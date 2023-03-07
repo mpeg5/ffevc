@@ -29,6 +29,8 @@
 enum {
     TONE_MAP_AUTO,
     TONE_MAP_CLIP,
+    TONE_MAP_ST2094_40,
+    TONE_MAP_ST2094_10,
     TONE_MAP_BT2390,
     TONE_MAP_BT2446A,
     TONE_MAP_SPLINE,
@@ -41,16 +43,20 @@ enum {
 };
 
 static const struct pl_tone_map_function * const tonemapping_funcs[TONE_MAP_COUNT] = {
-    [TONE_MAP_AUTO]     = &pl_tone_map_auto,
-    [TONE_MAP_CLIP]     = &pl_tone_map_clip,
-    [TONE_MAP_BT2390]   = &pl_tone_map_bt2390,
-    [TONE_MAP_BT2446A]  = &pl_tone_map_bt2446a,
-    [TONE_MAP_SPLINE]   = &pl_tone_map_spline,
-    [TONE_MAP_REINHARD] = &pl_tone_map_reinhard,
-    [TONE_MAP_MOBIUS]   = &pl_tone_map_mobius,
-    [TONE_MAP_HABLE]    = &pl_tone_map_hable,
-    [TONE_MAP_GAMMA]    = &pl_tone_map_gamma,
-    [TONE_MAP_LINEAR]   = &pl_tone_map_linear,
+    [TONE_MAP_AUTO]      = &pl_tone_map_auto,
+    [TONE_MAP_CLIP]      = &pl_tone_map_clip,
+#if PL_API_VER >= 246
+    [TONE_MAP_ST2094_40] = &pl_tone_map_st2094_40,
+    [TONE_MAP_ST2094_10] = &pl_tone_map_st2094_10,
+#endif
+    [TONE_MAP_BT2390]    = &pl_tone_map_bt2390,
+    [TONE_MAP_BT2446A]   = &pl_tone_map_bt2446a,
+    [TONE_MAP_SPLINE]    = &pl_tone_map_spline,
+    [TONE_MAP_REINHARD]  = &pl_tone_map_reinhard,
+    [TONE_MAP_MOBIUS]    = &pl_tone_map_mobius,
+    [TONE_MAP_HABLE]     = &pl_tone_map_hable,
+    [TONE_MAP_GAMMA]     = &pl_tone_map_gamma,
+    [TONE_MAP_LINEAR]    = &pl_tone_map_linear,
 };
 
 typedef struct LibplaceboContext {
@@ -262,8 +268,7 @@ static int init_vulkan(AVFilterContext *avctx)
         return AVERROR(EINVAL);
     }
 
-    avhwctx = avctx->hw_device_ctx->data;
-
+    avhwctx = (AVHWDeviceContext *) avctx->hw_device_ctx->data;
     if (avhwctx->type != AV_HWDEVICE_TYPE_VULKAN) {
         av_log(s, AV_LOG_ERROR, "Expected vulkan hwdevice for vf_libplacebo, got %s.\n",
             av_hwdevice_get_type_name(avhwctx->type));
@@ -548,10 +553,10 @@ fail:
 
 static int libplacebo_query_format(AVFilterContext *ctx)
 {
-    int err = 0;
+    int err;
     LibplaceboContext *s = ctx->priv;
     const AVPixFmtDescriptor *desc = NULL;
-    AVFilterFormats *formats = NULL;
+    AVFilterFormats *infmts = NULL, *outfmts = NULL;
 
     RET(init_vulkan(ctx));
 
@@ -565,29 +570,47 @@ static int libplacebo_query_format(AVFilterContext *ctx)
             continue;
 #endif
 
-        if (pl_test_pixfmt(s->gpu, pixfmt)) {
-            if ((err = ff_add_format(&formats, pixfmt)) < 0)
-                return err;
+        if (!pl_test_pixfmt(s->gpu, pixfmt))
+            continue;
+
+        RET(ff_add_format(&infmts, pixfmt));
+
+        /* Filter for supported output pixel formats */
+        if (desc->flags & AV_PIX_FMT_FLAG_BE)
+            continue; /* BE formats are not supported by pl_download_avframe */
+
+        /* Mask based on user specified format */
+        if (s->out_format != AV_PIX_FMT_NONE) {
+            if (pixfmt == AV_PIX_FMT_VULKAN && av_vkfmt_from_pixfmt(s->out_format)) {
+                /* OK */
+            } else if (pixfmt == s->out_format) {
+                /* OK */
+            } else {
+                continue; /* Not OK */
+            }
         }
+
+        RET(ff_add_format(&outfmts, pixfmt));
     }
 
-    RET(ff_formats_ref(formats, &ctx->inputs[0]->outcfg.formats));
-
-    if (s->out_format != AV_PIX_FMT_NONE) {
-        /* Support only requested format, and hwaccel (vulkan) */
-        const enum AVPixelFormat out_fmts[] = {
-            s->out_format, AV_PIX_FMT_VULKAN, AV_PIX_FMT_NONE,
-        };
-        RET(ff_formats_ref(ff_make_format_list(out_fmts),
-                           &ctx->outputs[0]->incfg.formats));
-    } else {
-        /* Support all formats */
-        RET(ff_formats_ref(formats, &ctx->outputs[0]->incfg.formats));
+    if (!infmts || !outfmts) {
+        if (s->out_format) {
+            av_log(s, AV_LOG_ERROR, "Invalid output format '%s'!\n",
+                   av_get_pix_fmt_name(s->out_format));
+        }
+        err = AVERROR(EINVAL);
+        goto fail;
     }
 
+    RET(ff_formats_ref(infmts, &ctx->inputs[0]->outcfg.formats));
+    RET(ff_formats_ref(outfmts, &ctx->outputs[0]->incfg.formats));
     return 0;
 
 fail:
+    if (infmts && !infmts->refcount)
+        ff_formats_unref(&infmts);
+    if (outfmts && !outfmts->refcount)
+        ff_formats_unref(&outfmts);
     return err;
 }
 
@@ -773,6 +796,10 @@ static const AVOption libplacebo_options[] = {
     { "tonemapping", "Tone-mapping algorithm", OFFSET(tonemapping), AV_OPT_TYPE_INT, {.i64 = TONE_MAP_AUTO}, 0, TONE_MAP_COUNT - 1, DYNAMIC, "tonemap" },
         { "auto", "Automatic selection", 0, AV_OPT_TYPE_CONST, {.i64 = TONE_MAP_AUTO}, 0, 0, STATIC, "tonemap" },
         { "clip", "No tone mapping (clip", 0, AV_OPT_TYPE_CONST, {.i64 = TONE_MAP_CLIP}, 0, 0, STATIC, "tonemap" },
+#if PL_API_VER >= 246
+        { "st2094-40", "SMPTE ST 2094-40", 0, AV_OPT_TYPE_CONST, {.i64 = TONE_MAP_ST2094_40}, 0, 0, STATIC, "tonemap" },
+        { "st2094-10", "SMPTE ST 2094-10", 0, AV_OPT_TYPE_CONST, {.i64 = TONE_MAP_ST2094_10}, 0, 0, STATIC, "tonemap" },
+#endif
         { "bt.2390", "ITU-R BT.2390 EETF", 0, AV_OPT_TYPE_CONST, {.i64 = TONE_MAP_BT2390}, 0, 0, STATIC, "tonemap" },
         { "bt.2446a", "ITU-R BT.2446 Method A", 0, AV_OPT_TYPE_CONST, {.i64 = TONE_MAP_BT2446A}, 0, 0, STATIC, "tonemap" },
         { "spline", "Single-pivot polynomial spline", 0, AV_OPT_TYPE_CONST, {.i64 = TONE_MAP_SPLINE}, 0, 0, STATIC, "tonemap" },

@@ -1590,16 +1590,25 @@ static int mov_read_enda(MOVContext *c, AVIOContext *pb, MOVAtom atom)
 static int mov_read_pcmc(MOVContext *c, AVIOContext *pb, MOVAtom atom)
 {
     int format_flags;
+    int version, flags;
 
     if (atom.size < 6) {
         av_log(c->fc, AV_LOG_ERROR, "Empty pcmC box\n");
         return AVERROR_INVALIDDATA;
     }
 
-    avio_r8(pb);    // version
-    avio_rb24(pb);  // flags
+    version = avio_r8(pb);
+    flags   = avio_rb24(pb);
+
+    if (version != 0 || flags != 0) {
+        av_log(c->fc, AV_LOG_ERROR,
+               "Unsupported 'pcmC' box with version %d, flags: %x",
+               version, flags);
+        return AVERROR_INVALIDDATA;
+    }
+
     format_flags = avio_r8(pb);
-    if (format_flags == 1) // indicates little-endian format. If not present, big-endian format is used
+    if (format_flags & 1) // indicates little-endian format. If not present, big-endian format is used
         set_last_stream_little_endian(c->fc);
 
     return 0;
@@ -4064,10 +4073,15 @@ static void mov_build_index(MOVContext *mov, AVStream *st)
             }
         }
 
-        if (multiple_edits && !mov->advanced_editlist)
-            av_log(mov->fc, AV_LOG_WARNING, "multiple edit list entries, "
-                   "Use -advanced_editlist to correctly decode otherwise "
-                   "a/v desync might occur\n");
+        if (multiple_edits && !mov->advanced_editlist) {
+            if (mov->advanced_editlist_autodisabled)
+                av_log(mov->fc, AV_LOG_WARNING, "multiple edit list entries, "
+                       "not supported in fragmented MP4 files\n");
+            else
+                av_log(mov->fc, AV_LOG_WARNING, "multiple edit list entries, "
+                       "Use -advanced_editlist to correctly decode otherwise "
+                       "a/v desync might occur\n");
+        }
 
         /* adjust first dts according to edit list */
         if ((empty_duration || start_time) && mov->time_scale > 0) {
@@ -4188,6 +4202,13 @@ static void mov_build_index(MOVContext *mov, AVStream *st)
                 if (keyframe)
                     distance = 0;
                 sample_size = sc->stsz_sample_size > 0 ? sc->stsz_sample_size : sc->sample_sizes[current_sample];
+                if (current_offset > INT64_MAX - sample_size) {
+                    av_log(mov->fc, AV_LOG_ERROR, "Current offset %"PRId64" or sample size %u is too large\n",
+                           current_offset,
+                           sample_size);
+                    return;
+                }
+
                 if (sc->pseudo_stream_id == -1 ||
                    sc->stsc_data[stsc_index].id - 1 == sc->pseudo_stream_id) {
                     AVIndexEntry *e;
@@ -4499,6 +4520,23 @@ static int mov_read_trak(MOVContext *c, AVIOContext *pb, MOVAtom atom)
     fix_timescale(c, sc);
 
     avpriv_set_pts_info(st, 64, 1, sc->time_scale);
+
+    /*
+     * Advanced edit list support does not work with fragemented MP4s, which
+     * have stsc, stsz, stco, and stts with zero entries in the moov atom.
+     * In these files, trun atoms may be streamed in.
+     *
+     * It cannot be used with use_mfra_for = {pts,dts} either, as the index
+     * is not complete, but filled in as more trun atoms are read, as well.
+     */
+    if (!sc->stts_count || c->use_mfra_for != FF_MOV_FLAG_MFRA_AUTO &&
+        c->advanced_editlist) {
+
+        av_log(c->fc, AV_LOG_VERBOSE, "advanced_editlist does not work with fragmented "
+                                      "MP4. disabling.\n");
+        c->advanced_editlist = 0;
+        c->advanced_editlist_autodisabled = 1;
+    }
 
     mov_build_index(c, st);
 

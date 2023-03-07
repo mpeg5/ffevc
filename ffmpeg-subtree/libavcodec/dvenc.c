@@ -1144,7 +1144,7 @@ static void dv_format_frame(DVEncContext *c, uint8_t *buf)
 {
     int chan, i, j, k;
     /* We work with 720p frames split in half. The odd half-frame is chan 2,3 */
-    int chan_offset = 2*(c->sys->height == 720 && c->avctx->frame_number & 1);
+    int chan_offset = 2*(c->sys->height == 720 && c->avctx->frame_num & 1);
 
     for (chan = 0; chan < c->sys->n_difchan; chan++) {
         for (i = 0; i < c->sys->difseg_size; i++) {
@@ -1239,7 +1239,8 @@ const FFCodec ff_dvvideo_encoder = {
     .p.type         = AVMEDIA_TYPE_VIDEO,
     .p.id           = AV_CODEC_ID_DVVIDEO,
     .p.capabilities = AV_CODEC_CAP_DR1 | AV_CODEC_CAP_FRAME_THREADS |
-                      AV_CODEC_CAP_SLICE_THREADS,
+                      AV_CODEC_CAP_SLICE_THREADS                    |
+                      AV_CODEC_CAP_ENCODER_REORDERED_OPAQUE,
     .priv_data_size = sizeof(DVEncContext),
     .init           = dvvideo_encode_init,
     FF_CODEC_ENCODE_CB(dvvideo_encode_frame),

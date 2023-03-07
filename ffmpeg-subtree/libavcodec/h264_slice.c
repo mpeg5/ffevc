@@ -489,7 +489,11 @@ static int h264_frame_start(H264Context *h)
     pic = &h->DPB[i];
 
     pic->reference              = h->droppable ? 0 : h->picture_structure;
+#if FF_API_FRAME_PICTURE_NUMBER
+FF_DISABLE_DEPRECATION_WARNINGS
     pic->f->coded_picture_number = h->coded_picture_number++;
+FF_ENABLE_DEPRECATION_WARNINGS
+#endif
     pic->field_picture          = h->picture_structure != PICT_FRAME;
     pic->frame_num               = h->poc.frame_num;
     /*
@@ -1228,7 +1232,7 @@ static int h264_export_frame_props(H264Context *h)
 
     ret = ff_h2645_sei_to_frame(out, &h->sei.common, AV_CODEC_ID_H264, h->avctx,
                                 &sps->vui, sps->bit_depth_luma, sps->bit_depth_chroma,
-                                cur->poc + (h->poc_offset << 5));
+                                cur->poc + (unsigned)(h->poc_offset << 5));
     if (ret < 0)
         return ret;
 
@@ -1297,7 +1301,7 @@ static int h264_select_output_frame(H264Context *h)
         h->last_pocs[0] = cur->poc;
         cur->mmco_reset = 1;
     } else if(h->avctx->has_b_frames < out_of_order && !sps->bitstream_restriction_flag){
-        int loglevel = h->avctx->frame_number > 1 ? AV_LOG_WARNING : AV_LOG_VERBOSE;
+        int loglevel = h->avctx->frame_num > 1 ? AV_LOG_WARNING : AV_LOG_VERBOSE;
         av_log(h->avctx, loglevel, "Increasing reorder buffer to %d\n", out_of_order);
         h->avctx->has_b_frames = out_of_order;
     }

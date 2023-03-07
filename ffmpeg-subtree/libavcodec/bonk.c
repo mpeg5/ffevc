@@ -101,6 +101,10 @@ static av_cold int bonk_init(AVCodecContext *avctx)
     s->samples_per_packet = AV_RL16(avctx->extradata + 15);
     if (!s->samples_per_packet)
         return AVERROR(EINVAL);
+
+    if (s->down_sampling * s->samples_per_packet < s->n_taps)
+        return AVERROR_INVALIDDATA;
+
     s->max_framesize = s->samples_per_packet * avctx->ch_layout.nb_channels * s->down_sampling * 16LL;
     if (s->max_framesize > (INT32_MAX - AV_INPUT_BUFFER_PADDING_SIZE) / 8)
         return AVERROR_INVALIDDATA;
@@ -217,7 +221,7 @@ static int intlist_read(BonkContext *s, int *buf, int entries, int base_2_part)
             level += 1 << low_bits;
         }
 
-        if (level > 1 << 15)
+        if (level > 1 << 16)
             return AVERROR_INVALIDDATA;
 
         if (x >= max_x)
@@ -326,10 +330,10 @@ static int bonk_decode(AVCodecContext *avctx, AVFrame *frame,
 
     frame->nb_samples = FFMIN(s->samples_per_packet * s->down_sampling, s->nb_samples);
     if ((ret = ff_get_buffer(avctx, frame, 0)) < 0)
-        return ret;
+        goto fail;
 
     if ((ret = init_get_bits8(gb, buf, buf_size)) < 0)
-        return ret;
+        goto fail;
 
     skip_bits(gb, s->skip);
     if ((ret = intlist_read(s, s->k, s->n_taps, 0)) < 0)
@@ -356,7 +360,7 @@ static int bonk_decode(AVCodecContext *avctx, AVFrame *frame,
                 sample++;
             }
 
-            sample[0] = predictor_calc_error(s->k, state, s->n_taps, s->input_samples[i] * quant);
+            sample[0] = predictor_calc_error(s->k, state, s->n_taps, s->input_samples[i] * (unsigned)quant);
             sample++;
         }
 

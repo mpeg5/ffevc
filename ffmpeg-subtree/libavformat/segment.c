@@ -116,6 +116,7 @@ typedef struct SegmentContext {
     int64_t initial_offset;    ///< initial timestamps offset, expressed in microseconds
     char *reference_stream_specifier; ///< reference stream specifier
     int   reference_stream_index;
+    int64_t reference_stream_first_pts;    ///< initial timestamp, expressed in microseconds
     int   break_non_keyframes;
     int   write_empty;
 
@@ -159,7 +160,11 @@ static int segment_mux_init(AVFormatContext *s)
     oc->max_delay          = s->max_delay;
     av_dict_copy(&oc->metadata, s->metadata, 0);
     oc->opaque             = s->opaque;
+#if FF_API_AVFORMAT_IO_CLOSE
+FF_DISABLE_DEPRECATION_WARNINGS
     oc->io_close           = s->io_close;
+FF_ENABLE_DEPRECATION_WARNINGS
+#endif
     oc->io_close2          = s->io_close2;
     oc->io_open            = s->io_open;
     oc->flags              = s->flags;
@@ -746,6 +751,8 @@ static int seg_init(AVFormatContext *s)
            seg->reference_stream_index,
            av_get_media_type_string(s->streams[seg->reference_stream_index]->codecpar->codec_type));
 
+    seg->reference_stream_first_pts = AV_NOPTS_VALUE;
+
     seg->oformat = av_guess_format(seg->format, s->url, NULL);
 
     if (!seg->oformat)
@@ -898,6 +905,18 @@ calc_times:
             pkt->flags & AV_PKT_FLAG_KEY,
             pkt->stream_index == seg->reference_stream_index ? seg->frame_count : -1);
 
+    if (seg->reference_stream_first_pts == AV_NOPTS_VALUE &&
+        pkt->stream_index == seg->reference_stream_index &&
+        pkt->pts != AV_NOPTS_VALUE) {
+        seg->reference_stream_first_pts = av_rescale_q(pkt->pts, st->time_base, AV_TIME_BASE_Q);
+    }
+
+    if (seg->reference_stream_first_pts != AV_NOPTS_VALUE) {
+        end_pts += (INT64_MAX - end_pts >= seg->reference_stream_first_pts) ?
+                    seg->reference_stream_first_pts :
+                    INT64_MAX - end_pts;
+    }
+
     if (pkt->pts != AV_NOPTS_VALUE)
         pkt_pts_avtb = av_rescale_q(pkt->pts, st->time_base, AV_TIME_BASE_Q);
 
@@ -961,7 +980,8 @@ calc_times:
            av_ts2str(pkt->dts), av_ts2timestr(pkt->dts, &st->time_base));
 
     ret = ff_write_chained(seg->avf, pkt->stream_index, pkt, s,
-                           seg->initial_offset || seg->reset_timestamps || seg->avf->oformat->interleave_packet);
+                           seg->initial_offset || seg->reset_timestamps ||
+                           ffofmt(seg->avf->oformat)->interleave_packet);
 
 fail:
     /* Use st->index here as the packet returned from ff_write_chained()
@@ -1001,9 +1021,9 @@ static int seg_check_bitstream(AVFormatContext *s, AVStream *st,
 {
     SegmentContext *seg = s->priv_data;
     AVFormatContext *oc = seg->avf;
-    if (oc->oformat->check_bitstream) {
+    if (ffofmt(oc->oformat)->check_bitstream) {
         AVStream *const ost = oc->streams[st->index];
-        int ret = oc->oformat->check_bitstream(oc, ost, pkt);
+        int ret = ffofmt(oc->oformat)->check_bitstream(oc, ost, pkt);
         if (ret == 1) {
             FFStream *const  sti = ffstream(st);
             FFStream *const osti = ffstream(ost);
@@ -1070,33 +1090,33 @@ static const AVClass seg_class = {
 };
 
 #if CONFIG_SEGMENT_MUXER
-const AVOutputFormat ff_segment_muxer = {
-    .name           = "segment",
-    .long_name      = NULL_IF_CONFIG_SMALL("segment"),
+const FFOutputFormat ff_segment_muxer = {
+    .p.name          = "segment",
+    .p.long_name     = NULL_IF_CONFIG_SMALL("segment"),
+    .p.flags         = AVFMT_NOFILE|AVFMT_GLOBALHEADER,
+    .p.priv_class    = &seg_class,
     .priv_data_size = sizeof(SegmentContext),
-    .flags          = AVFMT_NOFILE|AVFMT_GLOBALHEADER,
     .init           = seg_init,
     .write_header   = seg_write_header,
     .write_packet   = seg_write_packet,
     .write_trailer  = seg_write_trailer,
     .deinit         = seg_free,
     .check_bitstream = seg_check_bitstream,
-    .priv_class     = &seg_class,
 };
 #endif
 
 #if CONFIG_STREAM_SEGMENT_MUXER
-const AVOutputFormat ff_stream_segment_muxer = {
-    .name           = "stream_segment,ssegment",
-    .long_name      = NULL_IF_CONFIG_SMALL("streaming segment muxer"),
-    .priv_data_size = sizeof(SegmentContext),
-    .flags          = AVFMT_NOFILE,
+const FFOutputFormat ff_stream_segment_muxer = {
+    .p.name          = "stream_segment,ssegment",
+    .p.long_name     = NULL_IF_CONFIG_SMALL("streaming segment muxer"),
+    .p.flags         = AVFMT_NOFILE,
+    .p.priv_class    = &seg_class,
+    .priv_data_size  = sizeof(SegmentContext),
     .init           = seg_init,
     .write_header   = seg_write_header,
     .write_packet   = seg_write_packet,
     .write_trailer  = seg_write_trailer,
     .deinit         = seg_free,
     .check_bitstream = seg_check_bitstream,
-    .priv_class     = &seg_class,
 };
 #endif

@@ -542,7 +542,7 @@ static int smc_encode_frame(AVCodecContext *avctx, AVPacket *pkt,
         return ret;
 
     if (avctx->gop_size == 0 || !s->prev_frame->data[0] ||
-        (avctx->frame_number % avctx->gop_size) == 0) {
+        (avctx->frame_num % avctx->gop_size) == 0) {
         s->key_frame = 1;
     } else {
         s->key_frame = 0;
@@ -595,7 +595,7 @@ const FFCodec ff_smc_encoder = {
     CODEC_LONG_NAME("QuickTime Graphics (SMC)"),
     .p.type         = AVMEDIA_TYPE_VIDEO,
     .p.id           = AV_CODEC_ID_SMC,
-    .p.capabilities = AV_CODEC_CAP_DR1,
+    .p.capabilities = AV_CODEC_CAP_DR1 | AV_CODEC_CAP_ENCODER_REORDERED_OPAQUE,
     .priv_data_size = sizeof(SMCContext),
     .init           = smc_encode_init,
     FF_CODEC_ENCODE_CB(smc_encode_frame),

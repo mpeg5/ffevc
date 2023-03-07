@@ -1712,27 +1712,27 @@ COMPONENT_LIST="
 "
 
 EXAMPLE_LIST="
+    avio_http_serve_files_example
     avio_list_dir_example
-    avio_reading_example
+    avio_read_callback_example
     decode_audio_example
+    decode_filter_audio_example
+    decode_filter_video_example
     decode_video_example
-    demuxing_decoding_example
+    demux_decode_example
     encode_audio_example
     encode_video_example
     extract_mvs_example
     filter_audio_example
-    filtering_audio_example
-    filtering_video_example
-    http_multiclient_example
     hw_decode_example
-    metadata_example
-    muxing_example
-    qsvdec_example
-    remuxing_example
-    resampling_audio_example
-    scaling_video_example
+    mux_example
+    qsv_decode_example
+    remux_example
+    resample_audio_example
+    scale_video_example
+    show_metadata_example
     transcode_aac_example
-    transcoding_example
+    transcode_example
     vaapi_encode_example
     vaapi_transcode_example
     qsv_transcode_example
@@ -2854,6 +2854,7 @@ lscr_decoder_select="inflate_wrapper"
 magicyuv_decoder_select="llviddsp"
 magicyuv_encoder_select="llvidencdsp"
 mdec_decoder_select="blockdsp bswapdsp idctdsp"
+media100_decoder_select="media100_to_mjpegb_bsf mjpegb_decoder"
 metasound_decoder_select="lsp sinewin"
 mimic_decoder_select="blockdsp bswapdsp hpeldsp idctdsp"
 mjpeg_decoder_select="blockdsp hpeldsp exif idctdsp jpegtables"
@@ -3160,6 +3161,8 @@ nvenc_deps_any="libdl LoadLibrary"
 aac_mf_encoder_deps="mediafoundation"
 ac3_mf_encoder_deps="mediafoundation"
 av1_cuvid_decoder_deps="cuvid CUVIDAV1PICPARAMS"
+av1_mediacodec_decoder_deps="mediacodec"
+av1_mediacodec_decoder_extralibs="-landroid"
 av1_nvenc_encoder_deps="nvenc NV_ENC_PIC_PARAMS_AV1"
 av1_nvenc_encoder_select="atsc_a53"
 h263_v4l2m2m_decoder_deps="v4l2_m2m h263_v4l2_m2m"
@@ -3183,7 +3186,7 @@ h264_qsv_decoder_select="h264_mp4toannexb_bsf qsvdec"
 h264_qsv_encoder_select="atsc_a53 qsvenc"
 h264_rkmpp_decoder_deps="rkmpp"
 h264_rkmpp_decoder_select="h264_mp4toannexb_bsf"
-h264_vaapi_encoder_select="cbs_h264 vaapi_encode"
+h264_vaapi_encoder_select="atsc_a53 cbs_h264 vaapi_encode"
 h264_v4l2m2m_decoder_deps="v4l2_m2m h264_v4l2_m2m"
 h264_v4l2m2m_decoder_select="h264_mp4toannexb_bsf"
 h264_v4l2m2m_encoder_deps="v4l2_m2m h264_v4l2_m2m"
@@ -3204,7 +3207,7 @@ hevc_qsv_encoder_select="hevcparse qsvenc"
 hevc_rkmpp_decoder_deps="rkmpp"
 hevc_rkmpp_decoder_select="hevc_mp4toannexb_bsf"
 hevc_vaapi_encoder_deps="VAEncPictureParameterBufferHEVC"
-hevc_vaapi_encoder_select="cbs_h265 vaapi_encode"
+hevc_vaapi_encoder_select="atsc_a53 cbs_h265 vaapi_encode"
 hevc_v4l2m2m_decoder_deps="v4l2_m2m hevc_v4l2_m2m"
 hevc_v4l2m2m_decoder_select="hevc_mp4toannexb_bsf"
 hevc_v4l2m2m_encoder_deps="v4l2_m2m hevc_v4l2_m2m"
@@ -3259,6 +3262,7 @@ wmv3_crystalhd_decoder_select="crystalhd"
 av1_qsv_decoder_select="qsvdec"
 av1_qsv_encoder_select="qsvenc"
 av1_qsv_encoder_deps="libvpl"
+av1_amf_encoder_deps="amf"
 
 # parsers
 aac_parser_select="adts_header mpeg4audio"
@@ -3438,8 +3442,8 @@ flac_demuxer_select="flac_parser"
 flv_muxer_select="aac_adtstoasc_bsf"
 gxf_muxer_select="pcm_rechunk_bsf"
 hds_muxer_select="flv_muxer"
-hls_demuxer_select="adts_header ac3_parser"
-hls_muxer_select="mpegts_muxer"
+hls_demuxer_select="adts_header ac3_parser mov_demuxer mpegts_demuxer"
+hls_muxer_select="mov_muxer mpegts_muxer"
 hls_muxer_suggest="gcrypt openssl"
 image2_alias_pix_demuxer_select="image2_demuxer"
 image2_brender_pix_demuxer_select="image2_demuxer"
@@ -3605,8 +3609,8 @@ udp_protocol_select="network"
 udplite_protocol_select="network"
 unix_protocol_deps="sys_un_h"
 unix_protocol_select="network"
-ipfs_protocol_select="https_protocol"
-ipns_protocol_select="https_protocol"
+ipfs_gateway_protocol_select="https_protocol"
+ipns_gateway_protocol_select="https_protocol"
 
 # external library protocols
 libamqp_protocol_deps="librabbitmq"
@@ -3651,6 +3655,7 @@ coreimagesrc_filter_extralibs="-framework OpenGL"
 cover_rect_filter_deps="avcodec avformat gpl"
 cropdetect_filter_deps="gpl"
 deinterlace_qsv_filter_deps="libmfx"
+deinterlace_qsv_filter_select="qsvvpp"
 deinterlace_vaapi_filter_deps="vaapi"
 delogo_filter_deps="gpl"
 denoise_vaapi_filter_deps="vaapi"
@@ -3668,7 +3673,7 @@ eq_filter_deps="gpl"
 erosion_opencl_filter_deps="opencl"
 find_rect_filter_deps="avcodec avformat gpl"
 flip_vulkan_filter_deps="vulkan spirv_compiler"
-flite_filter_deps="libflite"
+flite_filter_deps="libflite threads"
 framerate_filter_select="scene_sad"
 freezedetect_filter_select="scene_sad"
 frei0r_deps_any="libdl LoadLibrary"
@@ -3725,6 +3730,7 @@ sab_filter_deps="gpl swscale"
 scale2ref_filter_deps="swscale"
 scale_filter_deps="swscale"
 scale_qsv_filter_deps="libmfx"
+scale_qsv_filter_select="qsvvpp"
 scdet_filter_select="scene_sad"
 select_filter_select="scene_sad"
 sharpness_vaapi_filter_deps="vaapi"
@@ -3769,29 +3775,38 @@ xfade_opencl_filter_deps="opencl"
 yadif_cuda_filter_deps="ffnvcodec"
 yadif_cuda_filter_deps_any="cuda_nvcc cuda_llvm"
 yadif_videotoolbox_filter_deps="metal corevideo videotoolbox"
+hstack_vaapi_filter_deps="vaapi_1"
+vstack_vaapi_filter_deps="vaapi_1"
+xstack_vaapi_filter_deps="vaapi_1"
+hstack_qsv_filter_deps="libmfx"
+hstack_qsv_filter_select="qsvvpp"
+vstack_qsv_filter_deps="libmfx"
+vstack_qsv_filter_select="qsvvpp"
+xstack_qsv_filter_deps="libmfx"
+xstack_qsv_filter_select="qsvvpp"
 
 # examples
+avio_http_serve_files_deps="avformat avutil fork"
 avio_list_dir_deps="avformat avutil"
-avio_reading_deps="avformat avcodec avutil"
+avio_read_callback_deps="avformat avcodec avutil"
 decode_audio_example_deps="avcodec avutil"
+decode_filter_audio_example_deps="avfilter avcodec avformat avutil"
+decode_filter_video_example_deps="avfilter avcodec avformat avutil"
 decode_video_example_deps="avcodec avutil"
-demuxing_decoding_example_deps="avcodec avformat avutil"
+demux_decode_example_deps="avcodec avformat avutil"
 encode_audio_example_deps="avcodec avutil"
 encode_video_example_deps="avcodec avutil"
 extract_mvs_example_deps="avcodec avformat avutil"
 filter_audio_example_deps="avfilter avutil"
-filtering_audio_example_deps="avfilter avcodec avformat avutil"
-filtering_video_example_deps="avfilter avcodec avformat avutil"
-http_multiclient_example_deps="avformat avutil fork"
 hw_decode_example_deps="avcodec avformat avutil"
-metadata_example_deps="avformat avutil"
-muxing_example_deps="avcodec avformat avutil swscale"
-qsvdec_example_deps="avcodec avutil libmfx h264_qsv_decoder"
-remuxing_example_deps="avcodec avformat avutil"
-resampling_audio_example_deps="avutil swresample"
-scaling_video_example_deps="avutil swscale"
+mux_example_deps="avcodec avformat avutil swscale"
+qsv_decode_example_deps="avcodec avutil libmfx h264_qsv_decoder"
+remux_example_deps="avcodec avformat avutil"
+resample_audio_example_deps="avutil swresample"
+scale_video_example_deps="avutil swscale"
+show_metadata_example_deps="avformat avutil"
 transcode_aac_example_deps="avcodec avformat swresample"
-transcoding_example_deps="avfilter avcodec avformat avutil"
+transcode_example_deps="avfilter avcodec avformat avutil"
 vaapi_encode_example_deps="avcodec avutil h264_vaapi_encoder"
 vaapi_transcode_example_deps="avcodec avformat avutil h264_vaapi_encoder"
 qsv_transcode_example_deps="avcodec avformat avutil h264_qsv_encoder"
@@ -4007,9 +4022,9 @@ find_filters_extern(){
 }
 
 FILTER_LIST=$(find_filters_extern libavfilter/allfilters.c)
-OUTDEV_LIST=$(find_things_extern muxer AVOutputFormat libavdevice/alldevices.c outdev)
+OUTDEV_LIST=$(find_things_extern muxer FFOutputFormat libavdevice/alldevices.c outdev)
 INDEV_LIST=$(find_things_extern demuxer AVInputFormat libavdevice/alldevices.c indev)
-MUXER_LIST=$(find_things_extern muxer AVOutputFormat libavformat/allformats.c)
+MUXER_LIST=$(find_things_extern muxer FFOutputFormat libavformat/allformats.c)
 DEMUXER_LIST=$(find_things_extern demuxer AVInputFormat libavformat/allformats.c)
 ENCODER_LIST=$(find_things_extern encoder FFCodec libavcodec/allcodecs.c)
 DECODER_LIST=$(find_things_extern decoder FFCodec libavcodec/allcodecs.c)
@@ -7000,7 +7015,9 @@ enabled vdpau &&
 enabled vdpau &&
     check_lib vdpau_x11 "vdpau/vdpau.h vdpau/vdpau_x11.h" vdp_device_create_x11 -lvdpau -lX11
 
-enabled crystalhd && check_lib crystalhd "stdint.h libcrystalhd/libcrystalhd_if.h" DtsCrystalHDVersion -lcrystalhd
+enabled crystalhd && check_lib crystalhd "stdint.h libcrystalhd/libcrystalhd_if.h" DtsCrystalHDVersion -lcrystalhd && \
+    warn "CrystalHD support is deprecated and will be removed, please contact the developers if you are interested"   \
+         "in maintaining it."
 
 if enabled vulkan; then
     check_pkg_config_header_only vulkan "vulkan >= 1.2.189" "vulkan/vulkan.h" "defined VK_VERSION_1_2" ||
@@ -7047,7 +7064,7 @@ fi
 
 enabled amf &&
     check_cpp_condition amf "AMF/core/Version.h" \
-        "(AMF_VERSION_MAJOR << 48 | AMF_VERSION_MINOR << 32 | AMF_VERSION_RELEASE << 16 | AMF_VERSION_BUILD_NUM) >= 0x0001000400090000"
+        "(AMF_VERSION_MAJOR << 48 | AMF_VERSION_MINOR << 32 | AMF_VERSION_RELEASE << 16 | AMF_VERSION_BUILD_NUM) >= 0x00010004001c0000"
 
 # Funny iconv installations are not unusual, so check it after all flags have been set
 if enabled libc_iconv; then
@@ -7957,9 +7974,9 @@ print_enabled_components libavcodec/codec_list.c FFCodec codec_list $CODEC_LIST
 print_enabled_components libavcodec/parser_list.c AVCodecParser parser_list $PARSER_LIST
 print_enabled_components libavcodec/bsf_list.c FFBitStreamFilter bitstream_filters $BSF_LIST
 print_enabled_components libavformat/demuxer_list.c AVInputFormat demuxer_list $DEMUXER_LIST
-print_enabled_components libavformat/muxer_list.c AVOutputFormat muxer_list $MUXER_LIST
+print_enabled_components libavformat/muxer_list.c FFOutputFormat muxer_list $MUXER_LIST
 print_enabled_components libavdevice/indev_list.c AVInputFormat indev_list $INDEV_LIST
-print_enabled_components libavdevice/outdev_list.c AVOutputFormat outdev_list $OUTDEV_LIST
+print_enabled_components libavdevice/outdev_list.c FFOutputFormat outdev_list $OUTDEV_LIST
 print_enabled_components libavformat/protocol_list.c URLProtocol url_protocols $PROTOCOL_LIST
 
 # Settings for pkg-config files

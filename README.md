@@ -16,13 +16,14 @@ It is supported under Linux and Windows.
     build-essential \
     cmake \
     pkg-config \
-    libsdl2-dev
+    libsdl2-dev \ 
+    nasm
     ```
-2. Install in system xeve encoder (main profile)
+2. Install in system xeve encoder (dev package, main profile) 
 
     Detailed and latest info is in [xeve].
 
-3. Install in system xevd decoder
+3. Install in system xevd decoder (dev package)
 
     Detailed and latest info is in [xevd].
 

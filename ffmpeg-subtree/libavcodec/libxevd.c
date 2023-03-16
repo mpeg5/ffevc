@@ -46,6 +46,8 @@
 
 #define EVC_NAL_HEADER_SIZE 2 /* byte */
 
+#define SEND_RECEIVE_NEW_DECODING_API
+
 /**
  * The structure stores all the states associated with the instance of Xeve MPEG-5 EVC decoder
  */
@@ -54,6 +56,9 @@ typedef struct XevdContext {
 
     XEVD id;            // XEVD instance identifier @see xevd.h
     XEVD_CDSC cdsc;     // decoding parameters @see xevd.h
+#ifdef SEND_RECEIVE_NEW_DECODING_API
+    int coded_picture_number;
+#endif
 } XevdContext;
 
 /**
@@ -244,6 +249,315 @@ static av_cold int libxevd_init(AVCodecContext *avctx)
     return 0;
 }
 
+#ifdef SEND_RECEIVE_NEW_DECODING_API
+
+/**
+  * Decode frame with decoupled packet/frame dataflow
+  *
+  * @param avctx codec context
+  * @param[out] frame decoded frame
+  *
+  * @return 0 on success, negative error code on failure
+  */
+static int libxevd_receive_frame(AVCodecContext *avctx, AVFrame *frame)
+{
+    XevdContext *xectx = NULL;
+    int xevd_ret;
+    int ret = 0;
+
+    xectx = avctx->priv_data;
+
+    /* poll for new frame */
+    {
+        XEVD_IMGB *imgb = NULL;
+
+        xevd_ret = xevd_pull(xectx->id, &imgb);
+        if (XEVD_SUCCEEDED(ret)) {
+            if (imgb) {
+
+                frame->coded_picture_number = imgb->ts[XEVD_TS_DTS];
+                frame->display_picture_number = imgb->ts[XEVD_TS_PTS];
+
+                ret = libxevd_image_copy(avctx, imgb, frame);
+
+                // xevd_pull uses pool of objects of type XEVD_IMGB.
+                // The pool size is equal MAX_PB_SIZE (26), so release object when it is no more needed
+                imgb->release(imgb);
+                imgb = NULL;
+                return ret;
+            }
+        } else {
+            if (imgb) { // already has a decoded image
+                imgb->release(imgb);
+                imgb = NULL;
+            }
+        }
+    }
+
+    /* feed decoder */
+    {
+        XEVD_STAT stat;
+        XEVD_BITB bitb;
+        int nalu_size, bs_read_pos, dec_read_bytes;
+
+        AVPacket pkt = {0};
+
+        pkt.data = NULL;
+        pkt.size = 0;
+
+        // obtain input data
+        ret = ff_decode_get_packet(avctx, &pkt);
+        if (ret < 0)   // no data is currently available or end of stream has been reached
+            return ret;
+
+        memset(&stat, 0, sizeof(XEVD_STAT));
+        memset(&bitb, 0, sizeof(XEVD_BITB));
+
+        if (pkt.size) {
+
+            bs_read_pos = 0;
+            dec_read_bytes = 0;
+            while (pkt.size > (bs_read_pos + XEVD_NAL_UNIT_LENGTH_BYTE)) {
+
+                nalu_size = read_nal_unit_length(pkt.data + bs_read_pos, XEVD_NAL_UNIT_LENGTH_BYTE, avctx);
+                if (nalu_size == 0) {
+                    av_log(avctx, AV_LOG_ERROR, "Invalid bitstream\n");
+                    ret = AVERROR_INVALIDDATA;
+                    goto ERR;
+                }
+                bs_read_pos += XEVD_NAL_UNIT_LENGTH_BYTE;
+
+                bitb.addr = pkt.data + bs_read_pos;
+                bitb.ssize = nalu_size;
+                bitb.ts[XEVD_TS_DTS] = xectx->coded_picture_number;
+
+                /* main decoding block */
+                xevd_ret = xevd_decode(xectx->id, &bitb, &stat);
+                if (XEVD_FAILED(xevd_ret)) {
+                    av_log(avctx, AV_LOG_ERROR, "Failed to decode bitstream\n");
+                    ret = AVERROR_EXTERNAL;
+                    goto ERR;
+                }
+
+                bs_read_pos += nalu_size;
+                dec_read_bytes += nalu_size;
+
+                if (stat.nalu_type == XEVD_NUT_SPS) { // EVC stream parameters changed
+                    if ((ret = export_stream_params(xectx, avctx)) != 0)
+                        goto ERR;
+                } else if (stat.nalu_type == XEVD_NUT_IDR || stat.nalu_type == XEVD_NUT_NONIDR)
+                    xectx->coded_picture_number++;
+
+                if (stat.read != dec_read_bytes) {
+                    av_log(avctx, AV_LOG_INFO, "Different reading of bitstream (in:%d, read:%d)\n", nalu_size, stat.read);
+                    ret = AVERROR_EXTERNAL;
+                    goto ERR;
+                }
+            }
+        }
+
+ERR:
+        av_packet_unref(&pkt);
+        return ret;
+    }
+
+    return 0;
+}
+
+/**
+  * Decode frame with decoupled packet/frame dataflow
+  *
+  * @param avctx codec context
+  * @param[out] frame decoded frame
+  *
+  * @return 0 on success, negative error code on failure
+  */
+static int libxevd_receive_frame2(AVCodecContext *avctx, AVFrame *frame)
+{
+   /////////////////////
+    XevdContext *xectx = NULL;
+    int xevd_ret;
+    int ret = 0;
+    int got_frame_ptr = 0;
+    XEVD_IMGB *imgb = NULL;
+    AVPacket *pkt = NULL;
+
+    xectx = avctx->priv_data;
+	
+    pkt = av_packet_alloc();
+
+    if (!pkt)
+            return AVERROR(ENOMEM);	
+            
+    av_log(avctx, AV_LOG_ERROR, "1111111111111111\n");
+    // obtain input data
+    ret = ff_decode_get_packet(avctx, pkt);
+    if (ret < 0 && ret != AVERROR_EOF) {
+            av_log(avctx, AV_LOG_ERROR, "0000000000000000\n");
+            av_packet_free(&pkt);
+            return ret;
+    }
+    av_log(avctx, AV_LOG_ERROR, "222222222222222222: %d\n",pkt->size);
+
+    if (pkt->size > 0) {
+        av_log(avctx, AV_LOG_ERROR, "333333333333333333333333\n");
+        int bs_read_pos = 0;
+        imgb = NULL;
+        XEVD_STAT stat;
+        XEVD_BITB bitb;
+        int nalu_size;//, bs_read_pos, dec_read_bytes;
+
+        while(pkt->size > (bs_read_pos + XEVD_NAL_UNIT_LENGTH_BYTE)) {
+            memset(&stat, 0, sizeof(XEVD_STAT));
+            memset(&bitb, 0, sizeof(XEVD_BITB));
+
+            nalu_size = read_nal_unit_length(pkt->data + bs_read_pos, XEVD_NAL_UNIT_LENGTH_BYTE, avctx);
+            if (nalu_size == 0) {
+                av_log(avctx, AV_LOG_ERROR, "Invalid bitstream\n");
+                ret = AVERROR_INVALIDDATA;
+                av_packet_free(&pkt);
+                return ret;
+                // goto ERR;
+            }
+            av_log(avctx, AV_LOG_ERROR, "44444444444444444444 nalu size: %d\n", nalu_size);
+            bs_read_pos += XEVD_NAL_UNIT_LENGTH_BYTE;
+
+            bitb.addr = pkt->data + bs_read_pos;
+            bitb.ssize = nalu_size;
+
+            /* main decoding block */
+            av_log(avctx, AV_LOG_ERROR, "WWWWWW222222222222222222\n");
+            xevd_ret = xevd_decode(xectx->id, &bitb, &stat);
+            av_log(avctx, AV_LOG_ERROR, "WWWWWWW1111111111111111\n");
+            if (XEVD_FAILED(xevd_ret)) {
+                av_log(avctx, AV_LOG_ERROR, "WWWWWWWWWWWWWWWWWWWWWWWWWWWW\n");
+                av_log(avctx, AV_LOG_ERROR, "Failed to decode bitstream\n");
+                ret = AVERROR_EXTERNAL;
+                av_packet_free(&pkt);
+                return ret;
+                //goto ERR;
+            }
+            av_log(avctx, AV_LOG_ERROR, "55555555555555555555\n");
+
+            bs_read_pos += nalu_size;
+
+            if (stat.nalu_type == XEVD_NUT_SPS) { // EVC stream parameters changed
+                if ((ret = export_stream_params(xectx, avctx)) != 0) {
+                       av_packet_free(&pkt);
+	               return ret;
+                    	// goto ERR;
+                    }
+            }
+            av_log(avctx, AV_LOG_ERROR, "666666666666666666666666666\n");
+            if (stat.read != nalu_size)
+                av_log(avctx, AV_LOG_INFO, "Different reading of bitstream (in:%d, read:%d)\n,", nalu_size, stat.read);
+            if (stat.fnum >= 0) {
+                // already has a decoded image
+                if (imgb) {
+                    // xevd_pull uses pool of objects of type XEVD_IMGB.
+                    // The pool size is equal MAX_PB_SIZE (26), so release object when it is no more needed
+                    imgb->release(imgb);
+                    imgb = NULL;
+                }
+                av_log(avctx, AV_LOG_ERROR, "77777777777777777777\n");
+                xevd_ret = xevd_pull(xectx->id, &imgb);
+                if (XEVD_FAILED(xevd_ret)) {
+                    av_log(avctx, AV_LOG_ERROR, "Failed to pull the decoded image (xevd error code: %d, frame#=%d)\n", xevd_ret, stat.fnum);
+                    ret = AVERROR_EXTERNAL;
+                    av_packet_free(&pkt);
+                    return ret;
+                    // goto ERR;
+                } else if (xevd_ret == XEVD_OK_FRM_DELAYED) {
+                    if (imgb) {
+                        // xevd_pull uses pool of objects of type XEVD_IMGB.
+                        // The pool size is equal MAX_PB_SIZE (26), so release object when it is no more needed
+                        imgb->release(imgb);
+                        imgb = NULL;
+                    }
+                }
+                av_log(avctx, AV_LOG_ERROR, "8888888888888888888\n");
+                if (imgb) {
+                    av_log(avctx, AV_LOG_ERROR, "999999999999999999999999\n");
+                    int ret = libxevd_image_copy(avctx, imgb, frame);
+                    if(ret < 0) {
+                    	if (imgb) {
+                            imgb->release(imgb);
+                            imgb = NULL;
+			            }
+			            av_packet_free(&pkt);
+	                    return ret;
+                         // goto ERR;
+                    }
+                    av_log(avctx, AV_LOG_ERROR, "AAAAAAAAAAAAAAAAAA\n");
+                    frame->pts = pkt->pts;
+                    got_frame_ptr = 1;
+
+                    // xevd_pull uses pool of objects of type XEVD_IMGB.
+                    // The pool size is equal MAX_PB_SIZE (26), so release object when it is no more needed
+                    imgb->release(imgb);
+                    imgb = NULL;
+                } else
+                    av_log(avctx, AV_LOG_ERROR, "BBBBBBBBBBBBBB\n");
+                    got_frame_ptr = 0;
+            }
+        }
+    } else { // bumping
+        av_log(avctx, AV_LOG_ERROR, "CCCCCCCCCCCCCCCCCCCCCCCC\n");
+        xevd_ret = xevd_pull(xectx->id, &(imgb));
+        if (xevd_ret == XEVD_ERR_UNEXPECTED) { // bumping process completed
+            av_log(avctx, AV_LOG_ERROR, "@@@@@@@@@@@@@@@@@@@@@@@@@@@@@\n");
+
+            got_frame_ptr = 0;
+            return 0; // AVERROR_EOF
+        } else if (XEVD_FAILED(xevd_ret)) {
+            av_log(avctx, AV_LOG_ERROR, "############################\n");
+            av_log(avctx, AV_LOG_ERROR, "Failed to pull the decoded image (xevd error code: %d)\n", xevd_ret);
+            ret = AVERROR_EXTERNAL;
+            // goto ERR;
+            if (imgb) {
+                 imgb->release(imgb);
+                 imgb = NULL;
+	        }
+	        av_packet_free(&pkt);
+            return AVERROR_EXTERNAL;//AVERROR_EOF;
+        }
+        av_log(avctx, AV_LOG_ERROR, "$$$$$$$$$$$$$$$$$$$$$$$$$$\n");
+        if (imgb) {
+            int ret = libxevd_image_copy(avctx, imgb, frame);
+            if(ret < 0) {
+		        if (imgb) {
+                    imgb->release(imgb);
+                    imgb = NULL;
+	            }
+	            av_packet_free(&pkt);
+            }
+
+            frame->pts = pkt->pts;
+            got_frame_ptr = 1;
+
+            // xevd_pull uses pool of objects of type XEVD_IMGB.
+            // The pool size is equal MAX_PB_SIZE (26), so release object when it is no more needed
+            imgb->release(imgb);
+            imgb = NULL;
+        } else
+            got_frame_ptr = 0;
+    }
+/*
+    return avpkt->size;
+
+ERR:
+    if (imgb) {
+        imgb->release(imgb);
+        imgb = NULL;
+    }
+    *got_frame_ptr = 0;
+*/
+    av_log(avctx, AV_LOG_ERROR, "DDDDDDDDDDDDDDDDDDD\n");
+    return ret;
+}
+
+#else 
+
 /**
   * Decode picture
   *
@@ -257,7 +571,7 @@ static av_cold int libxevd_init(AVCodecContext *avctx)
   * @return amount of bytes read from the packet on success, negative error
   *         code on failure
   */
-static int libxevd_decode(struct AVCodecContext *avctx, struct AVFrame *frame, int *got_frame_ptr, AVPacket *avpkt)
+static int libxevd_decode(struct AVCodecContext *avctx, struct AVFrame *frame, igot_frame_ptr, AVPacket *avpkt)
 {
     XevdContext *xectx = NULL;
     XEVD_IMGB *imgb = NULL;
@@ -380,6 +694,8 @@ ERR:
     return ret;
 }
 
+#endif
+
 /**
  * Destroy decoder
  *
@@ -412,11 +728,19 @@ const FFCodec ff_libxevd_decoder = {
     .p.type             = AVMEDIA_TYPE_VIDEO,
     .p.id               = AV_CODEC_ID_EVC,
     .init               = libxevd_init,
+#ifdef SEND_RECEIVE_NEW_DECODING_API
+    FF_CODEC_RECEIVE_FRAME_CB(libxevd_receive_frame2),
+#else
     FF_CODEC_DECODE_CB(libxevd_decode),
+#endif
     .close              = libxevd_close,
     .priv_data_size     = sizeof(XevdContext),
     .p.priv_class       = &libxevd_class,
+#ifdef SEND_RECEIVE_NEW_DECODING_API
+    .p.capabilities     = AV_CODEC_CAP_DELAY | AV_CODEC_CAP_OTHER_THREADS | AV_CODEC_CAP_AVOID_PROBING,
+#else
     .p.capabilities     = AV_CODEC_CAP_DELAY | AV_CODEC_CAP_OTHER_THREADS | AV_CODEC_CAP_AVOID_PROBING | AV_CODEC_CAP_DR1,
+#endif
     .p.profiles         = NULL_IF_CONFIG_SMALL(ff_evc_profiles),
     .p.wrapper_name     = "libxevd",
     .caps_internal      = FF_CODEC_CAP_INIT_CLEANUP | FF_CODEC_CAP_NOT_INIT_THREADSAFE,

@@ -196,7 +196,7 @@ static int get_conf(AVCodecContext *avctx, XEVE_CDSC *cdsc)
 
     if (avctx->framerate.num > 0) {
         // fps can be float number, but xeve API doesn't support it
-        cdsc->param.fps = = lrintf(av_q2d(avctx->framerate));
+        cdsc->param.fps = lrintf(av_q2d(avctx->framerate));
     }
 
     // GOP size (key-frame interval, I-picture period)

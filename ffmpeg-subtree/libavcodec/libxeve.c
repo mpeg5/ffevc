@@ -196,11 +196,11 @@ static int get_conf(AVCodecContext *avctx, XEVE_CDSC *cdsc)
 
     if (avctx->framerate.num > 0) {
         // fps can be float number, but xeve API doesn't support it
-        cdsc->param.fps = (int)(((float)avctx->framerate.num / avctx->framerate.den) + 0.5);
+        cdsc->param.fps = lrintf(av_q2d(avctx->framerate));
     }
 
-    if (avctx->gop_size >= 0) // GOP size (key-frame interval, I-picture period)
-        cdsc->param.keyint = avctx->gop_size; // 0: only one I-frame at the first time; 1: every frame is coded in I-frame
+    // GOP size (key-frame interval, I-picture period)
+    cdsc->param.keyint = avctx->gop_size; // 0: only one I-frame at the first time; 1: every frame is coded in I-frame
 
     if (avctx->max_b_frames == 0 || avctx->max_b_frames == 1 || avctx->max_b_frames == 3 ||
         avctx->max_b_frames == 7 || avctx->max_b_frames == 15)   // number of b-frames
@@ -211,8 +211,7 @@ static int get_conf(AVCodecContext *avctx, XEVE_CDSC *cdsc)
         return AVERROR_INVALIDDATA;
     }
 
-    if (avctx->level >= 0)
-        cdsc->param.level_idc = avctx->level;
+    cdsc->param.level_idc = avctx->level;
 
     if (avctx->rc_buffer_size)   // VBV buf size
         cdsc->param.vbv_bufsize = (int)(avctx->rc_buffer_size / 1000);
@@ -450,7 +449,6 @@ static int libxeve_encode(AVCodecContext *avctx, AVPacket *avpkt,
         }
 
         imgb->ts[XEVE_TS_PTS] = frame->pts;
-        imgb->ts[XEVE_TS_DTS] = 0;
 
         /* push image to encoder */
         ret = xeve_push(xectx->id, imgb);

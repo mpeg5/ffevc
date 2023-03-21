@@ -182,10 +182,6 @@ static int export_stream_params(const XevdContext *xectx, AVCodecContext *avctx)
 
     avctx->has_b_frames = (avctx->max_b_frames) ? 1 : 0;
 
-    avctx->color_primaries = AVCOL_PRI_UNSPECIFIED;
-    avctx->color_trc       = AVCOL_TRC_UNSPECIFIED;
-    avctx->colorspace      = AVCOL_SPC_UNSPECIFIED;
-
     return 0;
 }
 

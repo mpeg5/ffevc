@@ -26,6 +26,7 @@
 #include "avcodec.h"
 #include "codec_internal.h"
 #include "encode.h"
+#include "internal.h" //For AVCodecInternal.recon_frame
 #include "me_cmp.h"
 #include "packet_internal.h"
 #include "snow_dwt.h"
@@ -1551,10 +1552,10 @@ static void calculate_visual_weight(SnowContext *s, Plane *p){
     int level, orientation, x, y;
 
     for(level=0; level<s->spatial_decomposition_count; level++){
+        int64_t error=0;
         for(orientation=level ? 1 : 0; orientation<4; orientation++){
             SubBand *b= &p->band[level][orientation];
             IDWTELEM *ibuf= b->ibuf;
-            int64_t error=0;
 
             memset(s->spatial_idwt_buffer, 0, sizeof(*s->spatial_idwt_buffer)*width*height);
             ibuf[b->width/2 + b->height/2*b->stride]= 256*16;
@@ -1565,9 +1566,13 @@ static void calculate_visual_weight(SnowContext *s, Plane *p){
                     error += d*d;
                 }
             }
-
+            if (orientation == 2)
+                error /= 2;
             b->qlog= (int)(QROOT * log2(352256.0/sqrt(error)) + 0.5);
+            if (orientation != 1)
+                error = 0;
         }
+        p->band[level][1].qlog = p->band[level][2].qlog;
     }
 }
 
@@ -1576,6 +1581,7 @@ static int encode_frame(AVCodecContext *avctx, AVPacket *pkt,
 {
     SnowContext *s = avctx->priv_data;
     RangeCoder * const c= &s->c;
+    AVCodecInternal *avci = avctx->internal;
     AVFrame *pic;
     const int width= s->avctx->width;
     const int height= s->avctx->height;
@@ -1877,6 +1883,10 @@ redo_frame:
                                    s->encoding_error,
                                    (s->avctx->flags&AV_CODEC_FLAG_PSNR) ? SNOW_MAX_PLANES : 0,
                                    s->current_picture->pict_type);
+    if (s->avctx->flags & AV_CODEC_FLAG_RECON_FRAME) {
+        av_frame_unref(avci->recon_frame);
+        av_frame_ref(avci->recon_frame, s->current_picture);
+    }
 
     pkt->size = ff_rac_terminate(c, 0);
     if (s->current_picture->key_frame)
@@ -1934,7 +1944,9 @@ const FFCodec ff_snow_encoder = {
     CODEC_LONG_NAME("Snow"),
     .p.type         = AVMEDIA_TYPE_VIDEO,
     .p.id           = AV_CODEC_ID_SNOW,
-    .p.capabilities = AV_CODEC_CAP_DR1 | AV_CODEC_CAP_ENCODER_REORDERED_OPAQUE,
+    .p.capabilities = AV_CODEC_CAP_DR1 |
+                      AV_CODEC_CAP_ENCODER_REORDERED_OPAQUE |
+                      AV_CODEC_CAP_ENCODER_RECON_FRAME,
     .priv_data_size = sizeof(SnowContext),
     .init           = encode_init,
     FF_CODEC_ENCODE_CB(encode_frame),

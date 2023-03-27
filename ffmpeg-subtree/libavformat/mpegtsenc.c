@@ -422,6 +422,9 @@ static int get_dvb_stream_type(AVFormatContext *s, AVStream *st)
     case AV_CODEC_ID_TIMED_ID3:
         stream_type = STREAM_TYPE_METADATA;
         break;
+    case AV_CODEC_ID_SMPTE_2038:
+        stream_type = STREAM_TYPE_PRIVATE_DATA;
+        break;
     case AV_CODEC_ID_DVB_SUBTITLE:
     case AV_CODEC_ID_DVB_TELETEXT:
     case AV_CODEC_ID_ARIB_CAPTION:
@@ -804,6 +807,8 @@ static int mpegts_write_pmt(AVFormatContext *s, MpegTSService *service)
         case AVMEDIA_TYPE_DATA:
             if (codec_id == AV_CODEC_ID_SMPTE_KLV) {
                 put_registration_descriptor(&q, MKTAG('K', 'L', 'V', 'A'));
+            } else if (codec_id == AV_CODEC_ID_SMPTE_2038) {
+                put_registration_descriptor(&q, MKTAG('V', 'A', 'N', 'C'));
             } else if (codec_id == AV_CODEC_ID_TIMED_ID3) {
                 const char *tag = "ID3 ";
                 *q++ = METADATA_DESCRIPTOR;
@@ -1455,7 +1460,8 @@ static int get_pes_stream_id(AVFormatContext *s, AVStream *st, int stream_id, in
                st->codecpar->codec_id == AV_CODEC_ID_TIMED_ID3) {
         return STREAM_ID_PRIVATE_STREAM_1;
     } else if (st->codecpar->codec_type == AVMEDIA_TYPE_DATA) {
-        if (stream_id == STREAM_ID_PRIVATE_STREAM_1) /* asynchronous KLV */
+        if (st->codecpar->codec_id == AV_CODEC_ID_SMPTE_KLV &&
+            stream_id == STREAM_ID_PRIVATE_STREAM_1) /* asynchronous KLV */
             *async = 1;
         return stream_id != -1 ? stream_id : STREAM_ID_METADATA_STREAM;
     } else {

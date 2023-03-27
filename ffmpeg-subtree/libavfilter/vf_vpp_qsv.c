@@ -602,6 +602,7 @@ not_ready:
     return FFERROR_NOT_READY;
 
 eof:
+    pts = av_rescale_q(pts, inlink->time_base, outlink->time_base);
     ff_outlink_set_status(outlink, status, pts);
     return 0;
 }
@@ -648,6 +649,7 @@ const AVFilter ff_vf_##sn##_qsv = { \
     fmts, \
     .activate       = activate, \
     .flags_internal = FF_FILTER_FLAG_HWFRAME_AWARE, \
+    .flags          = AVFILTER_FLAG_HWDEVICE,       \
 };
 
 #if CONFIG_VPP_QSV_FILTER

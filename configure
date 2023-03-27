@@ -412,7 +412,7 @@ Toolchain options:
   --build-suffix=SUFFIX    library name suffix []
   --enable-pic             build position-independent code
   --enable-thumb           compile for Thumb instruction set
-  --enable-lto             use link-time optimization
+  --enable-lto[=arg]       use link-time optimization
   --env="ENV=override"     override the environment variables
 
 Advanced options (experts only):
@@ -2524,7 +2524,6 @@ CMDLINE_SELECT="
     debug
     extra_warnings
     logging
-    lto
     optimizations
     rpath
     stripping
@@ -2774,7 +2773,7 @@ asv1_encoder_select="aandcttables bswapdsp fdctdsp pixblockdsp"
 asv2_decoder_select="blockdsp bswapdsp idctdsp"
 asv2_encoder_select="aandcttables bswapdsp fdctdsp pixblockdsp"
 atrac1_decoder_select="sinewin"
-av1_decoder_select="av1_frame_split_bsf cbs_av1"
+av1_decoder_select="av1_frame_split_bsf cbs_av1 atsc_a53"
 bink_decoder_select="blockdsp hpeldsp"
 binkaudio_dct_decoder_select="wma_freqs"
 binkaudio_rdft_decoder_select="wma_freqs"
@@ -3836,7 +3835,7 @@ ffmpeg_select="aformat_filter anull_filter atrim_filter format_filter
                hflip_filter null_filter
                transpose_filter trim_filter vflip_filter"
 ffmpeg_suggest="ole32 psapi shell32"
-ffplay_deps="avcodec avformat swscale swresample sdl2"
+ffplay_deps="avcodec avformat avfilter swscale swresample sdl2"
 ffplay_select="rdft crop_filter transpose_filter hflip_filter vflip_filter rotate_filter"
 ffplay_suggest="shell32"
 ffprobe_deps="avcodec avformat"
@@ -4169,6 +4168,9 @@ for opt do
         ;;
         --enable-sdl)
             enable sdl2
+        ;;
+        --enable-lto*)
+            lto=-f${opt#--enable-}
         ;;
         --enable-*=*|--disable-*=*)
             eval $(echo "${opt%%=*}" | sed 's/--/action=/;s/-/ thing=/')
@@ -4639,7 +4641,7 @@ icl_flags(){
             # on Windows, does enable remarks so disable them here.
             -Wall)                echo $flag -Qdiag-disable:remark ;;
             -std=c99)             echo -Qstd=c99 ;;
-            -flto)                echo -ipo ;;
+            -flto*)               echo -ipo ;;
         esac
     done
 }
@@ -4647,7 +4649,7 @@ icl_flags(){
 icc_flags(){
     for flag; do
         case $flag in
-            -flto)                echo -ipo ;;
+            -flto*)               echo -ipo ;;
             *)                    echo $flag ;;
         esac
     done
@@ -7182,17 +7184,17 @@ fi
 
 check_optflags(){
     check_cflags "$@"
-    enabled lto && check_ldflags "$@"
+    [ -n "$lto" ] && check_ldflags "$@"
 }
 
 check_optflags $optflags
 check_optflags -fno-math-errno
 check_optflags -fno-signed-zeros
 
-if enabled lto; then
+if [ -n "$lto" ]; then
     test "$cc_type" != "$ld_type" && die "LTO requires same compiler and linker"
-    check_cflags  -flto
-    check_ldflags -flto $cpuflags
+    check_cflags  $lto
+    check_ldflags $lto $cpuflags
     disable inline_asm_direct_symbol_refs
 fi
 
@@ -7223,7 +7225,7 @@ if enabled icc; then
     # icc 11.0 and 11.1 work with ebp_available, but don't pass the test
     enable ebp_available
     # The test above does not test linking
-    enabled lto && disable symver_asm_label
+    [ -n "$lto" ] && disable symver_asm_label
     if enabled x86_32; then
         icc_version=$($cc -dumpversion)
         test ${icc_version%%.*} -ge 11 &&
@@ -7354,12 +7356,6 @@ case $ld_type in
 esac
 
 enable frame_thread_encoder
-
-# these filters depend on removed avcodec APIs
-# they are kept disabled for now, but will be removed if
-# nobody updates and re-enables them
-disable mcdeint_filter
-disable uspp_filter
 
 enabled asm || { arch=c; disable $ARCH_LIST $ARCH_EXT_LIST; }
 

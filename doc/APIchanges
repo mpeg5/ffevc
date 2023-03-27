@@ -2,6 +2,18 @@ The last version increases of all libraries were on 2023-02-09
 
 API changes, most recent first:
 
+2023-03-xx - xxxxxxxxxx - lavfi 9.5.100 - avfilter.h
+  Add AVFILTER_FLAG_HWDEVICE.
+
+2023-03-21 - xxxxxxxxxx - lavu 58.5.100 - hdr_dynamic_metadata.h
+  Add av_dynamic_hdr_plus_from_t35() and av_dynamic_hdr_plus_to_t35()
+  functions to convert between raw T.35 payloads containing dynamic
+  HDR10+ metadata and their parsed representations as AVDynamicHDRPlus.
+
+2023-03-17 - xxxxxxxxxx - lavu 58.4.100 - hdr_dynamic_vivid_metadata.h
+  Add two group of three spline params.
+  Deprecate previous define which only supports one group of params.
+
 2023-03-02 - xxxxxxxxxx - lavc 60.6.100 - avcodec.h
   Add FF_PROFILE_EAC3_DDP_ATMOS, FF_PROFILE_TRUEHD_ATMOS,
   FF_PROFILE_DTS_HD_MA_X and FF_PROFILE_DTS_HD_MA_X_IMAX.

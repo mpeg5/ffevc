@@ -834,7 +834,8 @@ static int parse_nal_unit(AVCodecParserContext *s, const uint8_t *buf,
     data += EVC_NALU_HEADER_SIZE;
     data_size -= EVC_NALU_HEADER_SIZE;
 
-    if (nalu_type == EVC_SPS_NUT) {
+    switch(nalu_type) {
+    case EVC_SPS_NUT: {
         EVCParserSPS *sps;
         int SubGopLength;
 
@@ -887,7 +888,9 @@ static int parse_nal_unit(AVCodecParserContext *s, const uint8_t *buf,
             av_log(avctx, AV_LOG_ERROR, "Unknown supported chroma format\n");
             return -1;
         }
-    } else if (nalu_type == EVC_PPS_NUT) {
+        break;
+    }
+    case EVC_PPS_NUT: {
         EVCParserPPS *pps;
 
         pps = parse_pps(data, nalu_size, ev);
@@ -895,13 +898,14 @@ static int parse_nal_unit(AVCodecParserContext *s, const uint8_t *buf,
             av_log(avctx, AV_LOG_ERROR, "PPS parsing error\n");
             return AVERROR_INVALIDDATA;
         }
-    } else if (nalu_type == EVC_SEI_NUT)  // Supplemental Enhancement Information
-        return 0;
-    else if (nalu_type == EVC_APS_NUT)   // Adaptation parameter set
-        return 0;
-    else if (nalu_type == EVC_FD_NUT)   /* Filler data */
-        return 0;
-    else if (nalu_type == EVC_IDR_NUT || nalu_type == EVC_NOIDR_NUT) { // Coded slice of a IDR or non-IDR picture
+        break;
+    }
+    case EVC_SEI_NUT:   // Supplemental Enhancement Information
+    case EVC_APS_NUT:   // Adaptation parameter set
+    case EVC_FD_NUT:    // Filler data
+        break;
+    case EVC_IDR_NUT:   // Coded slice of a IDR or non-IDR picture
+    case EVC_NOIDR_NUT: {
         EVCParserSliceHeader *sh;
         EVCParserSPS *sps;
         int slice_pic_parameter_set_id;
@@ -1003,10 +1007,9 @@ static int parse_nal_unit(AVCodecParserContext *s, const uint8_t *buf,
         s->output_picture_number = ev->poc.PicOrderCntVal;
         s->key_frame = (nalu_type == EVC_IDR_NUT) ? 1 : 0;
 
-        return 0;
+        break;
     }
-    data += (nalu_size - EVC_NALU_HEADER_SIZE);
-    data_size -= (nalu_size - EVC_NALU_HEADER_SIZE);
+    }
 
     return 0;
 }
@@ -1109,7 +1112,8 @@ static int evc_find_frame_end(AVCodecParserContext *s, const uint8_t *buf,
 
             if (ctx->nalu_prefix_assembled)   // NALU prefix has been assembled from previous and current chunks of incoming data
                 ctx->nalu_prefix_assembled = 0;
-            else { // Buffer size is not enough for buffer to store NAL unit 4-bytes prefix (length)
+            else {
+                // Buffer size is not enough for buffer to store NAL unit 4-bytes prefix (length)
                 if (data_size < EVC_NALU_LENGTH_PREFIX_SIZE) {
                     ctx->to_read = EVC_NALU_LENGTH_PREFIX_SIZE - data_size;
                     ctx->incomplete_nalu_prefix_read = 1;

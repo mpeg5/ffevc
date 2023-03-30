@@ -792,6 +792,33 @@ static EVCParserSliceHeader *parse_slice_header(const uint8_t *bs, int bs_size, 
     return sh;
 }
 
+static int parse_nal_unit_type(AVCodecParserContext *s, const uint8_t *buf,
+                               int buf_size, AVCodecContext *avctx)
+{
+    EVCParserContext *ev = s->priv_data;
+    int nalu_type, nalu_size;
+
+    const uint8_t *data = buf;
+    int data_size = buf_size;
+
+    nalu_size = buf_size;
+    if (nalu_size <= 0) {
+        av_log(avctx, AV_LOG_ERROR, "Invalid NAL unit size: (%d)\n", nalu_size);
+        return AVERROR_INVALIDDATA;
+    }
+
+    // @see ISO_IEC_23094-1_2020, 7.4.2.2 NAL unit header semantic (Table 4 - NAL unit type codes and NAL unit type classes)
+    // @see enum EVCNALUnitType in evc.h
+    nalu_type = get_nalu_type(data, data_size, avctx);
+    if (nalu_type < EVC_NOIDR_NUT || nalu_type > EVC_UNSPEC_NUT62) {
+        av_log(avctx, AV_LOG_ERROR, "Invalid NAL unit type: (%d)\n", nalu_type);
+        return AVERROR_INVALIDDATA;
+    }
+    ev->nalu_type = nalu_type;
+
+    return 0;
+}
+
 static int parse_nal_unit(AVCodecParserContext *s, const uint8_t *buf,
                           int buf_size, AVCodecContext *avctx)
 {
@@ -1014,6 +1041,40 @@ static int parse_nal_unit(AVCodecParserContext *s, const uint8_t *buf,
     return 0;
 }
 
+static int parse_nal_units(AVCodecParserContext *s, const uint8_t *buf,
+                           int buf_size, AVCodecContext *avctx)
+{
+    const uint8_t *data = buf;
+    int data_size = buf_size;
+    int bytes_read = 0;
+    int nalu_size = 0;
+
+    while (data_size > 0) {
+
+        // Buffer size is not enough for buffer to store NAL unit 4-bytes prefix (length)
+        if (data_size < EVC_NALU_LENGTH_PREFIX_SIZE)
+            return END_NOT_FOUND;
+
+        nalu_size = read_nal_unit_length(data, data_size, avctx);
+        bytes_read += EVC_NALU_LENGTH_PREFIX_SIZE;
+
+        data += EVC_NALU_LENGTH_PREFIX_SIZE;
+        data_size -= EVC_NALU_LENGTH_PREFIX_SIZE;
+
+        if (data_size < nalu_size)
+            return END_NOT_FOUND;
+
+        if (parse_nal_unit(s, data, nalu_size, avctx) != 0) {
+            av_log(avctx, AV_LOG_ERROR, "Parsing of NAL unit failed\n");
+            return AVERROR_INVALIDDATA;
+        }
+
+        data += nalu_size;
+        data_size -= nalu_size;
+    }
+    return 0;
+}
+
 // Reconstruct NAL Unit from incomplete data
 //
 // Assemble the NALU prefix storing NALU length if it has been split between 2 subsequent buffers (input chunks) incoming to the parser.
@@ -1135,8 +1196,8 @@ static int evc_find_frame_end(AVCodecParserContext *s, const uint8_t *buf,
             }
 
             // the entire NALU can be read
-            if (parse_nal_unit(s, data, ctx->nalu_size, avctx) != 0) {
-                av_log(avctx, AV_LOG_ERROR, "Parsing of NAL unit failed\n");
+            if (parse_nal_unit_type(s, data, ctx->nalu_size, avctx) != 0) {
+                av_log(avctx, AV_LOG_ERROR, "Parsing of NAL unit type failed\n");
                 return AVERROR_INVALIDDATA;
             }
 
@@ -1195,10 +1256,11 @@ static int evc_find_frame_end(AVCodecParserContext *s, const uint8_t *buf,
                     // assemble NAL unit using data from previous data chunks (pc->buffer) and the current one (data)
                     evc_assemble_nalu(s, data, ctx->to_read, nalu, ctx->nalu_size, avctx);
 
-                    if (parse_nal_unit(s, nalu, ctx->nalu_size, avctx) != 0) {
-                        av_log(avctx, AV_LOG_ERROR, "Parsing of NAL unit failed\n");
+                    if (parse_nal_unit_type(s, nalu, ctx->nalu_size, avctx) != 0) {
+                        av_log(avctx, AV_LOG_ERROR, "Parsing of NAL unit type failed\n");
                         return AVERROR_INVALIDDATA;
                     }
+
                     av_free(nalu);
 
                     // update variable storing amout of read bytes for teh current AU
@@ -1255,6 +1317,8 @@ static int evc_parse(AVCodecParserContext *s, AVCodecContext *avctx,
             return buf_size;
         }
     }
+
+    parse_nal_units(s, buf, buf_size, avctx);
 
     // poutbuf contains just one Access Unit
     *poutbuf      = buf;

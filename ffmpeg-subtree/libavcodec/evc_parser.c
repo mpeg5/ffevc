@@ -804,7 +804,6 @@ static int parse_nal_unit(AVCodecParserContext *s, const uint8_t *buf,
     s->picture_structure = AV_PICTURE_STRUCTURE_FRAME;
     s->key_frame = -1;
 
-
     nalu_size = buf_size;
     if (nalu_size <= 0) {
         av_log(avctx, AV_LOG_ERROR, "Invalid NAL unit size: (%d)\n", nalu_size);
@@ -858,7 +857,14 @@ static int parse_nal_unit(AVCodecParserContext *s, const uint8_t *buf,
         if (sps->profile_idc == 1) avctx->profile = FF_PROFILE_EVC_MAIN;
         else avctx->profile = FF_PROFILE_EVC_BASELINE;
 
-        ev->time_base = avctx->time_base.den;
+        if (sps->vui_parameters_present_flag) {
+            if (sps->vui_parameters.timing_info_present_flag) {
+                int64_t num = sps->vui_parameters.num_units_in_tick;
+                int64_t den = sps->vui_parameters.time_scale;
+                if (num != 0 && den != 0)
+                    av_reduce(&avctx->framerate.den, &avctx->framerate.num, num, den, 1 << 30);
+            }
+        }
 
         switch (sps->chroma_format_idc) {
         case 0: /* YCBCR400_10LE */

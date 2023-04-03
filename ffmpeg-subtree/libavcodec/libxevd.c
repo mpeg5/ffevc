@@ -54,7 +54,7 @@ typedef struct XevdContext {
 
     XEVD id;            // XEVD instance identifier @see xevd.h
     XEVD_CDSC cdsc;     // decoding parameters @see xevd.h
-    
+
     // If end of stream occurs it is required "flushing" (aka draining) the codec,
     // as the codec might buffer multiple frames or packets internally.
     int draining_mode; // The flag is set if codec enters draining mode.
@@ -274,7 +274,7 @@ static int libxevd_receive_frame(AVCodecContext *avctx, AVFrame *frame)
         av_packet_free(&pkt);
         return ret;
     } else if(ret == AVERROR_EOF && xectx->draining_mode == 0) { // End of stream situations. Enter draining mode
-        
+
         frame = NULL;
         xectx->draining_mode = 1;
 
@@ -377,20 +377,7 @@ static int libxevd_receive_frame(AVCodecContext *avctx, AVFrame *frame)
 
                         return ret;
                     }
-                    // match timestamps and packet size
-                    ret = ff_decode_frame_props_from_pkt(avctx, frame, pkt);
-                    pkt->opaque = NULL;
-                    if (ret < 0) {
-                        if (imgb) {
-                            imgb->release(imgb);
-                            imgb = NULL;
-                        }
-                        av_packet_free(&pkt);
-                        av_frame_unref(frame);
 
-                        return ret;
-                    }
-                    
                     frame->pkt_dts = pkt->dts;
 
                     // xevd_pull uses pool of objects of type XEVD_IMGB.
@@ -456,9 +443,9 @@ static av_cold int libxevd_close(AVCodecContext *avctx)
         xevd_delete(xectx->id);
         xectx->id = NULL;
     }
-    
+
     xectx->draining_mode = 0;
-    
+
     return 0;
 }
 

@@ -327,14 +327,7 @@ static int libxevd_receive_frame(AVCodecContext *avctx, AVFrame *frame)
             if (stat.read != nalu_size)
                 av_log(avctx, AV_LOG_INFO, "Different reading of bitstream (in:%d, read:%d)\n,", nalu_size, stat.read);
             if (stat.fnum >= 0) {
-                // already has a decoded image
-                if (imgb) {
-                    // xevd_pull uses pool of objects of type XEVD_IMGB.
-                    // The pool size is equal MAX_PB_SIZE (26), so release object when it is no more needed
-                    imgb->release(imgb);
-                    imgb = NULL;
-                }
-                xevd_ret = xevd_pull(xectx->id, &imgb);
+                xevd_ret = xevd_pull(xectx->id, &imgb); // The function returns a valid image only if the return code is XEVD_OK
                 if (XEVD_FAILED(xevd_ret)) {
                     av_log(avctx, AV_LOG_ERROR, "Failed to pull the decoded image (xevd error code: %d, frame#=%d)\n", xevd_ret, stat.fnum);
                     ret = AVERROR_EXTERNAL;
@@ -342,24 +335,18 @@ static int libxevd_receive_frame(AVCodecContext *avctx, AVFrame *frame)
 
                     return ret;
                 }  else if (xevd_ret == XEVD_OK_FRM_DELAYED) {
-                    if (imgb) {
-                        // xevd_pull uses pool of objects of type XEVD_IMGB.
-                        // The pool size is equal MAX_PB_SIZE (26), so release object when it is no more needed
-                        imgb->release(imgb);
-                        imgb = NULL;
-                    }
                     av_packet_free(&pkt);
 
                     return AVERROR(EAGAIN);
                 }
                 if (imgb) { // got frame
-                    int ret = libxevd_image_copy(avctx, imgb, frame);
+                    ret = libxevd_image_copy(avctx, imgb, frame);
                     if(ret < 0) {
                         av_log(avctx, AV_LOG_ERROR, "Image copying error\n");
-                        if (imgb) {
-                            imgb->release(imgb);
-                            imgb = NULL;
-                        }
+
+                        imgb->release(imgb);
+                        imgb = NULL;
+
                         av_packet_free(&pkt);
 
                         return ret;
@@ -368,10 +355,9 @@ static int libxevd_receive_frame(AVCodecContext *avctx, AVFrame *frame)
                     // use ff_decode_frame_props() to fill frame properties
                     ret = ff_decode_frame_props(avctx, frame);
                     if (ret < 0) {
-                        if (imgb) {
-                            imgb->release(imgb);
-                            imgb = NULL;
-                        }
+                        imgb->release(imgb);
+                        imgb = NULL;
+
                         av_packet_free(&pkt);
                         av_frame_unref(frame);
 
@@ -397,11 +383,6 @@ static int libxevd_receive_frame(AVCodecContext *avctx, AVFrame *frame)
         else if (XEVD_FAILED(xevd_ret)) {
             av_log(avctx, AV_LOG_ERROR, "Failed to pull the decoded image (xevd error code: %d)\n", xevd_ret);
 
-            if (imgb) {
-                imgb->release(imgb);
-                imgb = NULL;
-            }
-
             av_packet_free(&pkt);
 
             return AVERROR_EXTERNAL;
@@ -409,11 +390,12 @@ static int libxevd_receive_frame(AVCodecContext *avctx, AVFrame *frame)
         if (imgb) { // got frame
             int ret = libxevd_image_copy(avctx, imgb, frame);
             if(ret < 0) {
-                if (imgb) {
-                    imgb->release(imgb);
-                    imgb = NULL;
-                }
+                imgb->release(imgb);
+                imgb = NULL;
+
                 av_packet_free(&pkt);
+
+                return ret;
             }
 
             frame->pkt_dts = pkt->dts;

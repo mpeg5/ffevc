@@ -244,7 +244,7 @@ static av_cold int libxevd_init(AVCodecContext *avctx)
 
     xectx->draining_mode = 0;
     xectx->pkt = av_packet_alloc();
-    
+
     return 0;
 }
 
@@ -259,7 +259,7 @@ static av_cold int libxevd_init(AVCodecContext *avctx)
 static int libxevd_receive_frame(AVCodecContext *avctx, AVFrame *frame)
 {
     XevdContext *xectx = avctx->priv_data;
-    const AVPacket *pkt = xectx->pkt;
+    AVPacket *pkt = xectx->pkt;
     XEVD_IMGB *imgb = NULL;
 
     int xevd_ret = 0;
@@ -276,11 +276,10 @@ static int libxevd_receive_frame(AVCodecContext *avctx, AVFrame *frame)
         return ret;
     } else if(ret == AVERROR_EOF && xectx->draining_mode == 0) { // End of stream situations. Enter draining mode
 
-        frame = NULL;
         xectx->draining_mode = 1;
         av_packet_unref(pkt);
 
-        return AVERROR_EOF;
+        return 0;
     }
 
     if (pkt->size > 0) {
@@ -332,7 +331,7 @@ static int libxevd_receive_frame(AVCodecContext *avctx, AVFrame *frame)
             if (stat.fnum >= 0) {
 
                 xevd_ret = xevd_pull(xectx->id, &imgb); // The function returns a valid image only if the return code is XEVD_OK
-                
+
                 if (XEVD_FAILED(xevd_ret)) {
                     av_log(avctx, AV_LOG_ERROR, "Failed to pull the decoded image (xevd error code: %d, frame#=%d)\n", xevd_ret, stat.fnum);
                     ret = AVERROR_EXTERNAL;
@@ -344,9 +343,9 @@ static int libxevd_receive_frame(AVCodecContext *avctx, AVFrame *frame)
 
                     return AVERROR(EAGAIN);
                 } else { // XEVD_OK
-                    if (!imgb) { 
+                    if (!imgb) {
                         av_packet_unref(pkt);
-                        
+
                         return  AVERROR(EAGAIN);
                     }
 
@@ -402,14 +401,13 @@ static int libxevd_receive_frame(AVCodecContext *avctx, AVFrame *frame)
 
             return AVERROR_EXTERNAL;
         } else { // XEVD_OK
-            if (!imgb) { 
+            if (!imgb) {
                 av_packet_unref(pkt);
 
                 return AVERROR_EXTERNAL;
             }
-            
             // got frame
-            int ret = libxevd_image_copy(avctx, imgb, frame);
+            ret = libxevd_image_copy(avctx, imgb, frame);
             if(ret < 0) {
                 imgb->release(imgb);
                 imgb = NULL;

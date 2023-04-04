@@ -58,6 +58,8 @@ typedef struct XevdContext {
     // If end of stream occurs it is required "flushing" (aka draining) the codec,
     // as the codec might buffer multiple frames or packets internally.
     int draining_mode; // The flag is set if codec enters draining mode.
+
+    AVPacket *pkt;
 } XevdContext;
 
 /**
@@ -241,7 +243,8 @@ static av_cold int libxevd_init(AVCodecContext *avctx)
     }
 
     xectx->draining_mode = 0;
-
+    xectx->pkt = av_packet_alloc();
+    
     return 0;
 }
 
@@ -255,30 +258,27 @@ static av_cold int libxevd_init(AVCodecContext *avctx)
   */
 static int libxevd_receive_frame(AVCodecContext *avctx, AVFrame *frame)
 {
-    XevdContext *xectx = NULL;
-    AVPacket *pkt = NULL;
+    XevdContext *xectx = avctx->priv_data;
+    const AVPacket *pkt = xectx->pkt;
     XEVD_IMGB *imgb = NULL;
 
     int xevd_ret = 0;
     int ret = 0;
 
-    xectx = avctx->priv_data;
-
-    pkt = av_packet_alloc();
     if (!pkt)
         return AVERROR(ENOMEM);
 
     // obtain input data
     ret = ff_decode_get_packet(avctx, pkt);
     if (ret < 0 && ret != AVERROR_EOF) {
-        av_packet_free(&pkt);
+        av_packet_unref(pkt);
+
         return ret;
     } else if(ret == AVERROR_EOF && xectx->draining_mode == 0) { // End of stream situations. Enter draining mode
 
         frame = NULL;
         xectx->draining_mode = 1;
-
-        av_packet_free(&pkt);
+        av_packet_unref(pkt);
 
         return AVERROR_EOF;
     }
@@ -297,8 +297,9 @@ static int libxevd_receive_frame(AVCodecContext *avctx, AVFrame *frame)
             nalu_size = read_nal_unit_length(pkt->data + bs_read_pos, XEVD_NAL_UNIT_LENGTH_BYTE, avctx);
             if (nalu_size == 0) {
                 av_log(avctx, AV_LOG_ERROR, "Invalid bitstream\n");
-                av_packet_free(&pkt);
+                av_packet_unref(pkt);
                 ret = AVERROR_INVALIDDATA;
+
                 return ret;
             }
             bs_read_pos += XEVD_NAL_UNIT_LENGTH_BYTE;
@@ -310,8 +311,9 @@ static int libxevd_receive_frame(AVCodecContext *avctx, AVFrame *frame)
             xevd_ret = xevd_decode(xectx->id, &bitb, &stat);
             if (XEVD_FAILED(xevd_ret)) {
                 av_log(avctx, AV_LOG_ERROR, "Failed to decode bitstream\n");
-                av_packet_free(&pkt);
+                av_packet_unref(pkt);
                 ret = AVERROR_EXTERNAL;
+
                 return ret;
             }
 
@@ -320,47 +322,43 @@ static int libxevd_receive_frame(AVCodecContext *avctx, AVFrame *frame)
             if (stat.nalu_type == XEVD_NUT_SPS) { // EVC stream parameters changed
                 if ((ret = export_stream_params(xectx, avctx)) != 0) {
                     av_log(avctx, AV_LOG_ERROR, "Failed to export stream params\n");
-                    av_packet_free(&pkt);
+                    av_packet_unref(pkt);
+
                     return ret;
                 }
             }
             if (stat.read != nalu_size)
                 av_log(avctx, AV_LOG_INFO, "Different reading of bitstream (in:%d, read:%d)\n,", nalu_size, stat.read);
             if (stat.fnum >= 0) {
-                // already has a decoded image
-                if (imgb) {
-                    // xevd_pull uses pool of objects of type XEVD_IMGB.
-                    // The pool size is equal MAX_PB_SIZE (26), so release object when it is no more needed
-                    imgb->release(imgb);
-                    imgb = NULL;
-                }
-                xevd_ret = xevd_pull(xectx->id, &imgb);
+
+                xevd_ret = xevd_pull(xectx->id, &imgb); // The function returns a valid image only if the return code is XEVD_OK
+                
                 if (XEVD_FAILED(xevd_ret)) {
                     av_log(avctx, AV_LOG_ERROR, "Failed to pull the decoded image (xevd error code: %d, frame#=%d)\n", xevd_ret, stat.fnum);
                     ret = AVERROR_EXTERNAL;
-                    av_packet_free(&pkt);
+                    av_packet_unref(pkt);
 
                     return ret;
-                }  else if (xevd_ret == XEVD_OK_FRM_DELAYED) {
-                    if (imgb) {
-                        // xevd_pull uses pool of objects of type XEVD_IMGB.
-                        // The pool size is equal MAX_PB_SIZE (26), so release object when it is no more needed
-                        imgb->release(imgb);
-                        imgb = NULL;
-                    }
-                    av_packet_free(&pkt);
+                } else if (xevd_ret == XEVD_OK_FRM_DELAYED) {
+                    av_packet_unref(pkt);
 
                     return AVERROR(EAGAIN);
-                }
-                if (imgb) { // got frame
-                    int ret = libxevd_image_copy(avctx, imgb, frame);
+                } else { // XEVD_OK
+                    if (!imgb) { 
+                        av_packet_unref(pkt);
+                        
+                        return  AVERROR(EAGAIN);
+                    }
+
+                    // got frame
+                    ret = libxevd_image_copy(avctx, imgb, frame);
                     if(ret < 0) {
                         av_log(avctx, AV_LOG_ERROR, "Image copying error\n");
-                        if (imgb) {
-                            imgb->release(imgb);
-                            imgb = NULL;
-                        }
-                        av_packet_free(&pkt);
+
+                        imgb->release(imgb);
+                        imgb = NULL;
+
+                        av_packet_unref(pkt);
 
                         return ret;
                     }
@@ -368,11 +366,10 @@ static int libxevd_receive_frame(AVCodecContext *avctx, AVFrame *frame)
                     // use ff_decode_frame_props() to fill frame properties
                     ret = ff_decode_frame_props(avctx, frame);
                     if (ret < 0) {
-                        if (imgb) {
-                            imgb->release(imgb);
-                            imgb = NULL;
-                        }
-                        av_packet_free(&pkt);
+                        imgb->release(imgb);
+                        imgb = NULL;
+
+                        av_packet_unref(pkt);
                         av_frame_unref(frame);
 
                         return ret;
@@ -385,38 +382,46 @@ static int libxevd_receive_frame(AVCodecContext *avctx, AVFrame *frame)
                     imgb->release(imgb);
                     imgb = NULL;
 
+                    av_packet_unref(pkt);
                     return 0;
-                } else
-                    return  AVERROR(EAGAIN);
+                }
             }
         }
     } else { // decoder draining mode handling
+
         xevd_ret = xevd_pull(xectx->id, &imgb);
-        if (xevd_ret == XEVD_ERR_UNEXPECTED)   // draining process completed
+
+        if (xevd_ret == XEVD_ERR_UNEXPECTED) { // draining process completed
+            av_log(avctx, AV_LOG_DEBUG, "Draining process completed\n");
+            av_packet_unref(pkt);
+
             return AVERROR_EOF;
-        else if (XEVD_FAILED(xevd_ret)) {
+        } else if (XEVD_FAILED(xevd_ret)) { // handle all other errors
             av_log(avctx, AV_LOG_ERROR, "Failed to pull the decoded image (xevd error code: %d)\n", xevd_ret);
-
-            if (imgb) {
-                imgb->release(imgb);
-                imgb = NULL;
-            }
-
-            av_packet_free(&pkt);
+            av_packet_unref(pkt);
 
             return AVERROR_EXTERNAL;
-        }
-        if (imgb) { // got frame
+        } else { // XEVD_OK
+            if (!imgb) { 
+                av_packet_unref(pkt);
+
+                return AVERROR_EXTERNAL;
+            }
+            
+            // got frame
             int ret = libxevd_image_copy(avctx, imgb, frame);
             if(ret < 0) {
-                if (imgb) {
-                    imgb->release(imgb);
-                    imgb = NULL;
-                }
-                av_packet_free(&pkt);
+                imgb->release(imgb);
+                imgb = NULL;
+
+                av_packet_unref(pkt);
+
+                return ret;
             }
 
             frame->pkt_dts = pkt->dts;
+
+            av_packet_unref(pkt);
 
             // xevd_pull uses pool of objects of type XEVD_IMGB.
             // The pool size is equal MAX_PB_SIZE (26), so release object when it is no more needed
@@ -425,8 +430,8 @@ static int libxevd_receive_frame(AVCodecContext *avctx, AVFrame *frame)
 
             return 0;
         }
-        return AVERROR_EOF;
     }
+
     return ret;
 }
 
@@ -445,6 +450,7 @@ static av_cold int libxevd_close(AVCodecContext *avctx)
     }
 
     xectx->draining_mode = 0;
+    av_packet_free(&xectx->pkt);
 
     return 0;
 }

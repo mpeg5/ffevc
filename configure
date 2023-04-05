@@ -218,6 +218,7 @@ External library support:
   --enable-lcms2           enable ICC profile support via LittleCMS 2 [no]
   --enable-libaom          enable AV1 video encoding/decoding via libaom [no]
   --enable-libaribb24      enable ARIB text and caption decoding via libaribb24 [no]
+  --enable-libaribcaption  enable ARIB text and caption decoding via libaribcaption [no]
   --enable-libass          enable libass subtitles rendering,
                            needed for subtitles and ass filter [no]
   --enable-libbluray       enable BluRay reading using libbluray [no]
@@ -1805,6 +1806,7 @@ EXTERNAL_LIBRARY_LIST="
     ladspa
     lcms2
     libaom
+    libaribcaption
     libass
     libbluray
     libbs2b
@@ -3226,6 +3228,8 @@ mpeg2_v4l2m2m_decoder_deps="v4l2_m2m mpeg2_v4l2_m2m"
 mpeg4_crystalhd_decoder_select="crystalhd"
 mpeg4_cuvid_decoder_deps="cuvid"
 mpeg4_mediacodec_decoder_deps="mediacodec"
+mpeg4_mediacodec_encoder_deps="mediacodec"
+mpeg4_mediacodec_encoder_extralibs="-landroid"
 mpeg4_mmal_decoder_deps="mmal"
 mpeg4_omx_encoder_deps="omx"
 mpeg4_v4l2m2m_decoder_deps="v4l2_m2m mpeg4_v4l2_m2m"
@@ -3246,6 +3250,9 @@ vp8_v4l2m2m_decoder_deps="v4l2_m2m vp8_v4l2_m2m"
 vp8_v4l2m2m_encoder_deps="v4l2_m2m vp8_v4l2_m2m"
 vp9_cuvid_decoder_deps="cuvid"
 vp9_mediacodec_decoder_deps="mediacodec"
+vp9_mediacodec_decoder_extralibs="-landroid"
+vp9_mediacodec_encoder_deps="mediacodec"
+vp9_mediacodec_encoder_extralibs="-landroid"
 vp9_qsv_decoder_select="qsvdec"
 vp9_rkmpp_decoder_deps="rkmpp"
 vp9_vaapi_encoder_deps="VAEncPictureParameterBufferVP9"
@@ -3331,6 +3338,7 @@ libaom_av1_decoder_deps="libaom"
 libaom_av1_encoder_deps="libaom"
 libaom_av1_encoder_select="extract_extradata_bsf"
 libaribb24_decoder_deps="libaribb24"
+libaribcaption_decoder_deps="libaribcaption"
 libcelt_decoder_deps="libcelt"
 libcodec2_decoder_deps="libcodec2"
 libcodec2_encoder_deps="libcodec2"
@@ -3361,7 +3369,6 @@ libopencore_amrwb_decoder_deps="libopencore_amrwb"
 libopenh264_decoder_deps="libopenh264"
 libopenh264_decoder_select="h264_mp4toannexb_bsf"
 libopenh264_encoder_deps="libopenh264"
-libopenjpeg_decoder_deps="libopenjpeg"
 libopenjpeg_encoder_deps="libopenjpeg"
 libopenmpt_demuxer_deps="libopenmpt"
 libopus_decoder_deps="libopus"
@@ -6569,6 +6576,7 @@ enabled libaom            && require_pkg_config libaom "aom >= 1.0.0" aom/aom_co
 enabled libaribb24        && { check_pkg_config libaribb24 "aribb24 > 1.0.3" "aribb24/aribb24.h" arib_instance_new ||
                                { enabled gpl && require_pkg_config libaribb24 aribb24 "aribb24/aribb24.h" arib_instance_new; } ||
                                die "ERROR: libaribb24 requires version higher than 1.0.3 or --enable-gpl."; }
+enabled libaribcaption    && require_pkg_config libaribcaption "libaribcaption >= 0.1.0" "aribcaption/aribcaption.h" aribcc_context_alloc
 enabled lv2               && require_pkg_config lv2 lilv-0 "lilv/lilv.h" lilv_world_new
 enabled libiec61883       && require libiec61883 libiec61883/iec61883.h iec61883_cmp_connect -lraw1394 -lavc1394 -lrom1394 -liec61883
 enabled libass            && require_pkg_config libass "libass >= 0.11.0" ass/ass.h ass_library_init

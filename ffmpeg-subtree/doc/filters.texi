@@ -214,6 +214,23 @@ In a complete filterchain all the unlabelled filter input and output
 pads must be connected. A filtergraph is considered valid if all the
 filter input and output pads of all the filterchains are connected.
 
+Leading and trailing whitespaces (space, tabs, or line feeds) separating tokens
+in the filtergraph specification are ignored. This means that the filtergraph
+can be expressed using empty lines and spaces to improve redability.
+
+For example, the filtergraph:
+@example
+testsrc,split[L1],hflip[L2];[L1][L2] hstack
+@end example
+
+can be represented as:
+@example
+testsrc,
+split [L1], hflip [L2];
+
+[L1][L2] hstack
+@end example
+
 Libavfilter will automatically insert @ref{scale} filters where format
 conversion is required. It is possible to specify swscale flags
 for those automatically inserted scalers by prepending
@@ -281,6 +298,18 @@ previous string will finally result in:
 @example
 -vf "drawtext=text=this is a \\\\\\'string\\\\\\'\\\\: may contain one\\, or more\\, special characters"
 @end example
+
+In order to avoid cumbersome escaping when using a commandline tool accepting a
+filter specification as input, it is advisable to avoid direct inclusion of the
+filter or options specification in the shell.
+
+For example, in case of the @ref{drawtext,,drawtext filter}, you might prefer to
+use the @option{textfile} option in place of @option{text} to specify the text
+to render.
+
+When using the @command{ffmpeg} tool, you might consider to use the
+@ref{filter_script option,,-filter_script option,ffmpeg} or
+@ref{filter_complex_script option,,-filter_complex_script option,ffmpeg}.
 
 @chapter Timeline editing
 
@@ -12103,13 +12132,12 @@ The default value of @var{bordercolor} is "black".
 
 @item expansion
 Select how the @var{text} is expanded. Can be either @code{none},
-@code{strftime} (deprecated) or
-@code{normal} (default). See the @ref{drawtext_expansion, Text expansion} section
-below for details.
+@code{strftime} (deprecated) or @code{normal} (default). See the
+@ref{drawtext_expansion, Text expansion} section below for details.
 
 @item basetime
 Set a start time for the count. Value is in microseconds. Only applied
-in the deprecated strftime expansion mode. To emulate in normal expansion
+in the deprecated @code{strftime} expansion mode. To emulate in normal expansion
 mode use the @code{pts} function, supplying the start time (in seconds)
 as the second argument.
 
@@ -12340,10 +12368,12 @@ The current packet's size (in bytes).
 @anchor{drawtext_expansion}
 @subsection Text expansion
 
-If @option{expansion} is set to @code{strftime},
-the filter recognizes strftime() sequences in the provided text and
-expands them accordingly. Check the documentation of strftime(). This
-feature is deprecated.
+If @option{expansion} is set to @code{strftime}, the filter recognizes
+sequences accepted by the @code{strftime} C function in the provided
+text and expands them accordingly. Check the documentation of
+@code{strftime}. This feature is deprecated in favor of @code{normal}
+expansion with the @code{gmtime} or @code{localtime} expansion
+functions.
 
 If @option{expansion} is set to @code{none}, the text is printed verbatim.
 
@@ -12358,11 +12388,11 @@ braces is a function name, possibly followed by arguments separated by ':'.
 If the arguments contain special characters or delimiters (':' or '@}'),
 they should be escaped.
 
-Note that they probably must also be escaped as the value for the
-@option{text} option in the filter argument string and as the filter
-argument in the filtergraph description, and possibly also for the shell,
-that makes up to four levels of escaping; using a text file avoids these
-problems.
+Note that they probably must also be escaped as the value for the @option{text}
+option in the filter argument string and as the filter argument in the
+filtergraph description, and possibly also for the shell, that makes up to four
+levels of escaping; using a text file with the @option{textfile} option avoids
+these problems.
 
 The following functions are available:
 
@@ -12390,13 +12420,13 @@ It can be used to add padding with zeros from the left.
 
 @item gmtime
 The time at which the filter is running, expressed in UTC.
-It can accept an argument: a strftime() format string.
+It can accept an argument: a @code{strftime} C function format string.
 The format string is extended to support the variable @var{%[1-6]N}
 which prints fractions of the second with optionally specified number of digits.
 
 @item localtime
 The time at which the filter is running, expressed in the local time zone.
-It can accept an argument: a strftime() format string.
+It can accept an argument: a @code{strftime} C function format string.
 The format string is extended to support the variable @var{%[1-6]N}
 which prints fractions of the second with optionally specified number of digits.
 
@@ -12438,8 +12468,8 @@ If the format is set to @code{hms}, a third argument @code{24HH} may be
 supplied to present the hour part of the formatted timestamp in 24h format
 (00-23).
 
-If the format is set to @code{localtime} or @code{gmtime},
-a third argument may be supplied: a strftime() format string.
+If the format is set to @code{localtime} or @code{gmtime}, a third
+argument may be supplied: a @code{strftime} C function format string.
 By default, @var{YYYY-MM-DD HH:MM:SS} format will be used.
 @end table
 
@@ -12543,7 +12573,8 @@ drawtext="text='Test Text': fontsize=h/30: x=(w-text_w)/2: y=(h-text_h*2)"
 @end example
 
 @item
-Print the date of a real-time encoding (see strftime(3)):
+Print the date of a real-time encoding (see documentation for the
+@code{strftime} C function):
 @example
 drawtext='fontfile=FreeSans.ttf:text=%@{localtime\:%a %b %d %Y@}'
 @end example
@@ -13737,7 +13768,35 @@ value.
 
 @section find_rect
 
-Find a rectangular object
+Find a rectangular object in the input video.
+
+The object to search for must be specified as a gray8 image specified with the
+@option{object} option.
+
+For each possible match, a score is computed. If the score reaches the specified
+threshold, the object is considered found.
+
+If the input video contains multiple instances of the object, the filter will
+find only one of them.
+
+When an object is found, the following metadata entries are set in the matching
+frame:
+@table @option
+@item lavfi.rect.w
+width of object
+
+@item lavfi.rect.h
+height of object
+
+@item lavfi.rect.x
+x position of object
+
+@item lavfi.rect.y
+y position of object
+
+@item lavfi.rect.score
+match score of the found object
+@end table
 
 It accepts the following options:
 
@@ -13746,7 +13805,12 @@ It accepts the following options:
 Filepath of the object image, needs to be in gray8.
 
 @item threshold
-Detection threshold, default is 0.5.
+Detection threshold, expressed as a decimal number in the range 0-1.
+
+A threshold value of 0.01 means only exact matches, a threshold of 0.99 means
+almost everything matches.
+
+Default value is 0.5.
 
 @item mipmaps
 Number of mipmaps, default is 3.
@@ -13766,6 +13830,16 @@ Cover a rectangular object by the supplied image of a given video using @command
 @example
 ffmpeg -i file.ts -vf find_rect=newref.pgm,cover_rect=cover.jpg:mode=cover new.mkv
 @end example
+
+@item
+Find the position of an object in each frame using @command{ffprobe} and write
+it to a log file:
+@example
+ffprobe -f lavfi movie=test.mp4,find_rect=object=object.pgm:threshold=0.3 \
+  -show_entries frame=pkt_pts_time:frame_tags=lavfi.rect.x,lavfi.rect.y \
+  -of csv -o find_rect.csv
+@end example
+
 @end itemize
 
 @section floodfill
@@ -18621,6 +18695,8 @@ Frankie Sierra dithering v3 (error diffusion)
 Burkes dithering (error diffusion)
 @item atkinson
 Atkinson dithering by Bill Atkinson at Apple Computer (error diffusion)
+@item none
+Disable dithering.
 @end table
 
 Default is @var{sierra2_4a}.
@@ -20857,12 +20933,9 @@ It accepts the following parameters:
 @item r, ratio, dar (@code{setdar} only), sar (@code{setsar} only)
 Set the aspect ratio used by the filter.
 
-The parameter can be a floating point number string, an expression, or
-a string of the form @var{num}:@var{den}, where @var{num} and
-@var{den} are the numerator and denominator of the aspect ratio. If
-the parameter is not specified, it is assumed the value "0".
-In case the form "@var{num}:@var{den}" is used, the @code{:} character
-should be escaped.
+The parameter can be a floating point number string, or an expression. If the
+parameter is not specified, the value "0" is assumed, meaning that the same
+input value is used.
 
 @item max
 Set the maximum integer value to use for expressing numerator and
@@ -20871,19 +20944,14 @@ Default value is @code{100}.
 
 @end table
 
-The parameter @var{sar} is an expression containing
-the following constants:
+The parameter @var{sar} is an expression containing the following constants:
 
 @table @option
-@item E, PI, PHI
-These are approximated values for the mathematical constants e
-(Euler's number), pi (Greek pi), and phi (the golden ratio).
-
 @item w, h
 The input width and height.
 
 @item a
-These are the same as @var{w} / @var{h}.
+Same as @var{w} / @var{h}.
 
 @item sar
 The input sample aspect ratio.

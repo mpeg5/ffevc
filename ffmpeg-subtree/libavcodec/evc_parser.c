@@ -32,6 +32,32 @@
 #define EXTENDED_SAR            255
 #define NUM_CPB                 32
 
+#define CHROMA_FORMAT_MAX       4   // @see ISO_IEC_23094-1 section 6.2 table 2
+
+static const enum AVPixelFormat pix_fmts_8bit[CHROMA_FORMAT_MAX] = {
+    AV_PIX_FMT_GRAY8, AV_PIX_FMT_YUV420P, AV_PIX_FMT_YUV422P, AV_PIX_FMT_YUV444P
+};
+
+static const enum AVPixelFormat pix_fmts_9bit[CHROMA_FORMAT_MAX] = {
+    AV_PIX_FMT_GRAY9, AV_PIX_FMT_YUV420P9, AV_PIX_FMT_YUV422P9, AV_PIX_FMT_YUV444P9
+};
+
+static const enum AVPixelFormat pix_fmts_10bit[CHROMA_FORMAT_MAX] = {
+    AV_PIX_FMT_GRAY10, AV_PIX_FMT_YUV420P10, AV_PIX_FMT_YUV422P10, AV_PIX_FMT_YUV444P10
+};
+
+static const enum AVPixelFormat pix_fmts_12bit[CHROMA_FORMAT_MAX] = {
+    AV_PIX_FMT_GRAY12, AV_PIX_FMT_YUV420P12, AV_PIX_FMT_YUV422P12, AV_PIX_FMT_YUV444P12
+};
+
+static const enum AVPixelFormat pix_fmts_14bit[CHROMA_FORMAT_MAX] = {
+    AV_PIX_FMT_GRAY14, AV_PIX_FMT_YUV420P14, AV_PIX_FMT_YUV422P14, AV_PIX_FMT_YUV444P14
+};
+
+static const enum AVPixelFormat pix_fmts_16bit[CHROMA_FORMAT_MAX] = {
+    AV_PIX_FMT_GRAY16, AV_PIX_FMT_YUV420P16, AV_PIX_FMT_YUV422P16, AV_PIX_FMT_YUV444P16
+};
+
 // rpl structure
 typedef struct RefPicListStruct {
     int poc;
@@ -865,6 +891,7 @@ static int parse_nal_unit(AVCodecParserContext *s, const uint8_t *buf,
     case EVC_SPS_NUT: {
         EVCParserSPS *sps;
         int SubGopLength;
+        int bit_depth;
 
         sps = parse_sps(data, nalu_size, ev);
         if (!sps) {
@@ -894,27 +921,31 @@ static int parse_nal_unit(AVCodecParserContext *s, const uint8_t *buf,
             }
         }
 
-        switch (sps->chroma_format_idc) {
-        case 0: /* YCBCR400_10LE */
-            av_log(avctx, AV_LOG_ERROR, "YCBCR400_10LE: Not supported chroma format\n");
-            s->format = AV_PIX_FMT_GRAY10LE;
-            return -1;
-        case 1: /* YCBCR420_10LE */
-            s->format = AV_PIX_FMT_YUV420P10LE;
+        bit_depth = sps->bit_depth_chroma_minus8 + 8;
+        s->format = AV_PIX_FMT_NONE;
+
+        switch (bit_depth) {
+        case 8:
+            s->format = pix_fmts_8bit[sps->chroma_format_idc];
             break;
-        case 2: /* YCBCR422_10LE */
-            av_log(avctx, AV_LOG_ERROR, "YCBCR422_10LE: Not supported chroma format\n");
-            s->format = AV_PIX_FMT_YUV422P10LE;
-            return -1;
-        case 3: /* YCBCR444_10LE */
-            av_log(avctx, AV_LOG_ERROR, "YCBCR444_10LE: Not supported chroma format\n");
-            s->format = AV_PIX_FMT_YUV444P10LE;
-            return -1;
-        default:
-            s->format = AV_PIX_FMT_NONE;
-            av_log(avctx, AV_LOG_ERROR, "Unknown supported chroma format\n");
-            return -1;
+        case 9:
+            s->format = pix_fmts_9bit[sps->chroma_format_idc];
+            break;
+        case 10:
+            s->format = pix_fmts_10bit[sps->chroma_format_idc];
+            break;
+        case 12:
+            s->format = pix_fmts_12bit[sps->chroma_format_idc];
+            break;
+        case 14:
+            s->format = pix_fmts_14bit[sps->chroma_format_idc];
+            break;
+        case 16:
+            s->format = pix_fmts_16bit[sps->chroma_format_idc];
+            break;
         }
+        av_assert2(s->format != AV_PIX_FMT_NONE);
+
         break;
     }
     case EVC_PPS_NUT: {

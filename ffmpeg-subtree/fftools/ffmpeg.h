@@ -54,6 +54,7 @@
 #define FFMPEG_OPT_MAP_CHANNEL 1
 #define FFMPEG_OPT_MAP_SYNC 1
 #define FFMPEG_ROTATION_METADATA 1
+#define FFMPEG_OPT_QPHIST 1
 
 enum VideoSyncMethod {
     VSYNC_AUTO = -1,
@@ -314,6 +315,9 @@ typedef struct OutputFilter {
     const int *formats;
     const AVChannelLayout *ch_layouts;
     const int *sample_rates;
+
+    /* pts of the last frame received from this filter, in AV_TIME_BASE_Q */
+    int64_t last_pts;
 } OutputFilter;
 
 typedef struct FilterGraph {
@@ -342,7 +346,6 @@ typedef struct InputStream {
     int decoding_needed;     /* non zero if the packets must be decoded in 'raw_fifo', see DECODING_FOR_* */
 #define DECODING_FOR_OST    1
 #define DECODING_FOR_FILTER 2
-    int processing_needed;   /* non zero if the packets must be processed */
     // should attach FrameData as opaque_ref after decoding
     int want_frame_data;
 
@@ -367,8 +370,15 @@ typedef struct InputStream {
     int64_t first_dts;       ///< dts of the first packet read for this stream (in AV_TIME_BASE units)
     int64_t       dts;       ///< dts of the last packet read for this stream (in AV_TIME_BASE units)
 
-    int64_t       next_pts;  ///< synthetic pts for the next decode frame (in AV_TIME_BASE units)
+    /* predicted pts of the next decoded frame, in AV_TIME_BASE */
+    int64_t       next_pts;
     int64_t       pts;       ///< current pts of the decoded frame  (in AV_TIME_BASE units)
+
+    // pts/estimated duration of the last decoded video frame
+    // in decoder timebase
+    int64_t last_frame_pts;
+    int64_t last_frame_duration_est;
+
     int           wrap_correction_done;
 
     // the value of AVCodecParserContext.repeat_pict from the AVStream parser
@@ -413,6 +423,14 @@ typedef struct InputStream {
     InputFilter **filters;
     int        nb_filters;
 
+    /*
+     * Output targets that do not go through lavfi, i.e. subtitles or
+     * streamcopy. Those two cases are distinguished by the OutputStream
+     * having an encoder or not.
+     */
+    struct OutputStream **outputs;
+    int                nb_outputs;
+
     int reinit_filters;
 
     /* hwaccel options */
@@ -432,9 +450,6 @@ typedef struct InputStream {
     // number of frames/samples retrieved from the decoder
     uint64_t frames_decoded;
     uint64_t samples_decoded;
-
-    int64_t *dts_buffer;
-    int nb_dts_buffer;
 
     int got_output;
 } InputStream;
@@ -558,11 +573,21 @@ typedef struct KeyframeForceCtx {
     int          dropped_keyframe;
 } KeyframeForceCtx;
 
+typedef struct Encoder Encoder;
+
 typedef struct OutputStream {
     const AVClass *class;
 
+    enum AVMediaType type;
+
     int file_index;          /* file index */
     int index;               /* stream index in the output file */
+
+    /**
+     * Codec parameters for packets submitted to the muxer (i.e. before
+     * bitstream filtering, if any).
+     */
+    AVCodecParameters *par_in;
 
     /* input stream that is the source for this output stream;
      * may be NULL for streams with no well-defined source, e.g.
@@ -570,32 +595,18 @@ typedef struct OutputStream {
     InputStream *ist;
 
     AVStream *st;            /* stream in the output file */
-    /* number of frames emitted by the video-encoding sync code */
-    int64_t vsync_frame_number;
-    /* predicted pts of the next frame to be encoded
-     * audio/video encoding only */
-    int64_t next_pts;
     /* dts of the last packet sent to the muxing queue, in AV_TIME_BASE_Q */
     int64_t last_mux_dts;
-    /* pts of the last frame received from the filters, in AV_TIME_BASE_Q */
-    int64_t last_filter_pts;
-
-    // timestamp from which the streamcopied streams should start,
-    // in AV_TIME_BASE_Q;
-    // everything before it should be discarded
-    int64_t ts_copy_start;
 
     // the timebase of the packets sent to the muxer
     AVRational mux_timebase;
     AVRational enc_timebase;
 
+    Encoder *enc;
     AVCodecContext *enc_ctx;
     AVFrame *filtered_frame;
-    AVFrame *last_frame;
-    AVFrame *sq_frame;
     AVPacket *pkt;
     int64_t last_dropped;
-    int64_t last_nb0_frames[3];
 
     /* video only */
     AVRational frame_rate;
@@ -647,17 +658,10 @@ typedef struct OutputStream {
     int inputs_done;
 
     const char *attachment_filename;
-    int streamcopy_started;
-    int copy_initial_nonkeyframes;
-    int copy_prior_start;
 
     int keep_pix_fmt;
 
     /* stats */
-    // combined size of all the packets sent to the muxer
-    uint64_t data_size_mux;
-    // combined size of all the packets received from the encoder
-    uint64_t data_size_enc;
     // number of packets send to the muxer
     atomic_uint_least64_t packets_written;
     // number of frames/samples sent to the encoder
@@ -708,6 +712,13 @@ typedef struct OutputFile {
     int bitexact;
 } OutputFile;
 
+// optionally attached as opaque_ref to decoded AVFrames
+typedef struct FrameData {
+    uint64_t   idx;
+    int64_t    pts;
+    AVRational tb;
+} FrameData;
+
 extern InputFile   **input_files;
 extern int        nb_input_files;
 
@@ -738,7 +749,6 @@ extern int exit_on_error;
 extern int abort_on_flags;
 extern int print_stats;
 extern int64_t stats_period;
-extern int qp_hist;
 extern int stdin_interaction;
 extern AVIOContext *progress_avio;
 extern float max_error_rate;
@@ -754,12 +764,16 @@ extern const OptionDef options[];
 extern HWDevice *filter_hw_device;
 
 extern unsigned nb_output_dumped;
-extern int main_return_code;
 
 extern int ignore_unknown_streams;
 extern int copy_unknown_streams;
 
 extern int recast_media;
+
+extern FILE *vstats_file;
+
+extern int64_t nb_frames_dup;
+extern int64_t nb_frames_drop;
 
 #if FFMPEG_OPT_PSNR
 extern int do_psnr;
@@ -789,6 +803,8 @@ int init_complex_filtergraph(FilterGraph *fg);
 void sub2video_update(InputStream *ist, int64_t heartbeat_pts, AVSubtitle *sub);
 
 int ifilter_parameters_from_frame(InputFilter *ifilter, const AVFrame *frame);
+int ifilter_parameters_from_codecpar(InputFilter *ifilter, AVCodecParameters *par);
+int ifilter_has_all_input_formats(FilterGraph *fg);
 
 int ffmpeg_parse_options(int argc, char **argv);
 
@@ -810,6 +826,16 @@ int hw_device_setup_for_encode(OutputStream *ost);
 AVBufferRef *hw_device_for_filter(void);
 
 int hwaccel_decode_init(AVCodecContext *avctx);
+
+int dec_open(InputStream *ist);
+
+int enc_alloc(Encoder **penc, const AVCodec *codec);
+void enc_free(Encoder **penc);
+
+int enc_open(OutputStream *ost, AVFrame *frame);
+void enc_subtitle(OutputFile *of, OutputStream *ost, AVSubtitle *sub);
+void enc_frame(OutputStream *ost, AVFrame *frame);
+void enc_flush(void);
 
 /*
  * Initialize muxing state for the given stream, should be called
@@ -836,6 +862,12 @@ void of_enc_stats_close(void);
  * must be supplied in this case.
  */
 void of_output_packet(OutputFile *of, AVPacket *pkt, OutputStream *ost, int eof);
+
+/**
+ * @param dts predicted packet dts in AV_TIME_BASE_Q
+ */
+void of_streamcopy(OutputStream *ost, const AVPacket *pkt, int64_t dts);
+
 int64_t of_filesize(OutputFile *of);
 
 int ifile_open(const OptionsContext *o, const char *filename);
@@ -853,9 +885,36 @@ void ifile_close(InputFile **f);
  */
 int ifile_get_packet(InputFile *f, AVPacket **pkt);
 
+void ist_output_add(InputStream *ist, OutputStream *ost);
+void ist_filter_add(InputStream *ist, InputFilter *ifilter, int is_simple);
+
 /* iterate over all input streams in all input files;
  * pass NULL to start iteration */
 InputStream *ist_iter(InputStream *prev);
+
+/* iterate over all output streams in all output files;
+ * pass NULL to start iteration */
+OutputStream *ost_iter(OutputStream *prev);
+
+static inline double psnr(double d)
+{
+    return -10.0 * log10(d);
+}
+
+void close_output_stream(OutputStream *ost);
+int trigger_fix_sub_duration_heartbeat(OutputStream *ost, const AVPacket *pkt);
+void update_benchmark(const char *fmt, ...);
+
+/**
+ * Merge two return codes - return one of the error codes if at least one of
+ * them was negative, 0 otherwise.
+ * Currently just picks the first one, eventually we might want to do something
+ * more sophisticated, like sorting them by priority.
+ */
+static inline int err_merge(int err0, int err1)
+{
+    return (err0 < 0) ? err0 : FFMIN(err1, 0);
+}
 
 #define SPECIFIER_OPT_FMT_str  "%s"
 #define SPECIFIER_OPT_FMT_i    "%i"

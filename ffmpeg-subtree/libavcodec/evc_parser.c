@@ -32,29 +32,29 @@
 #define EXTENDED_SAR            255
 #define NUM_CPB                 32
 
-#define CHROMA_FORMAT_MAX       4   // @see ISO_IEC_23094-1 section 6.2 table 2
+#define NUM_CHROMA_FORMATS      4   // @see ISO_IEC_23094-1 section 6.2 table 2
 
-static const enum AVPixelFormat pix_fmts_8bit[CHROMA_FORMAT_MAX] = {
+static const enum AVPixelFormat pix_fmts_8bit[NUM_CHROMA_FORMATS] = {
     AV_PIX_FMT_GRAY8, AV_PIX_FMT_YUV420P, AV_PIX_FMT_YUV422P, AV_PIX_FMT_YUV444P
 };
 
-static const enum AVPixelFormat pix_fmts_9bit[CHROMA_FORMAT_MAX] = {
+static const enum AVPixelFormat pix_fmts_9bit[NUM_CHROMA_FORMATS] = {
     AV_PIX_FMT_GRAY9, AV_PIX_FMT_YUV420P9, AV_PIX_FMT_YUV422P9, AV_PIX_FMT_YUV444P9
 };
 
-static const enum AVPixelFormat pix_fmts_10bit[CHROMA_FORMAT_MAX] = {
+static const enum AVPixelFormat pix_fmts_10bit[NUM_CHROMA_FORMATS] = {
     AV_PIX_FMT_GRAY10, AV_PIX_FMT_YUV420P10, AV_PIX_FMT_YUV422P10, AV_PIX_FMT_YUV444P10
 };
 
-static const enum AVPixelFormat pix_fmts_12bit[CHROMA_FORMAT_MAX] = {
+static const enum AVPixelFormat pix_fmts_12bit[NUM_CHROMA_FORMATS] = {
     AV_PIX_FMT_GRAY12, AV_PIX_FMT_YUV420P12, AV_PIX_FMT_YUV422P12, AV_PIX_FMT_YUV444P12
 };
 
-static const enum AVPixelFormat pix_fmts_14bit[CHROMA_FORMAT_MAX] = {
+static const enum AVPixelFormat pix_fmts_14bit[NUM_CHROMA_FORMATS] = {
     AV_PIX_FMT_GRAY14, AV_PIX_FMT_YUV420P14, AV_PIX_FMT_YUV422P14, AV_PIX_FMT_YUV444P14
 };
 
-static const enum AVPixelFormat pix_fmts_16bit[CHROMA_FORMAT_MAX] = {
+static const enum AVPixelFormat pix_fmts_16bit[NUM_CHROMA_FORMATS] = {
     AV_PIX_FMT_GRAY16, AV_PIX_FMT_YUV420P16, AV_PIX_FMT_YUV422P16, AV_PIX_FMT_YUV444P16
 };
 
@@ -944,7 +944,7 @@ static int parse_nal_unit(AVCodecParserContext *s, const uint8_t *buf,
             s->format = pix_fmts_16bit[sps->chroma_format_idc];
             break;
         }
-        av_assert2(s->format != AV_PIX_FMT_NONE);
+        av_assert0(s->format != AV_PIX_FMT_NONE);
 
         break;
     }

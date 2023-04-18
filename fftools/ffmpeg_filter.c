@@ -176,6 +176,18 @@ static void choose_channel_layouts(OutputFilter *ofilter, AVBPrint *bprint)
     av_bprint_chars(bprint, ':', 1);
 }
 
+static OutputFilter *ofilter_alloc(FilterGraph *fg)
+{
+    OutputFilter *ofilter;
+
+    ofilter           = ALLOC_ARRAY_ELEM(fg->outputs, fg->nb_outputs);
+    ofilter->graph    = fg;
+    ofilter->format   = -1;
+    ofilter->last_pts = AV_NOPTS_VALUE;
+
+    return ofilter;
+}
+
 int init_simple_filtergraph(InputStream *ist, OutputStream *ost)
 {
     FilterGraph *fg = av_mallocz(sizeof(*fg));
@@ -186,10 +198,8 @@ int init_simple_filtergraph(InputStream *ist, OutputStream *ost)
         report_and_exit(AVERROR(ENOMEM));
     fg->index = nb_filtergraphs;
 
-    ofilter = ALLOC_ARRAY_ELEM(fg->outputs, fg->nb_outputs);
-    ofilter->ost    = ost;
-    ofilter->graph  = fg;
-    ofilter->format = -1;
+    ofilter      = ofilter_alloc(fg);
+    ofilter->ost = ost;
 
     ost->filter = ofilter;
 
@@ -202,11 +212,10 @@ int init_simple_filtergraph(InputStream *ist, OutputStream *ost)
     if (!ifilter->frame_queue)
         report_and_exit(AVERROR(ENOMEM));
 
-    GROW_ARRAY(ist->filters, ist->nb_filters);
-    ist->filters[ist->nb_filters - 1] = ifilter;
-
     GROW_ARRAY(filtergraphs, nb_filtergraphs);
     filtergraphs[nb_filtergraphs - 1] = fg;
+
+    ist_filter_add(ist, ifilter, 1);
 
     return 0;
 }
@@ -294,11 +303,6 @@ static void init_input_filter(FilterGraph *fg, AVFilterInOut *in)
     }
     av_assert0(ist);
 
-    ist->discard         = 0;
-    ist->decoding_needed |= DECODING_FOR_FILTER;
-    ist->processing_needed = 1;
-    ist->st->discard = AVDISCARD_NONE;
-
     ifilter = ALLOC_ARRAY_ELEM(fg->inputs, fg->nb_inputs);
     ifilter->ist    = ist;
     ifilter->graph  = fg;
@@ -310,8 +314,7 @@ static void init_input_filter(FilterGraph *fg, AVFilterInOut *in)
     if (!ifilter->frame_queue)
         report_and_exit(AVERROR(ENOMEM));
 
-    GROW_ARRAY(ist->filters, ist->nb_filters);
-    ist->filters[ist->nb_filters - 1] = ifilter;
+    ist_filter_add(ist, ifilter, 0);
 }
 
 static int read_binary(const char *path, uint8_t **data, int *len)
@@ -503,9 +506,8 @@ int init_complex_filtergraph(FilterGraph *fg)
         init_input_filter(fg, cur);
 
     for (cur = outputs; cur;) {
-        OutputFilter *const ofilter = ALLOC_ARRAY_ELEM(fg->outputs, fg->nb_outputs);
+        OutputFilter *const ofilter = ofilter_alloc(fg);
 
-        ofilter->graph   = fg;
         ofilter->out_tmp = cur;
         ofilter->type    = avfilter_pad_get_type(cur->filter_ctx->output_pads,
                                                                          cur->pad_idx);
@@ -691,7 +693,6 @@ static int configure_output_audio_filter(FilterGraph *fg, OutputFilter *ofilter,
 {
     OutputStream *ost = ofilter->ost;
     OutputFile    *of = output_files[ost->file_index];
-    AVCodecContext *codec  = ost->enc_ctx;
     AVFilterContext *last_filter = out->filter_ctx;
     int pad_idx = out->pad_idx;
     AVBPrint args;
@@ -741,9 +742,6 @@ static int configure_output_audio_filter(FilterGraph *fg, OutputFilter *ofilter,
         av_bprint_clear(&args);
     }
 #endif
-
-    if (codec->ch_layout.order == AV_CHANNEL_ORDER_UNSPEC)
-        av_channel_layout_default(&codec->ch_layout, codec->ch_layout.nb_channels);
 
     choose_sample_fmts(ofilter,     &args);
     choose_sample_rates(ofilter,    &args);
@@ -1242,14 +1240,6 @@ int configure_filtergraph(FilterGraph *fg)
     }
 
     fg->reconfiguration = 1;
-
-    for (i = 0; i < fg->nb_outputs; i++) {
-        OutputStream *ost = fg->outputs[i]->ost;
-        if (ost->enc_ctx->codec_type == AVMEDIA_TYPE_AUDIO &&
-            !(ost->enc_ctx->codec->capabilities & AV_CODEC_CAP_VARIABLE_FRAME_SIZE))
-            av_buffersink_set_frame_size(ost->filter->filter,
-                                         ost->enc_ctx->frame_size);
-    }
 
     for (i = 0; i < fg->nb_inputs; i++) {
         AVFrame *tmp;

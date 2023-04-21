@@ -1021,10 +1021,8 @@ static int parse_nal_unit(AVCodecParserContext *s, const uint8_t *buf,
         // @see ISO/IEC 23094-1:2020(E) 8.3.1 Decoding process for picture order count
         slice_pic_parameter_set_id = sh->slice_pic_parameter_set_id;
         sps = ev->sps[slice_pic_parameter_set_id];
-        if(!sps)
-            av_log(NULL, AV_LOG_ERROR, "--- Parsing SliceHeader FAILED\n");
-
-        if (sps->sps_pocs_flag) {
+        
+        if (sps && sps->sps_pocs_flag) {
 
             int PicOrderCntMsb = 0;
             ev->poc.prevPicOrderCntVal = ev->poc.PicOrderCntVal;

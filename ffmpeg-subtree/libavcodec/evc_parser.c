@@ -290,9 +290,9 @@ typedef struct EVCParserPoc {
 
 typedef struct EVCParserContext {
     ParseContext pc;
-    EVCParserSPS sps[EVC_MAX_SPS_COUNT];
-    EVCParserPPS pps[EVC_MAX_PPS_COUNT];
-    EVCParserSliceHeader slice_header[EVC_MAX_PPS_COUNT];
+    EVCParserSPS *sps[EVC_MAX_SPS_COUNT];
+    EVCParserPPS *pps[EVC_MAX_PPS_COUNT];
+    EVCParserSliceHeader *slice_header[EVC_MAX_PPS_COUNT];
 
     int to_read;    // number of bytes of NAL Unit that do not fit into the current input data chunk and must be read from the new chunk(s)
     int bytes_read; // number of bytes of the current Access Unit that already has been read
@@ -494,7 +494,12 @@ static EVCParserSPS *parse_sps(const uint8_t *bs, int bs_size, EVCParserContext 
     if (sps_seq_parameter_set_id >= EVC_MAX_SPS_COUNT)
         return NULL;
 
-    sps = &ev->sps[sps_seq_parameter_set_id];
+    if(!ev->sps[sps_seq_parameter_set_id]) {
+        if((ev->sps[sps_seq_parameter_set_id] = av_malloc(sizeof(EVCParserSPS))) == NULL)
+            return NULL;
+    }
+
+    sps = ev->sps[sps_seq_parameter_set_id];
     sps->sps_seq_parameter_set_id = sps_seq_parameter_set_id;
 
     // the Baseline profile is indicated by profile_idc eqal to 0
@@ -649,7 +654,12 @@ static EVCParserPPS *parse_pps(const uint8_t *bs, int bs_size, EVCParserContext 
     if (pps_pic_parameter_set_id > EVC_MAX_PPS_COUNT)
         return NULL;
 
-    pps = &ev->pps[pps_pic_parameter_set_id];
+    if(!ev->pps[pps_pic_parameter_set_id]) {
+        if((ev->pps[pps_pic_parameter_set_id] = av_malloc(sizeof(EVCParserSPS))) == NULL)
+            return NULL;
+    }
+
+    pps = ev->pps[pps_pic_parameter_set_id];
 
     pps->pps_pic_parameter_set_id = pps_pic_parameter_set_id;
 
@@ -724,9 +734,22 @@ static EVCParserSliceHeader *parse_slice_header(const uint8_t *bs, int bs_size, 
     if (slice_pic_parameter_set_id < 0 || slice_pic_parameter_set_id >= EVC_MAX_PPS_COUNT)
         return NULL;
 
-    sh = &ev->slice_header[slice_pic_parameter_set_id];
-    pps = &ev->pps[slice_pic_parameter_set_id];
-    sps = &ev->sps[slice_pic_parameter_set_id];
+    if(!ev->slice_header[slice_pic_parameter_set_id]) {
+        if((ev->slice_header[slice_pic_parameter_set_id] = av_malloc(sizeof(EVCParserSliceHeader))) == NULL)
+            return NULL;
+    }
+
+    sh = ev->slice_header[slice_pic_parameter_set_id];
+
+    pps = ev->pps[slice_pic_parameter_set_id];
+    if(!pps) {
+        return NULL;
+    }
+
+    sps = ev->sps[slice_pic_parameter_set_id];
+    if(!sps) {
+        return NULL;
+    }
 
     sh->slice_pic_parameter_set_id = slice_pic_parameter_set_id;
 
@@ -997,9 +1020,9 @@ static int parse_nal_unit(AVCodecParserContext *s, const uint8_t *buf,
         // POC (picture order count of the current picture) derivation
         // @see ISO/IEC 23094-1:2020(E) 8.3.1 Decoding process for picture order count
         slice_pic_parameter_set_id = sh->slice_pic_parameter_set_id;
-        sps = &ev->sps[slice_pic_parameter_set_id];
-
-        if (sps->sps_pocs_flag) {
+        sps = ev->sps[slice_pic_parameter_set_id];
+        
+        if (sps && sps->sps_pocs_flag) {
 
             int PicOrderCntMsb = 0;
             ev->poc.prevPicOrderCntVal = ev->poc.PicOrderCntVal;
@@ -1363,6 +1386,31 @@ static int evc_parser_init(AVCodecParserContext *s)
     EVCParserContext *ev = s->priv_data;
     ev->incomplete_nalu_prefix_read = 0;
 
+    memset(ev->sps, 0, sizeof(EVCParserSPS *)*EVC_MAX_SPS_COUNT);
+    memset(ev->pps, 0, sizeof(EVCParserPPS *)*EVC_MAX_PPS_COUNT);
+    memset(ev->slice_header, 0, sizeof(EVCParserSliceHeader *)*EVC_MAX_PPS_COUNT);
+
+    return 0;
+}
+
+static int evc_parser_close(AVCodecParserContext *s)
+{
+    EVCParserContext *ev = s->priv_data;
+    ev->incomplete_nalu_prefix_read = 0;
+
+    for(int i = 0; i < EVC_MAX_SPS_COUNT; i++) {
+        EVCParserSPS *sps = ev->sps[i];
+        av_freep(&sps);
+    }
+
+    for(int i = 0; i < EVC_MAX_PPS_COUNT; i++) {
+        EVCParserPPS *pps = ev->pps[i];
+        EVCParserSliceHeader *sh = ev->slice_header[i];
+
+        av_freep(&pps);
+        av_freep(&sh);
+    }
+
     return 0;
 }
 
@@ -1371,5 +1419,5 @@ const AVCodecParser ff_evc_parser = {
     .priv_data_size = sizeof(EVCParserContext),
     .parser_init    = evc_parser_init,
     .parser_parse   = evc_parse,
-    .parser_close   = ff_parse_close,
+    .parser_close   = evc_parser_close,
 };

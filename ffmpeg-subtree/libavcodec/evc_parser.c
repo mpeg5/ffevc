@@ -743,13 +743,11 @@ static EVCParserSliceHeader *parse_slice_header(const uint8_t *bs, int bs_size, 
 
     pps = ev->pps[slice_pic_parameter_set_id];
     if(!pps) {
-        av_log(NULL, AV_LOG_ERROR, "--- PPS Parsing of NAL unit slice header failed\n");
         return NULL;
     }
 
     sps = ev->sps[slice_pic_parameter_set_id];
     if(!sps) {
-        av_log(NULL, AV_LOG_ERROR, "--- SPS Parsing of NAL unit slice header failed\n");
         return NULL;
     }
 

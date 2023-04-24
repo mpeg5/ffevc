@@ -414,6 +414,10 @@ int ff_isom_write_evcc(AVIOContext *pb, const uint8_t *data,
 
         nalu_type = get_nalu_type(data, bytes_to_read);
 
+        // @see ISO/IEC 14496-15:2021 Coding of audio-visual objects - Part 15: section 12.3.3.3
+        // NAL_unit_type indicates the type of the NAL units in the following array (which shall be all of that type);
+        // - it takes a value as defined in ISO/IEC 23094-1;
+        // - it is restricted to take one of the values indicating a SPS, PPS, APS, or SEI NAL unit.
         switch (nalu_type) {
         case EVC_SPS_NUT:
             array_index = SPS_INDEX;
@@ -428,19 +432,27 @@ int ff_isom_write_evcc(AVIOContext *pb, const uint8_t *data,
             array_index = SEI_INDEX;
             break;
         default:
+            array_index = -1;
             break;
         }
 
-        ret = evcc_array_add_nal_unit(data, nalu_size, nalu_type, ps_array_completeness, &(evcc.arrays[array_index]));
-        if (ret < 0)
-            goto end;
-        if (evcc.arrays[array_index].numNalus == 1)
-            evcc.num_of_arrays++;
+        if( (array_index == SPS_INDEX) ||
+            (array_index == PPS_INDEX) ||
+            (array_index == APS_INDEX) ||
+            (array_index == SEI_INDEX) ) {
 
-        if(nalu_type == EVC_SPS_NUT) {
-            ret = evcc_parse_sps(data, nalu_size, &evcc);
+            ret = evcc_array_add_nal_unit(data, nalu_size, nalu_type, ps_array_completeness, &(evcc.arrays[array_index]));
+
             if (ret < 0)
                 goto end;
+            if (evcc.arrays[array_index].numNalus == 1)
+                evcc.num_of_arrays++;
+
+            if(nalu_type == EVC_SPS_NUT) {
+                ret = evcc_parse_sps(data, nalu_size, &evcc);
+                if (ret < 0)
+                    goto end;
+            }
         }
 
         data += nalu_size;

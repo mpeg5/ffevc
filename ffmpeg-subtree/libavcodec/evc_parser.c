@@ -1386,7 +1386,6 @@ static int decode_extradata(AVCodecParserContext *s, AVCodecContext *avctx, cons
             int nal_unit_type = bytestream2_get_byte(&gb) & 0x3f;
             int num_nalus  = bytestream2_get_be16(&gb);
 
-            av_log(avctx, AV_LOG_DEBUG, "evcC: num_nalus = %d\n", num_nalus);
             for (int j = 0; j < num_nalus; j++) {
                 int nal_unit_length = bytestream2_get_be16(&gb);
                 if (bytestream2_get_bytes_left(&gb) < nal_unit_length) {

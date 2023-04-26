@@ -1725,7 +1725,7 @@ static int mov_get_evc_codec_tag(AVFormatContext *s, MOVTrack *track)
     int tag = track->par->codec_tag;
 
     if (!tag)
-        tag = MKTAG('e', 'v', 'c', 'i');
+        tag = MKTAG('e', 'v', 'c', '1');
 
     return tag;
 }

@@ -743,14 +743,12 @@ static EVCParserSliceHeader *parse_slice_header(const uint8_t *bs, int bs_size, 
     sh = ev->slice_header[slice_pic_parameter_set_id];
 
     pps = ev->pps[slice_pic_parameter_set_id];
-    if(!pps) {
+    if(!pps)
         return NULL;
-    }
 
     sps = ev->sps[slice_pic_parameter_set_id];
-    if(!sps) {
+    if(!sps)
         return NULL;
-    }
 
     sh->slice_pic_parameter_set_id = slice_pic_parameter_set_id;
 
@@ -922,7 +920,7 @@ static int parse_nal_unit(AVCodecParserContext *s, const uint8_t *buf,
         s->coded_height        = sps->pic_height_in_luma_samples;
         s->width               = sps->pic_width_in_luma_samples  - sps->picture_crop_left_offset - sps->picture_crop_right_offset;
         s->height              = sps->pic_height_in_luma_samples - sps->picture_crop_top_offset  - sps->picture_crop_bottom_offset;
-        
+
         SubGopLength = (int)pow(2.0, sps->log2_sub_gop_length);
         avctx->gop_size = SubGopLength;
 
@@ -1017,7 +1015,7 @@ static int parse_nal_unit(AVCodecParserContext *s, const uint8_t *buf,
         // @see ISO/IEC 23094-1:2020(E) 8.3.1 Decoding process for picture order count
         slice_pic_parameter_set_id = sh->slice_pic_parameter_set_id;
         sps = ev->sps[slice_pic_parameter_set_id];
-        
+
         if (sps && sps->sps_pocs_flag) {
 
             int PicOrderCntMsb = 0;
@@ -1364,9 +1362,9 @@ static int decode_extradata(AVCodecParserContext *s, AVCodecContext *avctx, cons
     // extradata is encoded as evcC format.
     if (data[0] == 1) {
         int num_of_arrays;  // indicates the number of arrays of NAL units of the indicated type(s)
-        
-        int nalu_length_field_size;  // indicates the length in bytes of the NALUnitLenght field in EVC video stream sample in the stream
-                                     // The value of this field shall be one of 0, 1, or 3 corresponding to a length encoded with 1, 2, or 4 bytes, respectively.
+
+        int nalu_length_field_size; // indicates the length in bytes of the NALUnitLenght field in EVC video stream sample in the stream
+                                    // The value of this field shall be one of 0, 1, or 3 corresponding to a length encoded with 1, 2, or 4 bytes, respectively.
 
         if (bytestream2_get_bytes_left(&gb) < 18) {
             av_log(avctx, AV_LOG_ERROR, "evcC %d too short\n", size);
@@ -1375,13 +1373,10 @@ static int decode_extradata(AVCodecParserContext *s, AVCodecContext *avctx, cons
 
         bytestream2_skip(&gb, 16);
 
-        nalu_length_field_size = (bytestream2_get_byte(&gb) & 3) + 1; 
+        nalu_length_field_size = (bytestream2_get_byte(&gb) & 3) + 1;
         num_of_arrays = bytestream2_get_byte(&gb);
 
-        av_log(avctx, AV_LOG_DEBUG, "evcC: nalu_length_field_size = %d\n", nalu_length_field_size);
-        av_log(avctx, AV_LOG_DEBUG, "evcC: num_of_arrays = %d\n", num_of_arrays);
-
-         /* Decode nal units from evcC. */
+        /* Decode nal units from evcC. */
         for (int i = 0; i < num_of_arrays; i++) {
 
             // @see ISO/IEC 14496-15:2021 Coding of audio-visual objects - Part 15: section 12.3.3.3
@@ -1398,25 +1393,22 @@ static int decode_extradata(AVCodecParserContext *s, AVCodecContext *avctx, cons
                     av_log(avctx, AV_LOG_ERROR, "Invalid NAL unit size in extradata.\n");
                     return AVERROR_INVALIDDATA;
                 }
-                av_log(avctx, AV_LOG_DEBUG, "evcC: nal_unit_type = %d \n", nal_unit_type);
-                av_log(avctx, AV_LOG_DEBUG, "evcC: nal_unit_length = %d\n", nal_unit_length);
 
                 if( nal_unit_type == EVC_SPS_NUT ||
-                    nal_unit_type == EVC_PPS_NUT || 
-                    nal_unit_type == EVC_APS_NUT || 
+                    nal_unit_type == EVC_PPS_NUT ||
+                    nal_unit_type == EVC_APS_NUT ||
                     nal_unit_type == EVC_SEI_NUT ) {
                     if (parse_nal_unit(s, gb.buffer, nal_unit_length, avctx) != 0) {
                         av_log(avctx, AV_LOG_ERROR, "Parsing of NAL unit failed\n");
                         return AVERROR_INVALIDDATA;
                     }
                 }
-                
+
                 bytestream2_skip(&gb, nal_unit_length);
             }
         }
-    } else  {
+    } else
         return -1;
-    }
 
     return ret;
 }

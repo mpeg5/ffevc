@@ -25,6 +25,7 @@
 #include "libavutil/common.h"
 #include "parser.h"
 #include "golomb.h"
+#include "bytestream.h"
 #include "evc.h"
 
 #define EVC_MAX_QP_TABLE_SIZE   58
@@ -742,14 +743,12 @@ static EVCParserSliceHeader *parse_slice_header(const uint8_t *bs, int bs_size, 
     sh = ev->slice_header[slice_pic_parameter_set_id];
 
     pps = ev->pps[slice_pic_parameter_set_id];
-    if(!pps) {
+    if(!pps)
         return NULL;
-    }
 
     sps = ev->sps[slice_pic_parameter_set_id];
-    if(!sps) {
+    if(!sps)
         return NULL;
-    }
 
     sh->slice_pic_parameter_set_id = slice_pic_parameter_set_id;
 
@@ -902,11 +901,6 @@ static int parse_nal_unit(AVCodecParserContext *s, const uint8_t *buf,
     }
     ev->nuh_temporal_id = tid;
 
-    if (data_size < nalu_size) {
-        av_log(avctx, AV_LOG_ERROR, "NAL unit does not fit in the data buffer\n");
-        return AVERROR_INVALIDDATA;
-    }
-
     data += EVC_NALU_HEADER_SIZE;
     data_size -= EVC_NALU_HEADER_SIZE;
 
@@ -1021,7 +1015,7 @@ static int parse_nal_unit(AVCodecParserContext *s, const uint8_t *buf,
         // @see ISO/IEC 23094-1:2020(E) 8.3.1 Decoding process for picture order count
         slice_pic_parameter_set_id = sh->slice_pic_parameter_set_id;
         sps = ev->sps[slice_pic_parameter_set_id];
-        
+
         if (sps && sps->sps_pocs_flag) {
 
             int PicOrderCntMsb = 0;
@@ -1353,6 +1347,71 @@ static int evc_find_frame_end(AVCodecParserContext *s, const uint8_t *buf,
     return END_NOT_FOUND;
 }
 
+// Decoding nal units from evcC (EVCDecoderConfigurationRecord)
+// @see @see ISO/IEC 14496-15:2021 Coding of audio-visual objects - Part 15: section 12.3.3.2
+static int decode_extradata(AVCodecParserContext *s, AVCodecContext *avctx, const uint8_t *data, int size)
+{
+    int ret = 0;
+    GetByteContext gb;
+
+    bytestream2_init(&gb, data, size);
+
+    if (!data || size <= 0)
+        return -1;
+
+    // extradata is encoded as evcC format.
+    if (data[0] == 1) {
+        int num_of_arrays;  // indicates the number of arrays of NAL units of the indicated type(s)
+
+        int nalu_length_field_size; // indicates the length in bytes of the NALUnitLenght field in EVC video stream sample in the stream
+                                    // The value of this field shall be one of 0, 1, or 3 corresponding to a length encoded with 1, 2, or 4 bytes, respectively.
+
+        if (bytestream2_get_bytes_left(&gb) < 18) {
+            av_log(avctx, AV_LOG_ERROR, "evcC %d too short\n", size);
+            return AVERROR_INVALIDDATA;
+        }
+
+        bytestream2_skip(&gb, 16);
+
+        nalu_length_field_size = (bytestream2_get_byte(&gb) & 3) + 1;
+        num_of_arrays = bytestream2_get_byte(&gb);
+
+        /* Decode nal units from evcC. */
+        for (int i = 0; i < num_of_arrays; i++) {
+
+            // @see ISO/IEC 14496-15:2021 Coding of audio-visual objects - Part 15: section 12.3.3.3
+            // NAL_unit_type indicates the type of the NAL units in the following array (which shall be all of that type);
+            // - it takes a value as defined in ISO/IEC 23094-1;
+            // - it is restricted to take one of the values indicating a SPS, PPS, APS, or SEI NAL unit.
+            int nal_unit_type = bytestream2_get_byte(&gb) & 0x3f;
+            int num_nalus  = bytestream2_get_be16(&gb);
+
+            for (int j = 0; j < num_nalus; j++) {
+                int nal_unit_length = bytestream2_get_be16(&gb);
+                if (bytestream2_get_bytes_left(&gb) < nal_unit_length) {
+                    av_log(avctx, AV_LOG_ERROR, "Invalid NAL unit size in extradata.\n");
+                    return AVERROR_INVALIDDATA;
+                }
+
+                if( nal_unit_type == EVC_SPS_NUT ||
+                    nal_unit_type == EVC_PPS_NUT ||
+                    nal_unit_type == EVC_APS_NUT ||
+                    nal_unit_type == EVC_SEI_NUT ) {
+                    if (parse_nal_unit(s, gb.buffer, nal_unit_length, avctx) != 0) {
+                        av_log(avctx, AV_LOG_ERROR, "Parsing of NAL unit failed\n");
+                        return AVERROR_INVALIDDATA;
+                    }
+                }
+
+                bytestream2_skip(&gb, nal_unit_length);
+            }
+        }
+    } else
+        return -1;
+
+    return ret;
+}
+
 static int evc_parse(AVCodecParserContext *s, AVCodecContext *avctx,
                      const uint8_t **poutbuf, int *poutbuf_size,
                      const uint8_t *buf, int buf_size)
@@ -1360,6 +1419,11 @@ static int evc_parse(AVCodecParserContext *s, AVCodecContext *avctx,
     int next;
     EVCParserContext *ev = s->priv_data;
     ParseContext *pc = &ev->pc;
+
+    if (avctx->extradata && !ev->parsed_extradata) {
+        decode_extradata(s, avctx, avctx->extradata, avctx->extradata_size);
+        ev->parsed_extradata = 1;
+    }
 
     if (s->flags & PARSER_FLAG_COMPLETE_FRAMES)
         next = buf_size;
@@ -1393,7 +1457,7 @@ static int evc_parser_init(AVCodecParserContext *s)
     return 0;
 }
 
-static int evc_parser_close(AVCodecParserContext *s)
+static void evc_parser_close(AVCodecParserContext *s)
 {
     EVCParserContext *ev = s->priv_data;
     ev->incomplete_nalu_prefix_read = 0;
@@ -1410,8 +1474,6 @@ static int evc_parser_close(AVCodecParserContext *s)
         av_freep(&pps);
         av_freep(&sh);
     }
-
-    return 0;
 }
 
 const AVCodecParser ff_evc_parser = {

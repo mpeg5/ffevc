@@ -1849,6 +1849,12 @@ Always use double-floating point precision sample format.
 @end table
 
 Default value is auto.
+
+@item irload
+Set when to load IR stream. Can be @code{init} or @code{access}.
+First one load and prepares all IRs on initialization, second one
+once on first access of specific IR.
+Default is @code{init}.
 @end table
 
 @subsection Examples
@@ -16325,16 +16331,6 @@ This filter supports almost all of the above options as @ref{commands}.
 @subsection Examples
 @itemize
 @item
-Complete example for how to initialize the Vulkan device, upload frames to the
-GPU, perform filter conversion to yuv420p, and download frames back to the CPU
-for output. Note that in specific cases you can get around the need to perform
-format conversion by specifying the correct @code{format} filter option
-corresponding to the input frames.
-@example
-ffmpeg -i $INPUT -init_hw_device vulkan -vf hwupload,libplacebo=format=yuv420p,hwdownload,format=yuv420p $OUTPUT
-@end example
-
-@item
 Tone-map input to standard gamut BT.709 output:
 @example
 libplacebo=colorspace=bt709:color_primaries=bt709:color_trc=bt709:range=tv
@@ -16372,6 +16368,12 @@ either already on the GPU, or if you're using libplacebo for other purposes,
 since otherwise the VRAM roundtrip will more than offset any expected speedup.
 @example
 ffmpeg -export_side_data +film_grain ... -vf libplacebo=apply_filmgrain=true
+@end example
+
+@item
+Interop with VAAPI hwdec to avoid round-tripping through RAM:
+@example
+ffmpeg -init_hw_device vulkan -hwaccel vaapi -hwaccel_output_format vaapi ... -vf libplacebo
 @end example
 @end itemize
 

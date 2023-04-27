@@ -76,15 +76,6 @@ static int write_packet(Muxer *mux, OutputStream *ost, AVPacket *pkt)
     if (ost->type == AVMEDIA_TYPE_VIDEO && ost->vsync_method == VSYNC_DROP)
         pkt->pts = pkt->dts = AV_NOPTS_VALUE;
 
-    if (ost->type == AVMEDIA_TYPE_VIDEO) {
-        if (ost->frame_rate.num && ost->is_cfr) {
-            if (pkt->duration > 0)
-                av_log(ost, AV_LOG_WARNING, "Overriding packet duration by frame rate, this should not happen\n");
-            pkt->duration = av_rescale_q(1, av_inv_q(ost->frame_rate),
-                                         pkt->time_base);
-        }
-    }
-
     av_packet_rescale_ts(pkt, pkt->time_base, ost->st->time_base);
     pkt->time_base = ost->st->time_base;
 
@@ -223,9 +214,15 @@ static void *muxer_thread(void *arg)
         ost = of->streams[stream_idx];
         ret = sync_queue_process(mux, ost, ret < 0 ? NULL : pkt, &stream_eof);
         av_packet_unref(pkt);
-        if (ret == AVERROR_EOF && stream_eof)
-            tq_receive_finish(mux->tq, stream_idx);
-        else if (ret < 0) {
+        if (ret == AVERROR_EOF) {
+            if (stream_eof) {
+                tq_receive_finish(mux->tq, stream_idx);
+            } else {
+                av_log(mux, AV_LOG_VERBOSE, "Muxer returned EOF\n");
+                ret = 0;
+                break;
+            }
+        } else if (ret < 0) {
             av_log(mux, AV_LOG_ERROR, "Error muxing a packet\n");
             break;
         }
@@ -264,7 +261,7 @@ finish:
     return ret == AVERROR_EOF ? 0 : ret;
 }
 
-static int queue_packet(Muxer *mux, OutputStream *ost, AVPacket *pkt)
+static int queue_packet(OutputStream *ost, AVPacket *pkt)
 {
     MuxStream *ms = ms_from_ost(ost);
     AVPacket *tmp_pkt = NULL;
@@ -314,7 +311,7 @@ static int submit_packet(Muxer *mux, AVPacket *pkt, OutputStream *ost)
         return thread_submit_packet(mux, ost, pkt);
     } else {
         /* the muxer is not initialized yet, buffer the packet */
-        ret = queue_packet(mux, ost, pkt);
+        ret = queue_packet(ost, pkt);
         if (ret < 0) {
             if (pkt)
                 av_packet_unref(pkt);

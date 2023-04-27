@@ -1373,7 +1373,17 @@ static int decode_extradata(AVCodecParserContext *s, AVCodecContext *avctx, cons
 
         bytestream2_skip(&gb, 16);
 
+        // @see ISO/IEC 14496-15:2021 Coding of audio-visual objects - Part 15: section 12.3.3.3
+        // LengthSizeMinusOne plus 1 indicates the length in bytes of the NALUnitLength field in a EVC video stream sample in the stream to which this configuration record applies. For example, a size of one byte is indicated with a value of 0.
+        // The value of this field shall be one of 0, 1, or 3 corresponding to a length encoded with 1, 2, or 4 bytes, respectively.
         nalu_length_field_size = (bytestream2_get_byte(&gb) & 3) + 1;
+        if( nalu_length_field_size != 1 &&
+            nalu_length_field_size != 2 &&
+            nalu_length_field_size != 4 ) {
+            av_log(avctx, AV_LOG_ERROR, "The length in bytes of the NALUnitLenght field in a EVC video stream has unsupported value of %d\n", nalu_length_field_size);
+            return AVERROR_INVALIDDATA;
+        }
+
         num_of_arrays = bytestream2_get_byte(&gb);
 
         /* Decode nal units from evcC. */
@@ -1387,7 +1397,9 @@ static int decode_extradata(AVCodecParserContext *s, AVCodecContext *avctx, cons
             int num_nalus  = bytestream2_get_be16(&gb);
 
             for (int j = 0; j < num_nalus; j++) {
+
                 int nal_unit_length = bytestream2_get_be16(&gb);
+
                 if (bytestream2_get_bytes_left(&gb) < nal_unit_length) {
                     av_log(avctx, AV_LOG_ERROR, "Invalid NAL unit size in extradata.\n");
                     return AVERROR_INVALIDDATA;

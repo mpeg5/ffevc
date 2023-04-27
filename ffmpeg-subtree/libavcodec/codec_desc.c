@@ -1924,6 +1924,13 @@ static const AVCodecDescriptor codec_descriptors[] = {
         .props     = AV_CODEC_PROP_LOSSY,
     },
     {
+        .id        = AV_CODEC_ID_PDV,
+        .type      = AVMEDIA_TYPE_VIDEO,
+        .name      = "pdv",
+        .long_name = NULL_IF_CONFIG_SMALL("PDV (PlayDate Video)"),
+        .props     = AV_CODEC_PROP_LOSSY,
+    },
+    {
         .id        = AV_CODEC_ID_EVC,
         .type      = AVMEDIA_TYPE_VIDEO,
         .name      = "evc",

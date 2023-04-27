@@ -113,23 +113,34 @@ static int choose_encoder(const OptionsContext *o, AVFormatContext *s,
 
     *enc = NULL;
 
-    if (type == AVMEDIA_TYPE_VIDEO || type == AVMEDIA_TYPE_AUDIO || type == AVMEDIA_TYPE_SUBTITLE) {
-        MATCH_PER_STREAM_OPT(codec_names, str, codec_name, s, ost->st);
-        if (!codec_name) {
-            ost->par_in->codec_id = av_guess_codec(s->oformat, NULL, s->url,
-                                                         NULL, ost->type);
-            *enc = avcodec_find_encoder(ost->par_in->codec_id);
-            if (!*enc) {
-                av_log(ost, AV_LOG_FATAL, "Automatic encoder selection failed "
-                       "Default encoder for format %s (codec %s) is "
-                       "probably disabled. Please choose an encoder manually.\n",
-                        s->oformat->name, avcodec_get_name(ost->par_in->codec_id));
-                return AVERROR_ENCODER_NOT_FOUND;
-            }
-        } else if (strcmp(codec_name, "copy")) {
-            *enc = find_codec_or_die(ost, codec_name, ost->type, 1);
-            ost->par_in->codec_id = (*enc)->id;
+    MATCH_PER_STREAM_OPT(codec_names, str, codec_name, s, ost->st);
+
+    if (type != AVMEDIA_TYPE_VIDEO      &&
+        type != AVMEDIA_TYPE_AUDIO      &&
+        type != AVMEDIA_TYPE_SUBTITLE) {
+        if (codec_name && strcmp(codec_name, "copy")) {
+            const char *type_str = av_get_media_type_string(type);
+            av_log(ost, AV_LOG_FATAL,
+                   "Encoder '%s' specified, but only '-codec copy' supported "
+                   "for %s streams\n", codec_name, type_str);
+            return AVERROR(ENOSYS);
         }
+        return 0;
+    }
+
+    if (!codec_name) {
+        ost->par_in->codec_id = av_guess_codec(s->oformat, NULL, s->url, NULL, ost->type);
+        *enc = avcodec_find_encoder(ost->par_in->codec_id);
+        if (!*enc) {
+            av_log(ost, AV_LOG_FATAL, "Automatic encoder selection failed "
+                   "Default encoder for format %s (codec %s) is "
+                   "probably disabled. Please choose an encoder manually.\n",
+                    s->oformat->name, avcodec_get_name(ost->par_in->codec_id));
+            return AVERROR_ENCODER_NOT_FOUND;
+        }
+    } else if (strcmp(codec_name, "copy")) {
+        *enc = find_codec_or_die(ost, codec_name, ost->type, 1);
+        ost->par_in->codec_id = (*enc)->id;
     }
 
     return 0;
@@ -420,33 +431,51 @@ static MuxStream *mux_stream_alloc(Muxer *mux, enum AVMediaType type)
     return ms;
 }
 
-static char *get_ost_filters(const OptionsContext *o, AVFormatContext *oc,
-                             OutputStream *ost)
+static int ost_get_filters(const OptionsContext *o, AVFormatContext *oc,
+                           OutputStream *ost)
 {
-    if (ost->filters_script && ost->filters) {
+    const char *filters = NULL, *filters_script = NULL;
+
+    MATCH_PER_STREAM_OPT(filter_scripts, str, filters_script, oc, ost->st);
+    MATCH_PER_STREAM_OPT(filters,        str, filters,        oc, ost->st);
+
+    if (!ost->enc) {
+        if (filters_script || filters) {
+            av_log(ost, AV_LOG_ERROR,
+                   "%s '%s' was specified, but codec copy was selected. "
+                   "Filtering and streamcopy cannot be used together.\n",
+                   filters ? "Filtergraph" : "Filtergraph script",
+                   filters ? filters : filters_script);
+            return AVERROR(ENOSYS);
+        }
+        return 0;
+    }
+
+    if (!ost->ist) {
+        if (filters_script || filters) {
+            av_log(ost, AV_LOG_ERROR,
+                   "%s '%s' was specified for a stream fed from a complex "
+                   "filtergraph. Simple and complex filtering cannot be used "
+                   "together for the same stream.\n",
+                   filters ? "Filtergraph" : "Filtergraph script",
+                   filters ? filters : filters_script);
+            return AVERROR(EINVAL);
+        }
+        return 0;
+    }
+
+    if (filters_script && filters) {
         av_log(ost, AV_LOG_ERROR, "Both -filter and -filter_script set\n");
         exit_program(1);
     }
 
-    if (ost->filters_script)
-        return file_read(ost->filters_script);
-    else if (ost->filters)
-        return av_strdup(ost->filters);
-
-    return av_strdup(ost->type == AVMEDIA_TYPE_VIDEO ? "null" : "anull");
-}
-
-static void check_streamcopy_filters(const OptionsContext *o, AVFormatContext *oc,
-                                     OutputStream *ost, enum AVMediaType type)
-{
-    if (ost->filters_script || ost->filters) {
-        av_log(ost, AV_LOG_ERROR,
-               "%s '%s' was defined, but codec copy was selected.\n"
-               "Filtering and streamcopy cannot be used together.\n",
-               ost->filters ? "Filtergraph" : "Filtergraph script",
-               ost->filters ? ost->filters : ost->filters_script);
-        exit_program(1);
-    }
+    if (filters_script)
+        ost->avfilter = file_read(filters_script);
+    else if (filters)
+        ost->avfilter = av_strdup(filters);
+    else
+        ost->avfilter = av_strdup(ost->type == AVMEDIA_TYPE_VIDEO ? "null" : "anull");
+    return ost->avfilter ? 0 : AVERROR(ENOMEM);
 }
 
 static void parse_matrix_coeffs(void *logctx, uint16_t *dest, const char *str)
@@ -503,9 +532,6 @@ static void new_stream_video(Muxer *mux, const OptionsContext *o,
         }
         ost->frame_aspect_ratio = q;
     }
-
-    MATCH_PER_STREAM_OPT(filter_scripts, str, ost->filters_script, oc, st);
-    MATCH_PER_STREAM_OPT(filters,        str, ost->filters,        oc, st);
 
     if (ost->enc_ctx) {
         AVCodecContext *video_enc = ost->enc_ctx;
@@ -692,12 +718,7 @@ static void new_stream_video(Muxer *mux, const OptionsContext *o,
             }
         }
         ost->is_cfr = (ost->vsync_method == VSYNC_CFR || ost->vsync_method == VSYNC_VSCFR);
-
-        ost->avfilter = get_ost_filters(o, oc, ost);
-        if (!ost->avfilter)
-            exit_program(1);
-    } else
-        check_streamcopy_filters(o, oc, ost, AVMEDIA_TYPE_VIDEO);
+    }
 }
 
 static void new_stream_audio(Muxer *mux, const OptionsContext *o,
@@ -707,10 +728,6 @@ static void new_stream_audio(Muxer *mux, const OptionsContext *o,
     AVStream *st;
 
     st  = ost->st;
-
-
-    MATCH_PER_STREAM_OPT(filter_scripts, str, ost->filters_script, oc, st);
-    MATCH_PER_STREAM_OPT(filters,        str, ost->filters,        oc, st);
 
     if (ost->enc_ctx) {
         AVCodecContext *audio_enc = ost->enc_ctx;
@@ -757,10 +774,6 @@ static void new_stream_audio(Muxer *mux, const OptionsContext *o,
         MATCH_PER_STREAM_OPT(apad, str, ost->apad, oc, st);
         ost->apad = av_strdup(ost->apad);
 
-        ost->avfilter = get_ost_filters(o, oc, ost);
-        if (!ost->avfilter)
-            exit_program(1);
-
 #if FFMPEG_OPT_MAP_CHANNEL
         /* check for channel mapping for this audio stream */
         for (int n = 0; n < o->nb_audio_channel_maps; n++) {
@@ -791,25 +804,6 @@ static void new_stream_audio(Muxer *mux, const OptionsContext *o,
             }
         }
 #endif
-    } else
-        check_streamcopy_filters(o, oc, ost, AVMEDIA_TYPE_AUDIO);
-}
-
-static void new_stream_data(Muxer *mux, const OptionsContext *o,
-                            OutputStream *ost)
-{
-    if (ost->enc_ctx) {
-        av_log(ost, AV_LOG_FATAL, "Data stream encoding not supported yet (only streamcopy)\n");
-        exit_program(1);
-    }
-}
-
-static void new_stream_unknown(Muxer *mux, const OptionsContext *o,
-                               OutputStream *ost)
-{
-    if (ost->enc_ctx) {
-        av_log(ost, AV_LOG_FATAL, "Unknown stream encoding not supported yet (only streamcopy)\n");
-        exit_program(1);
     }
 }
 
@@ -838,8 +832,7 @@ static void new_stream_subtitle(Muxer *mux, const OptionsContext *o,
     }
 }
 
-static int streamcopy_init(const Muxer *mux, const OptionsContext *o,
-                           OutputStream *ost)
+static int streamcopy_init(const Muxer *mux, OutputStream *ost)
 {
     MuxStream           *ms         = ms_from_ost(ost);
 
@@ -1218,9 +1211,13 @@ static OutputStream *ost_add(Muxer *mux, const OptionsContext *o,
     case AVMEDIA_TYPE_VIDEO:      new_stream_video     (mux, o, ost); break;
     case AVMEDIA_TYPE_AUDIO:      new_stream_audio     (mux, o, ost); break;
     case AVMEDIA_TYPE_SUBTITLE:   new_stream_subtitle  (mux, o, ost); break;
-    case AVMEDIA_TYPE_DATA:       new_stream_data      (mux, o, ost); break;
     case AVMEDIA_TYPE_ATTACHMENT: new_stream_attachment(mux, o, ost); break;
-    default:                      new_stream_unknown   (mux, o, ost); break;
+    }
+
+    if (type == AVMEDIA_TYPE_VIDEO || type == AVMEDIA_TYPE_AUDIO) {
+        ret = ost_get_filters(o, oc, ost);
+        if (ret < 0)
+            exit_program(1);
     }
 
     if (ost->ist) {
@@ -1237,7 +1234,7 @@ static OutputStream *ost_add(Muxer *mux, const OptionsContext *o,
     }
 
     if (ost->ist && !ost->enc) {
-        ret = streamcopy_init(mux, o, ost);
+        ret = streamcopy_init(mux, ost);
         if (ret < 0)
             exit_program(1);
     }
@@ -1245,41 +1242,20 @@ static OutputStream *ost_add(Muxer *mux, const OptionsContext *o,
     return ost;
 }
 
-static void init_output_filter(OutputFilter *ofilter, const OptionsContext *o,
+// add a new output stream fed by the provided filtergraph output
+static void ost_add_from_filter(OutputFilter *ofilter, const OptionsContext *o,
                                Muxer *mux)
 {
-    OutputStream *ost;
-
-    switch (ofilter->type) {
-    case AVMEDIA_TYPE_VIDEO: ost = ost_add(mux, o, AVMEDIA_TYPE_VIDEO, NULL); break;
-    case AVMEDIA_TYPE_AUDIO: ost = ost_add(mux, o, AVMEDIA_TYPE_AUDIO, NULL); break;
-    default:
-        av_log(mux, AV_LOG_FATAL, "Only video and audio filters are supported "
-               "currently.\n");
-        exit_program(1);
-    }
+    OutputStream *ost = ost_add(mux, o, ofilter->type, NULL);
 
     ost->filter       = ofilter;
 
     ofilter->ost      = ost;
-    ofilter->format   = -1;
 
     if (!ost->enc_ctx) {
         av_log(ost, AV_LOG_ERROR, "Streamcopy requested for output stream fed "
                "from a complex filtergraph. Filtering and streamcopy "
                "cannot be used together.\n");
-        exit_program(1);
-    }
-
-    if (ost->avfilter && (ost->filters || ost->filters_script)) {
-        const char *opt = ost->filters ? "-vf/-af/-filter" : "-filter_script";
-        av_log(ost, AV_LOG_ERROR,
-               "%s '%s' was specified through the %s option "
-               "for output stream %d:%d, which is fed from a complex filtergraph.\n"
-               "%s and -filter_complex cannot be used together for the same stream.\n",
-               ost->filters ? "Filtergraph" : "Filtergraph script",
-               ost->filters ? ost->filters : ost->filters_script,
-               opt, ost->file_index, ost->index, opt);
         exit_program(1);
     }
 
@@ -1463,7 +1439,7 @@ loop_end:
                    "in any defined filter graph, or was already used elsewhere.\n", map->linklabel);
             exit_program(1);
         }
-        init_output_filter(ofilter, o, mux);
+        ost_add_from_filter(ofilter, o, mux);
     } else {
         ist = input_files[map->file_index]->streams[map->stream_index];
         if (ist->user_set_discard == AVDISCARD_ALL) {
@@ -1562,7 +1538,7 @@ static void create_streams(Muxer *mux, const OptionsContext *o)
             case AVMEDIA_TYPE_AUDIO:    auto_disable_a = 1; break;
             case AVMEDIA_TYPE_SUBTITLE: auto_disable_s = 1; break;
             }
-            init_output_filter(ofilter, o, mux);
+            ost_add_from_filter(ofilter, o, mux);
         }
     }
 
@@ -1951,7 +1927,7 @@ static int copy_chapters(InputFile *ifile, OutputFile *ofile, AVFormatContext *o
 static int copy_metadata(Muxer *mux, AVFormatContext *ic,
                          const char *outspec, const char *inspec,
                          int *metadata_global_manual, int *metadata_streams_manual,
-                         int *metadata_chapters_manual, const OptionsContext *o)
+                         int *metadata_chapters_manual)
 {
     AVFormatContext *oc = mux->fc;
     AVDictionary **meta_in = NULL;
@@ -2055,7 +2031,7 @@ static void copy_meta(Muxer *mux, const OptionsContext *o)
                       in_file_index >= 0 ? input_files[in_file_index]->ctx : NULL,
                       o->metadata_map[i].specifier, *p ? p + 1 : p,
                       &metadata_global_manual, &metadata_streams_manual,
-                      &metadata_chapters_manual, o);
+                      &metadata_chapters_manual);
     }
 
     /* copy chapters */

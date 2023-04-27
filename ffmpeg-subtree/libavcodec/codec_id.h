@@ -320,6 +320,7 @@ enum AVCodecID {
     AV_CODEC_ID_WBMP,
     AV_CODEC_ID_MEDIA100,
     AV_CODEC_ID_VQC,
+    AV_CODEC_ID_PDV,
     AV_CODEC_ID_EVC,
 
     /* various PCM "codecs" */

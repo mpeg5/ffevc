@@ -325,6 +325,8 @@ int enc_open(OutputStream *ost, AVFrame *frame)
             return ret;
     }
 
+    av_dict_set(&ost->encoder_opts, "flags", "+frame_duration", AV_DICT_MULTIKEY);
+
     ret = hw_device_setup_for_encode(ost);
     if (ret < 0) {
         av_log(ost, AV_LOG_ERROR,
@@ -811,6 +813,8 @@ static void do_audio_out(OutputFile *of, OutputStream *ost,
             av_rescale_q(start_time, AV_TIME_BASE_Q,   enc->time_base);
     }
     frame->time_base = enc->time_base;
+    frame->duration  = av_rescale_q(frame->nb_samples, (AVRational){1, frame->sample_rate},
+                                    enc->time_base);
 
     if (!check_recording_time(ost, frame->pts, frame->time_base))
         return;
@@ -869,14 +873,21 @@ early_exit:
  * desired target framerate (if any).
  */
 static void video_sync_process(OutputFile *of, OutputStream *ost,
-                               AVFrame *next_picture, double duration,
+                               AVFrame *frame, double duration,
                                int64_t *nb_frames, int64_t *nb_frames_prev)
 {
     Encoder *e = ost->enc;
-    double delta0, delta;
+    double delta0, delta, sync_ipts;
 
-    double sync_ipts = adjust_frame_pts_to_encoder_tb(of, ost, next_picture);
-    /* delta0 is the "drift" between the input frame (next_picture) and
+    if (!frame) {
+        *nb_frames_prev = *nb_frames = mid_pred(e->frames_prev_hist[0],
+                                                e->frames_prev_hist[1],
+                                                e->frames_prev_hist[2]);
+        goto finish;
+    }
+
+    sync_ipts = adjust_frame_pts_to_encoder_tb(of, ost, frame);
+    /* delta0 is the "drift" between the input frame and
      * where it would fall in the output. */
     delta0 = sync_ipts - e->next_pts;
     delta  = delta0 + duration;
@@ -919,23 +930,29 @@ static void video_sync_process(OutputFile *of, OutputStream *ost,
             if (delta0 > 1.1)
                 *nb_frames_prev = llrintf(delta0 - 0.6);
         }
-        next_picture->duration = 1;
+        frame->duration = 1;
         break;
     case VSYNC_VFR:
         if (delta <= -0.6)
             *nb_frames = 0;
         else if (delta > 0.6)
             e->next_pts = llrint(sync_ipts);
-        next_picture->duration = duration;
+        frame->duration = duration;
         break;
     case VSYNC_DROP:
     case VSYNC_PASSTHROUGH:
-        next_picture->duration = duration;
+        frame->duration = duration;
         e->next_pts = llrint(sync_ipts);
         break;
     default:
         av_assert0(0);
     }
+
+finish:
+    memmove(e->frames_prev_hist + 1,
+            e->frames_prev_hist,
+            sizeof(e->frames_prev_hist[0]) * (FF_ARRAY_ELEMS(e->frames_prev_hist) - 1));
+    e->frames_prev_hist[0] = *nb_frames_prev;
 }
 
 static enum AVPictureType forced_kf_apply(void *logctx, KeyframeForceCtx *kf,
@@ -990,10 +1007,8 @@ force_keyframe:
     return AV_PICTURE_TYPE_I;
 }
 
-/* May modify/reset next_picture */
-static void do_video_out(OutputFile *of,
-                         OutputStream *ost,
-                         AVFrame *next_picture)
+/* May modify/reset frame */
+static void do_video_out(OutputFile *of, OutputStream *ost, AVFrame *frame)
 {
     int ret;
     Encoder *e = ost->enc;
@@ -1001,39 +1016,20 @@ static void do_video_out(OutputFile *of,
     AVRational frame_rate;
     int64_t nb_frames, nb_frames_prev, i;
     double duration = 0;
-    InputStream *ist = ost->ist;
     AVFilterContext *filter = ost->filter->filter;
 
-    frame_rate = av_buffersink_get_frame_rate(filter);
-    if (frame_rate.num > 0 && frame_rate.den > 0)
-        duration = 1/(av_q2d(frame_rate) * av_q2d(enc->time_base));
+    if (frame)
+        duration = lrintf(frame->duration * av_q2d(frame->time_base) / av_q2d(enc->time_base));
 
-    if(ist && ist->st->start_time != AV_NOPTS_VALUE && ist->first_dts != AV_NOPTS_VALUE && ost->frame_rate.num)
+    if (duration <= 0 && ost->frame_rate.num)
         duration = FFMIN(duration, 1/(av_q2d(ost->frame_rate) * av_q2d(enc->time_base)));
 
-    if (!ost->filters_script &&
-        !ost->filters &&
-        (nb_filtergraphs == 0 || !filtergraphs[0]->graph_desc) &&
-        next_picture &&
-        ist &&
-        lrintf(next_picture->duration * av_q2d(ist->st->time_base) / av_q2d(enc->time_base)) > 0) {
-        duration = lrintf(next_picture->duration * av_q2d(ist->st->time_base) / av_q2d(enc->time_base));
-    }
+    frame_rate = av_buffersink_get_frame_rate(filter);
+    if (duration <= 0 && frame_rate.num > 0 && frame_rate.den > 0)
+        duration = 1/(av_q2d(frame_rate) * av_q2d(enc->time_base));
 
-    if (!next_picture) {
-        //end, flushing
-        nb_frames_prev = nb_frames = mid_pred(e->frames_prev_hist[0],
-                                              e->frames_prev_hist[1],
-                                              e->frames_prev_hist[2]);
-    } else {
-        video_sync_process(of, ost, next_picture, duration,
-                           &nb_frames, &nb_frames_prev);
-    }
-
-    memmove(e->frames_prev_hist + 1,
-            e->frames_prev_hist,
-            sizeof(e->frames_prev_hist[0]) * (FF_ARRAY_ELEMS(e->frames_prev_hist) - 1));
-    e->frames_prev_hist[0] = nb_frames_prev;
+    video_sync_process(of, ost, frame, duration,
+                       &nb_frames, &nb_frames_prev);
 
     if (nb_frames_prev == 0 && ost->last_dropped) {
         nb_frames_drop++;
@@ -1054,8 +1050,8 @@ static void do_video_out(OutputFile *of,
             dup_warning *= 10;
         }
     }
-    ost->last_dropped = nb_frames == nb_frames_prev && next_picture;
-    ost->kf.dropped_keyframe = ost->last_dropped && next_picture && next_picture->key_frame;
+    ost->last_dropped = nb_frames == nb_frames_prev && frame;
+    ost->kf.dropped_keyframe = ost->last_dropped && frame && frame->key_frame;
 
     /* duplicates frame if needed */
     for (i = 0; i < nb_frames; i++) {
@@ -1064,7 +1060,7 @@ static void do_video_out(OutputFile *of,
         if (i < nb_frames_prev && e->last_frame->buf[0]) {
             in_picture = e->last_frame;
         } else
-            in_picture = next_picture;
+            in_picture = frame;
 
         if (!in_picture)
             return;
@@ -1088,8 +1084,8 @@ static void do_video_out(OutputFile *of,
     }
 
     av_frame_unref(e->last_frame);
-    if (next_picture)
-        av_frame_move_ref(e->last_frame, next_picture);
+    if (frame)
+        av_frame_move_ref(e->last_frame, frame);
 }
 
 void enc_frame(OutputStream *ost, AVFrame *frame)

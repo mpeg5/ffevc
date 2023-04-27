@@ -1106,26 +1106,22 @@ static int opt_audio_qscale(void *optctx, const char *opt, const char *arg)
 
 static int opt_filter_complex(void *optctx, const char *opt, const char *arg)
 {
-    FilterGraph *fg = ALLOC_ARRAY_ELEM(filtergraphs, nb_filtergraphs);
-
-    fg->index      = nb_filtergraphs - 1;
-    fg->graph_desc = av_strdup(arg);
-    if (!fg->graph_desc)
+    char *graph_desc = av_strdup(arg);
+    if (!graph_desc)
         return AVERROR(ENOMEM);
+
+    fg_create(graph_desc);
 
     return 0;
 }
 
 static int opt_filter_complex_script(void *optctx, const char *opt, const char *arg)
 {
-    FilterGraph *fg;
     char *graph_desc = file_read(arg);
     if (!graph_desc)
         return AVERROR(EINVAL);
 
-    fg = ALLOC_ARRAY_ELEM(filtergraphs, nb_filtergraphs);
-    fg->index      = nb_filtergraphs - 1;
-    fg->graph_desc = graph_desc;
+    fg_create(graph_desc);
 
     return 0;
 }
@@ -1767,7 +1763,7 @@ const OptionDef options[] = {
 
 #if CONFIG_VAAPI
     { "vaapi_device", HAS_ARG | OPT_EXPERT, { .func_arg = opt_vaapi_device },
-        "set VAAPI hardware device (DRM path or X11 display name)", "device" },
+        "set VAAPI hardware device (DirectX adapter index, DRM path or X11 display name)", "device" },
 #endif
 
 #if CONFIG_QSV

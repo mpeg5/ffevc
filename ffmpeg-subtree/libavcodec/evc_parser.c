@@ -918,8 +918,19 @@ static int parse_nal_unit(AVCodecParserContext *s, const uint8_t *buf,
 
         s->coded_width         = sps->pic_width_in_luma_samples;
         s->coded_height        = sps->pic_height_in_luma_samples;
-        s->width               = sps->pic_width_in_luma_samples  - sps->picture_crop_left_offset - sps->picture_crop_right_offset;
-        s->height              = sps->pic_height_in_luma_samples - sps->picture_crop_top_offset  - sps->picture_crop_bottom_offset;
+        
+        if(sps->picture_cropping_flag) {
+            s->width           = sps->pic_width_in_luma_samples  - sps->picture_crop_left_offset - sps->picture_crop_right_offset;
+            s->height          = sps->pic_height_in_luma_samples - sps->picture_crop_top_offset  - sps->picture_crop_bottom_offset;
+        } else {
+            s->width           = sps->pic_width_in_luma_samples;
+            s->height          = sps->pic_height_in_luma_samples;
+        }
+
+        avctx->coded_width     = s->coded_width;
+        avctx->coded_height    = s->coded_height;
+        avctx->width           = s->width;
+        avctx->height          = s->height;
 
         SubGopLength = (int)pow(2.0, sps->log2_sub_gop_length);
         avctx->gop_size = SubGopLength;

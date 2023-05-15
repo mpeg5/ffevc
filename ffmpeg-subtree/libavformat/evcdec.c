@@ -24,9 +24,16 @@
 #include "libavcodec/golomb.h"
 #include "libavcodec/internal.h"
 #include "libavcodec/evc.h"
+#include "libavcodec/bsf.h"
+
+#include "libavutil/opt.h"
 
 #include "rawdec.h"
 #include "avformat.h"
+#include "internal.h"
+
+
+#define RAW_PACKET_SIZE 1024
 
 typedef struct EVCParserContext {
     int got_sps;
@@ -34,6 +41,29 @@ typedef struct EVCParserContext {
     int got_idr;
     int got_nonidr;
 } EVCParserContext;
+
+typedef struct EVCDemuxContext {
+    const AVClass *class;
+    AVBSFContext *bsf;
+    AVRational framerate;
+    uint32_t temporal_unit_size;
+    uint32_t frame_unit_size;
+} EVCDemuxContext;
+
+#define DEC AV_OPT_FLAG_DECODING_PARAM
+#define OFFSET(x) offsetof(EVCDemuxContext, x)
+static const AVOption evc_options[] = {
+    { "framerate", "", OFFSET(framerate), AV_OPT_TYPE_VIDEO_RATE, {.str = "25"}, 0, INT_MAX, DEC},
+    { NULL },
+};
+#undef OFFSET
+
+static const AVClass evc_demuxer_class = {
+    .class_name = "EVC Annex B demuxer",
+    .item_name  = av_default_item_name,
+    .option     = evc_options,
+    .version    = LIBAVUTIL_VERSION_INT,
+};
 
 static int get_nalu_type(const uint8_t *bits, int bits_size)
 {
@@ -107,7 +137,7 @@ static int parse_nal_units(const AVProbeData *p, EVCParserContext *ev)
     return 0;
 }
 
-static int evc_probe(const AVProbeData *p)
+static int annexb_probe(const AVProbeData *p)
 {
     EVCParserContext ev = {0};
     int ret = parse_nal_units(p, &ev);
@@ -118,4 +148,78 @@ static int evc_probe(const AVProbeData *p)
     return 0;
 }
 
-FF_DEF_RAWVIDEO_DEMUXER(evc, "raw EVC video", evc_probe, "evc", AV_CODEC_ID_EVC)
+static int evc_read_header(AVFormatContext *s)
+{
+    AVStream *st;
+    FFStream *sti;
+    EVCDemuxContext *s1 = s->priv_data;
+    int ret = 0;
+
+    st = avformat_new_stream(s, NULL);
+    if (!st) {
+        ret = AVERROR(ENOMEM);
+        goto fail;
+    }
+    sti = ffstream(st);
+
+    st->codecpar->codec_type = AVMEDIA_TYPE_VIDEO;
+    st->codecpar->codec_id = s->iformat->raw_codec_id;
+    sti->need_parsing = AVSTREAM_PARSE_FULL_RAW;
+
+    av_log(s, AV_LOG_ERROR, "s1->framerate: [%d %d] \n", s1->framerate.num, s1->framerate.den);
+
+    st->avg_frame_rate = s1->framerate;
+    sti->avctx->framerate = s1->framerate;
+    avpriv_set_pts_info(st, 64, 1, 1200000);
+
+fail:
+    return ret;
+}
+
+static int annexb_read_packet(AVFormatContext *s, AVPacket *pkt)
+{
+    // EVCDemuxContext *raw = s->priv_data;
+    int ret, size;
+
+    size = RAW_PACKET_SIZE; // raw->raw_packet_size;
+
+    if ((ret = av_new_packet(pkt, size)) < 0)
+        return ret;
+
+    pkt->pos= avio_tell(s->pb);
+    pkt->stream_index = 0;
+    ret = avio_read_partial(s->pb, pkt->data, size);
+    if (ret < 0) {
+        av_packet_unref(pkt);
+        return ret;
+    }
+    av_shrink_packet(pkt, ret);
+
+    av_log(s, AV_LOG_ERROR, "annexb_read_packet: %d\n", size);
+
+    return ret;
+}
+
+static int evc_read_close(AVFormatContext *s)
+{
+    EVCDemuxContext *const c = s->priv_data;
+
+    av_bsf_free(&c->bsf);
+    return 0;
+}
+
+// FF_DEF_RAWVIDEO_DEMUXER(evc, "raw EVC video", evc_probe, "evc", AV_CODEC_ID_EVC)
+const AVInputFormat ff_evc_demuxer = {
+    .name           = "evc",
+    .long_name      = NULL_IF_CONFIG_SMALL("EVC Annex B"),
+    .read_probe     = annexb_probe,
+    .read_header    = evc_read_header,
+    .read_packet    = annexb_read_packet,
+    .read_close     = evc_read_close,
+    .extensions     = "evc",
+    .flags          = AVFMT_GENERIC_INDEX,
+    .flags_internal = FF_FMT_INIT_CLEANUP,
+    .raw_codec_id   = AV_CODEC_ID_EVC,
+    .priv_data_size = sizeof(EVCDemuxContext),
+    .priv_class     = &evc_demuxer_class,
+};

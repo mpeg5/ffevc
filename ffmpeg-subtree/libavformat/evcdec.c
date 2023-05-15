@@ -44,10 +44,7 @@ typedef struct EVCParserContext {
 
 typedef struct EVCDemuxContext {
     const AVClass *class;
-    AVBSFContext *bsf;
     AVRational framerate;
-    uint32_t temporal_unit_size;
-    uint32_t frame_unit_size;
 } EVCDemuxContext;
 
 #define DEC AV_OPT_FLAG_DECODING_PARAM
@@ -152,7 +149,7 @@ static int evc_read_header(AVFormatContext *s)
 {
     AVStream *st;
     FFStream *sti;
-    EVCDemuxContext *s1 = s->priv_data;
+    EVCDemuxContext *c = s->priv_data;
     int ret = 0;
 
     st = avformat_new_stream(s, NULL);
@@ -163,13 +160,15 @@ static int evc_read_header(AVFormatContext *s)
     sti = ffstream(st);
 
     st->codecpar->codec_type = AVMEDIA_TYPE_VIDEO;
-    st->codecpar->codec_id = s->iformat->raw_codec_id;
+    st->codecpar->codec_id = AV_CODEC_ID_EVC;
     sti->need_parsing = AVSTREAM_PARSE_FULL_RAW;
 
-    av_log(s, AV_LOG_ERROR, "s1->framerate: [%d %d] \n", s1->framerate.num, s1->framerate.den);
+    av_log(s, AV_LOG_ERROR, "c->framerate: [%d %d] \n", c->framerate.num, c->framerate.den);
 
-    st->avg_frame_rate = s1->framerate;
-    sti->avctx->framerate = s1->framerate;
+    st->avg_frame_rate = c->framerate;
+    sti->avctx->framerate = c->framerate;
+
+    // taken from rawvideo demuxers
     avpriv_set_pts_info(st, 64, 1, 1200000);
 
 fail:
@@ -178,10 +177,9 @@ fail:
 
 static int annexb_read_packet(AVFormatContext *s, AVPacket *pkt)
 {
-    // EVCDemuxContext *raw = s->priv_data;
     int ret, size;
 
-    size = RAW_PACKET_SIZE; // raw->raw_packet_size;
+    size = RAW_PACKET_SIZE;
 
     if ((ret = av_new_packet(pkt, size)) < 0)
         return ret;
@@ -202,9 +200,6 @@ static int annexb_read_packet(AVFormatContext *s, AVPacket *pkt)
 
 static int evc_read_close(AVFormatContext *s)
 {
-    EVCDemuxContext *const c = s->priv_data;
-
-    av_bsf_free(&c->bsf);
     return 0;
 }
 

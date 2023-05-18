@@ -266,11 +266,7 @@ static int evc_read_packet(AVFormatContext *s, AVPacket *pkt)
         av_log(s, AV_LOG_DEBUG, "Resizing packet size to: %d bytes\n", size);
     }
 
-#ifdef USE_AVIO_READ_PARTIAL
-    ret = avio_read_partial(s->pb, pkt->data + bytes_read, EVC_NALU_LENGTH_PREFIX_SIZE);
-#else
     ret = avio_read(s->pb, pkt->data + bytes_read, EVC_NALU_LENGTH_PREFIX_SIZE);
-#endif
     if (ret < 0) {
         av_packet_unref(pkt);
         return ret;
@@ -293,25 +289,12 @@ static int evc_read_packet(AVFormatContext *s, AVPacket *pkt)
         av_log(s, AV_LOG_DEBUG, "Resizing packet size to: %d bytes\n", size);
     }
 
-#ifdef USE_AVIO_READ_PARTIAL
-    int nalu_bytes_read = 0;
-    while(nalu_bytes_read < nalu_size) {
-        ret = avio_read_partial(s->pb, pkt->data + bytes_read + nalu_bytes_read, nalu_size - nalu_bytes_read);
-        if (ret < 0) {
-            av_packet_unref(pkt);
-            return ret;
-        }
-        nalu_bytes_read += ret;
-    }
-    bytes_read += nalu_bytes_read;
-#else
     ret = avio_read(s->pb, pkt->data + bytes_read, nalu_size);
     if (ret < 0) {
         av_packet_unref(pkt);
         return ret;
     }
     bytes_read += nalu_size;
-#endif
 
     av_shrink_packet(pkt, bytes_read);
 

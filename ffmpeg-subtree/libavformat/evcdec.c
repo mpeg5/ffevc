@@ -145,7 +145,7 @@ static int annexb_probe(const AVProbeData *p)
     return 0;
 }
 
-static int evc_read_header(AVFormatContext *s)
+static int annexb_read_header(AVFormatContext *s)
 {
     AVStream *st;
     FFStream *sti;
@@ -163,7 +163,36 @@ static int evc_read_header(AVFormatContext *s)
     st->codecpar->codec_id = AV_CODEC_ID_EVC;
     sti->need_parsing = AVSTREAM_PARSE_FULL_RAW;
 
-    av_log(s, AV_LOG_ERROR, "c->framerate: [%d %d] \n", c->framerate.num, c->framerate.den);
+    st->avg_frame_rate = c->framerate;
+    sti->avctx->framerate = c->framerate;
+
+    // taken from rawvideo demuxers
+    avpriv_set_pts_info(st, 64, 1, 1200000);
+
+fail:
+    return ret;
+}
+
+static int evc_read_header(AVFormatContext *s)
+{
+    AVStream *st;
+    FFStream *sti;
+    EVCDemuxContext *c = s->priv_data;
+    int ret = 0;
+
+    st = avformat_new_stream(s, NULL);
+    if (!st) {
+        ret = AVERROR(ENOMEM);
+        goto fail;
+    }
+    sti = ffstream(st);
+
+    st->codecpar->codec_type = AVMEDIA_TYPE_VIDEO;
+    st->codecpar->codec_id = AV_CODEC_ID_EVC;
+
+    // This causes sending to the parser full frames, not chunks of data
+    // The flag PARSER_FLAG_COMPLETE_FRAMES will be set in demux.c (demux.c: 1316)
+    sti->need_parsing = AVSTREAM_PARSE_HEADERS;
 
     st->avg_frame_rate = c->framerate;
     sti->avctx->framerate = c->framerate;
@@ -178,13 +207,20 @@ fail:
 static int annexb_read_packet(AVFormatContext *s, AVPacket *pkt)
 {
     int ret, size;
+    int eof;
 
     size = RAW_PACKET_SIZE;
+
+    eof = avio_feof (s->pb);
+    if(eof) {
+        av_packet_unref(pkt);
+        return AVERROR_EOF;
+    }
 
     if ((ret = av_new_packet(pkt, size)) < 0)
         return ret;
 
-    pkt->pos= avio_tell(s->pb);
+    pkt->pos = avio_tell(s->pb);
     pkt->stream_index = 0;
     ret = avio_read_partial(s->pb, pkt->data, size);
     if (ret < 0) {
@@ -198,18 +234,101 @@ static int annexb_read_packet(AVFormatContext *s, AVPacket *pkt)
     return ret;
 }
 
+static int evc_read_packet(AVFormatContext *s, AVPacket *pkt)
+{
+    int ret;
+    int size;
+
+    int bytes_read = 0;
+    int bytes_left = 0;
+
+    int32_t nalu_size;
+
+    int eof = avio_feof (s->pb);
+    if(eof) {
+        av_packet_unref(pkt);
+        return AVERROR_EOF;
+    }
+
+    size = RAW_PACKET_SIZE;
+    if ((ret = av_new_packet(pkt, size)) < 0)
+        return ret;
+
+    pkt->pos = avio_tell(s->pb);
+    pkt->stream_index = 0;
+
+    bytes_left = size - bytes_read;
+    if( bytes_left < EVC_NALU_LENGTH_PREFIX_SIZE ) {
+        int grow_by = size;
+        size = size * 2;
+        av_grow_packet(pkt, grow_by);
+        bytes_left = size - bytes_read;
+        av_log(s, AV_LOG_DEBUG, "Resizing packet size to: %d bytes\n", size);
+    }
+
+#ifdef USE_AVIO_READ_PARTIAL
+    ret = avio_read_partial(s->pb, pkt->data + bytes_read, EVC_NALU_LENGTH_PREFIX_SIZE);
+#else
+    ret = avio_read(s->pb, pkt->data + bytes_read, EVC_NALU_LENGTH_PREFIX_SIZE);
+#endif
+    if (ret < 0) {
+        av_packet_unref(pkt);
+        return ret;
+    }
+
+    nalu_size = read_nal_unit_length(pkt->data + bytes_read, EVC_NALU_LENGTH_PREFIX_SIZE);
+    if(nalu_size <= 0) {
+        av_packet_unref(pkt);
+        return ret;
+    }
+
+    bytes_read += ret;
+
+    bytes_left = size - bytes_read;
+    while( bytes_left < nalu_size ) {
+        int grow_by = size;
+        size = size * 2;
+        av_grow_packet(pkt, grow_by);
+        bytes_left = size - bytes_read;
+        av_log(s, AV_LOG_DEBUG, "Resizing packet size to: %d bytes\n", size);
+    }
+
+#ifdef USE_AVIO_READ_PARTIAL
+    int nalu_bytes_read = 0;
+    while(nalu_bytes_read < nalu_size) {
+        ret = avio_read_partial(s->pb, pkt->data + bytes_read + nalu_bytes_read, nalu_size - nalu_bytes_read);
+        if (ret < 0) {
+            av_packet_unref(pkt);
+            return ret;
+        }
+        nalu_bytes_read += ret;
+    }
+    bytes_read += nalu_bytes_read;
+#else
+    ret = avio_read(s->pb, pkt->data + bytes_read, nalu_size);
+    if (ret < 0) {
+        av_packet_unref(pkt);
+        return ret;
+    }
+    bytes_read += nalu_size;
+#endif
+
+    av_shrink_packet(pkt, bytes_read);
+
+    return ret;
+}
+
 static int evc_read_close(AVFormatContext *s)
 {
     return 0;
 }
 
-// FF_DEF_RAWVIDEO_DEMUXER(evc, "raw EVC video", evc_probe, "evc", AV_CODEC_ID_EVC)
 const AVInputFormat ff_evc_demuxer = {
     .name           = "evc",
     .long_name      = NULL_IF_CONFIG_SMALL("EVC Annex B"),
     .read_probe     = annexb_probe,
-    .read_header    = evc_read_header,
-    .read_packet    = annexb_read_packet,
+    .read_header    = evc_read_header, // annexb_read_header
+    .read_packet    = evc_read_packet, // annexb_read_packet
     .read_close     = evc_read_close,
     .extensions     = "evc",
     .flags          = AVFMT_GENERIC_INDEX,

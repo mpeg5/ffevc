@@ -40,6 +40,7 @@ typedef struct EVCParserContext {
     int got_pps;
     int got_idr;
     int got_nonidr;
+    int profile;
 } EVCParserContext;
 
 typedef struct EVCDemuxContext {
@@ -61,6 +62,31 @@ static const AVClass evc_demuxer_class = {
     .option     = evc_options,
     .version    = LIBAVUTIL_VERSION_INT,
 };
+
+static int get_sps_profile_idc(const uint8_t *bits, int bits_size)
+{
+    GetBitContext gb;
+    int sps_seq_parameter_set_id;
+    int profile_idc;
+    int profile;
+
+    if (init_get_bits8(&gb, bits, bits_size) < 0)
+        return -1;
+
+    sps_seq_parameter_set_id = get_ue_golomb(&gb);
+
+    if (sps_seq_parameter_set_id >= EVC_MAX_SPS_COUNT)
+        return -1;
+
+    // the Baseline profile is indicated by profile_idc eqal to 0
+    // the Main profile is indicated by profile_idc eqal to 1
+    profile_idc = get_bits(&gb, 8);
+
+    if (profile_idc == 1) profile = FF_PROFILE_EVC_MAIN;
+    else profile = FF_PROFILE_EVC_BASELINE;
+
+    return profile;
+}
 
 static int get_nalu_type(const uint8_t *bits, int bits_size)
 {
@@ -99,6 +125,15 @@ static uint32_t read_nal_unit_length(const uint8_t *bits, int bits_size)
     return nalu_len;
 }
 
+static int end_of_access_unit_found(const uint8_t *bits, int bits_size)
+{
+    int nalu_type = get_nalu_type(bits, EVC_NALU_HEADER_SIZE);
+    if (nalu_type == EVC_NOIDR_NUT || nalu_type == EVC_IDR_NUT)
+        return 1;
+
+    return 0;
+}
+
 static int parse_nal_units(const AVProbeData *p, EVCParserContext *ev)
 {
     int nalu_type;
@@ -118,17 +153,21 @@ static int parse_nal_units(const AVProbeData *p, EVCParserContext *ev)
 
         nalu_type = get_nalu_type(bits, bytes_to_read);
 
-        bits += nalu_size;
-        bytes_to_read -= nalu_size;
-
-        if (nalu_type == EVC_SPS_NUT)
+        if (nalu_type == EVC_SPS_NUT) {
+            unsigned char *rbsp = bits + EVC_NALU_HEADER_SIZE;
+            size_t rbsp_size = nalu_size - EVC_NALU_HEADER_SIZE;
+            ev->profile = get_sps_profile_idc(rbsp, rbsp_size);
             ev->got_sps++;
+        }
         else if (nalu_type == EVC_PPS_NUT)
             ev->got_pps++;
         else if (nalu_type == EVC_IDR_NUT )
             ev->got_idr++;
         else if (nalu_type == EVC_NOIDR_NUT)
             ev->got_nonidr++;
+
+        bits += nalu_size;
+        bytes_to_read -= nalu_size;
     }
 
     return 0;
@@ -206,10 +245,10 @@ fail:
 
 static int annexb_read_packet(AVFormatContext *s, AVPacket *pkt)
 {
-    int ret, size;
+    int ret, pkt_size;
     int eof;
 
-    size = RAW_PACKET_SIZE;
+    pkt_size = RAW_PACKET_SIZE;
 
     eof = avio_feof (s->pb);
     if(eof) {
@@ -217,19 +256,19 @@ static int annexb_read_packet(AVFormatContext *s, AVPacket *pkt)
         return AVERROR_EOF;
     }
 
-    if ((ret = av_new_packet(pkt, size)) < 0)
+    if ((ret = av_new_packet(pkt, pkt_size)) < 0)
         return ret;
 
     pkt->pos = avio_tell(s->pb);
     pkt->stream_index = 0;
-    ret = avio_read_partial(s->pb, pkt->data, size);
+    ret = avio_read_partial(s->pb, pkt->data, pkt_size);
     if (ret < 0) {
         av_packet_unref(pkt);
         return ret;
     }
     av_shrink_packet(pkt, ret);
 
-    av_log(s, AV_LOG_ERROR, "annexb_read_packet: %d\n", size);
+    av_log(s, AV_LOG_ERROR, "annexb_read_packet: %d\n", pkt_size);
 
     return ret;
 }
@@ -237,12 +276,13 @@ static int annexb_read_packet(AVFormatContext *s, AVPacket *pkt)
 static int evc_read_packet(AVFormatContext *s, AVPacket *pkt)
 {
     int ret;
-    int size;
+    int pkt_size;
 
     int bytes_read = 0;
     int bytes_left = 0;
 
     int32_t nalu_size;
+    int au_end_found;
 
     int eof = avio_feof (s->pb);
     if(eof) {
@@ -250,52 +290,58 @@ static int evc_read_packet(AVFormatContext *s, AVPacket *pkt)
         return AVERROR_EOF;
     }
 
-    size = RAW_PACKET_SIZE;
-    if ((ret = av_new_packet(pkt, size)) < 0)
+    pkt_size = RAW_PACKET_SIZE;
+    if ((ret = av_new_packet(pkt, pkt_size)) < 0)
         return ret;
 
     pkt->pos = avio_tell(s->pb);
     pkt->stream_index = 0;
+    au_end_found = 0;
 
-    bytes_left = size - bytes_read;
-    if( bytes_left < EVC_NALU_LENGTH_PREFIX_SIZE ) {
-        int grow_by = size;
-        size = size * 2;
-        av_grow_packet(pkt, grow_by);
-        bytes_left = size - bytes_read;
-        av_log(s, AV_LOG_DEBUG, "Resizing packet size to: %d bytes\n", size);
+    while(!au_end_found) {
+
+        bytes_left = pkt_size - bytes_read;
+        if( bytes_left < EVC_NALU_LENGTH_PREFIX_SIZE ) {
+            int grow_by = pkt_size;
+            pkt_size = pkt_size * 2;
+            av_grow_packet(pkt, grow_by);
+            bytes_left = pkt_size - bytes_read;
+            av_log(s, AV_LOG_DEBUG, "Resizing packet size to: %d bytes\n", pkt_size);
+        }
+
+        ret = avio_read(s->pb, pkt->data + bytes_read, EVC_NALU_LENGTH_PREFIX_SIZE);
+        if (ret < 0) {
+            av_packet_unref(pkt);
+            return ret;
+        }
+
+        nalu_size = read_nal_unit_length(pkt->data + bytes_read, EVC_NALU_LENGTH_PREFIX_SIZE);
+        if(nalu_size <= 0) {
+            av_packet_unref(pkt);
+            return -1;
+        }
+
+        bytes_read += ret;
+
+        bytes_left = pkt_size - bytes_read;
+        while( bytes_left < nalu_size ) {
+            int grow_by = pkt_size;
+            pkt_size = pkt_size * 2;
+            av_grow_packet(pkt, grow_by);
+            bytes_left = pkt_size - bytes_read;
+            av_log(s, AV_LOG_DEBUG, "Resizing packet pkt_size to: %d bytes\n", pkt_size);
+        }
+
+        ret = avio_read(s->pb, pkt->data + bytes_read, nalu_size);
+        if (ret < 0) {
+            av_packet_unref(pkt);
+            return ret;
+        }
+
+        au_end_found = end_of_access_unit_found(pkt->data + bytes_read, nalu_size);
+
+        bytes_read += nalu_size;
     }
-
-    ret = avio_read(s->pb, pkt->data + bytes_read, EVC_NALU_LENGTH_PREFIX_SIZE);
-    if (ret < 0) {
-        av_packet_unref(pkt);
-        return ret;
-    }
-
-    nalu_size = read_nal_unit_length(pkt->data + bytes_read, EVC_NALU_LENGTH_PREFIX_SIZE);
-    if(nalu_size <= 0) {
-        av_packet_unref(pkt);
-        return ret;
-    }
-
-    bytes_read += ret;
-
-    bytes_left = size - bytes_read;
-    while( bytes_left < nalu_size ) {
-        int grow_by = size;
-        size = size * 2;
-        av_grow_packet(pkt, grow_by);
-        bytes_left = size - bytes_read;
-        av_log(s, AV_LOG_DEBUG, "Resizing packet size to: %d bytes\n", size);
-    }
-
-    ret = avio_read(s->pb, pkt->data + bytes_read, nalu_size);
-    if (ret < 0) {
-        av_packet_unref(pkt);
-        return ret;
-    }
-    bytes_read += nalu_size;
-
     av_shrink_packet(pkt, bytes_read);
 
     return ret;

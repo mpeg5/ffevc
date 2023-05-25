@@ -25,7 +25,7 @@
 
 #include "evc.h"
 
-#define RAW_PACKET_SIZE 1024
+#define INIT_AU_BUF_CAPACITY 1024
 
 // The sturcture reflects SPS RBSP(raw byte sequence payload) layout
 // @see ISO_IEC_23094-1 section 7.3.2.1
@@ -184,8 +184,15 @@ typedef struct EVCParserPoc {
     int DocOffset;          // the decoding order count of the previous picture
 } EVCParserPoc;
 
+// Access unit data
+typedef struct AccessUnitBuffer {
+    uint8_t *data;      // the data buffer
+    size_t data_size;   // size of data in bytes
+    size_t capacity;    // buffer capacity
+} AccessUnitBuffer;
+
 typedef struct EVCMergeContext {
-    AVPacket *pkt, *in;
+    AVPacket *in;
 
     EVCParserSPS *sps[EVC_MAX_SPS_COUNT];
     EVCParserPPS *pps[EVC_MAX_PPS_COUNT];
@@ -193,7 +200,7 @@ typedef struct EVCMergeContext {
 
     EVCParserPoc poc;
 
-    // the Baseline profile is indicated BY profile eqal to 0
+    // the Baseline profile is indicated by profile eqal to 0
     // the Main profile is indicated by profile eqal to 1
     int profile;
     int nalu_type;                  // the current NALU type
@@ -201,8 +208,7 @@ typedef struct EVCMergeContext {
 
     int key_frame;
 
-    uint8_t *au_data;               // Access unit data
-    int au_size;                    // Access unit size
+    AccessUnitBuffer au_buffer;
 
 } EVCMergeContext;
 
@@ -743,14 +749,14 @@ static void evc_frame_merge_flush(AVBSFContext *bsf)
     EVCMergeContext *ctx = bsf->priv_data;
 
     av_packet_unref(ctx->in);
-    av_packet_unref(ctx->pkt);
 }
 
 static int evc_frame_merge_filter(AVBSFContext *bsf, AVPacket *out)
 {
     EVCMergeContext *ctx = bsf->priv_data;
-    AVPacket *in = ctx->in, *buffer_pkt = ctx->pkt;
-    int bytes_left = 0;
+    AVPacket *in = ctx->in;
+
+    int free_space = 0;
     size_t  nalu_size = 0;
     uint8_t *nalu = NULL;
     int au_end_found = 0;
@@ -780,29 +786,27 @@ static int evc_frame_merge_filter(AVBSFContext *bsf, AVPacket *out)
 
     au_end_found = end_of_access_unit_found(bsf);
 
-    bytes_left = buffer_pkt->size - ctx->au_size;
-    while( bytes_left < in->size ) {
-        int grow_by = (buffer_pkt->size < RAW_PACKET_SIZE) ? RAW_PACKET_SIZE : buffer_pkt->size;
-        err = av_grow_packet(buffer_pkt, grow_by);
-        if (err < 0) {
-            av_log(bsf, AV_LOG_ERROR, "Out of memory\n");
-            av_packet_unref(in);
+    free_space = ctx->au_buffer.capacity - ctx->au_buffer.data_size;
+    while( free_space < in->size ) {
+        ctx->au_buffer.capacity *= 2;
+        free_space = ctx->au_buffer.capacity - ctx->au_buffer.data_size;
 
-            return err;
+        if(free_space >= in->size) {
+            ctx->au_buffer.data = av_realloc(ctx->au_buffer.data, ctx->au_buffer.capacity);
         }
-        bytes_left = buffer_pkt->size - ctx->au_size;
     }
 
-    memcpy(buffer_pkt->data + ctx->au_size, in->data, in->size);
-    ctx->au_size += in->size;
+    memcpy(ctx->au_buffer.data + ctx->au_buffer.data_size, in->data, in->size);
+
+    ctx->au_buffer.data_size += in->size;
 
     av_packet_unref(in);
 
     if(au_end_found) {
-        av_packet_move_ref(out, buffer_pkt);
-        av_shrink_packet(out, ctx->au_size);
+        uint8_t *data = av_memdup(ctx->au_buffer.data, ctx->au_buffer.data_size);
+        err = av_packet_from_data(out, data, ctx->au_buffer.data_size);
 
-        ctx->au_size = 0;
+        ctx->au_buffer.data_size = 0;
     } else
         err = AVERROR(EAGAIN);
 
@@ -817,9 +821,12 @@ static int evc_frame_merge_init(AVBSFContext *bsf)
     EVCMergeContext *ctx = bsf->priv_data;
 
     ctx->in  = av_packet_alloc();
-    ctx->pkt = av_packet_alloc();
-    if (!ctx->in || !ctx->pkt)
+    if (!ctx->in)
         return AVERROR(ENOMEM);
+
+    ctx->au_buffer.capacity = INIT_AU_BUF_CAPACITY;
+    ctx->au_buffer.data = av_malloc(INIT_AU_BUF_CAPACITY);
+    ctx->au_buffer.data_size = 0;
 
     return 0;
 }
@@ -829,7 +836,10 @@ static void evc_frame_merge_close(AVBSFContext *bsf)
     EVCMergeContext *ctx = bsf->priv_data;
 
     av_packet_free(&ctx->in);
-    av_packet_free(&ctx->pkt);
+
+    ctx->au_buffer.capacity = 0;
+    av_freep(&ctx->au_buffer.data);
+    ctx->au_buffer.data_size = 0;
 }
 
 static const enum AVCodecID evc_frame_merge_codec_ids[] = {

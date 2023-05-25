@@ -185,20 +185,23 @@ typedef struct EVCParserPoc {
 } EVCParserPoc;
 
 typedef struct EVCMergeContext {
-    // CodedBitstreamFragment frag[2];
     AVPacket *pkt, *in;
-
-    int profile;
 
     EVCParserSPS *sps[EVC_MAX_SPS_COUNT];
     EVCParserPPS *pps[EVC_MAX_PPS_COUNT];
     EVCParserSliceHeader *slice_header[EVC_MAX_PPS_COUNT];
+
     EVCParserPoc poc;
+
+    // the Baseline profile is indicated BY profile eqal to 0
+    // the Main profile is indicated by profile eqal to 1
+    int profile;
     int nalu_type;                  // the current NALU type
     int nalu_size;                  // the current NALU size
 
     int key_frame;
 
+    uint8_t *au_data;               // Access unit data
     int au_size;                    // Access unit size
 
 } EVCMergeContext;
@@ -279,7 +282,7 @@ static int end_of_access_unit_found(AVBSFContext *s)
 }
 
 // @see ISO_IEC_23094-1 (7.3.2.1 SPS RBSP syntax)
-static EVCParserSPS *parse_sps(const uint8_t *bs, int bs_size, EVCMergeContext *ev)
+static EVCParserSPS *parse_sps(const uint8_t *bs, int bs_size, EVCMergeContext *ctx)
 {
     GetBitContext gb;
     EVCParserSPS *sps;
@@ -293,12 +296,12 @@ static EVCParserSPS *parse_sps(const uint8_t *bs, int bs_size, EVCMergeContext *
     if (sps_seq_parameter_set_id >= EVC_MAX_SPS_COUNT)
         return NULL;
 
-    if(!ev->sps[sps_seq_parameter_set_id]) {
-        if((ev->sps[sps_seq_parameter_set_id] = av_malloc(sizeof(EVCParserSPS))) == NULL)
+    if(!ctx->sps[sps_seq_parameter_set_id]) {
+        if((ctx->sps[sps_seq_parameter_set_id] = av_malloc(sizeof(EVCParserSPS))) == NULL)
             return NULL;
     }
 
-    sps = ev->sps[sps_seq_parameter_set_id];
+    sps = ctx->sps[sps_seq_parameter_set_id];
     sps->sps_seq_parameter_set_id = sps_seq_parameter_set_id;
 
     // the Baseline profile is indicated by profile_idc eqal to 0
@@ -391,7 +394,7 @@ static EVCParserSPS *parse_sps(const uint8_t *bs, int bs_size, EVCMergeContext *
 // If it will be needed, parse_sps function could be extended to handle VUI parameters parsing
 // to initialize fields of the AVCodecContex i.e. color_primaries, color_trc,color_range
 //
-static EVCParserPPS *parse_pps(const uint8_t *bs, int bs_size, EVCMergeContext *ev)
+static EVCParserPPS *parse_pps(const uint8_t *bs, int bs_size, EVCMergeContext *ctx)
 {
     GetBitContext gb;
     EVCParserPPS *pps;
@@ -405,12 +408,12 @@ static EVCParserPPS *parse_pps(const uint8_t *bs, int bs_size, EVCMergeContext *
     if (pps_pic_parameter_set_id > EVC_MAX_PPS_COUNT)
         return NULL;
 
-    if(!ev->pps[pps_pic_parameter_set_id]) {
-        if((ev->pps[pps_pic_parameter_set_id] = av_malloc(sizeof(EVCParserSPS))) == NULL)
+    if(!ctx->pps[pps_pic_parameter_set_id]) {
+        if((ctx->pps[pps_pic_parameter_set_id] = av_malloc(sizeof(EVCParserSPS))) == NULL)
             return NULL;
     }
 
-    pps = ev->pps[pps_pic_parameter_set_id];
+    pps = ctx->pps[pps_pic_parameter_set_id];
 
     pps->pps_pic_parameter_set_id = pps_pic_parameter_set_id;
 
@@ -462,7 +465,7 @@ static EVCParserPPS *parse_pps(const uint8_t *bs, int bs_size, EVCMergeContext *
 }
 
 // @see ISO_IEC_23094-1 (7.3.2.6 Slice layer RBSP syntax)
-static EVCParserSliceHeader *parse_slice_header(const uint8_t *bs, int bs_size, EVCMergeContext *ev)
+static EVCParserSliceHeader *parse_slice_header(const uint8_t *bs, int bs_size, EVCMergeContext *ctx)
 {
     GetBitContext gb;
     EVCParserSliceHeader *sh;
@@ -480,18 +483,18 @@ static EVCParserSliceHeader *parse_slice_header(const uint8_t *bs, int bs_size, 
     if (slice_pic_parameter_set_id < 0 || slice_pic_parameter_set_id >= EVC_MAX_PPS_COUNT)
         return NULL;
 
-    if(!ev->slice_header[slice_pic_parameter_set_id]) {
-        if((ev->slice_header[slice_pic_parameter_set_id] = av_malloc(sizeof(EVCParserSliceHeader))) == NULL)
+    if(!ctx->slice_header[slice_pic_parameter_set_id]) {
+        if((ctx->slice_header[slice_pic_parameter_set_id] = av_malloc(sizeof(EVCParserSliceHeader))) == NULL)
             return NULL;
     }
 
-    sh = ev->slice_header[slice_pic_parameter_set_id];
+    sh = ctx->slice_header[slice_pic_parameter_set_id];
 
-    pps = ev->pps[slice_pic_parameter_set_id];
+    pps = ctx->pps[slice_pic_parameter_set_id];
     if(!pps)
         return NULL;
 
-    sps = ev->sps[slice_pic_parameter_set_id];
+    sps = ctx->sps[slice_pic_parameter_set_id];
     if(!sps)
         return NULL;
 
@@ -519,7 +522,7 @@ static EVCParserSliceHeader *parse_slice_header(const uint8_t *bs, int bs_size, 
 
     sh->slice_type = get_ue_golomb(&gb);
 
-    if (ev->nalu_type == EVC_IDR_NUT)
+    if (ctx->nalu_type == EVC_IDR_NUT)
         skip_bits_long(&gb, 1);     /* skip no_output_of_prior_pics_flag */
 
     if (sps->sps_mmvd_flag && ((sh->slice_type == EVC_SLICE_TYPE_B) || (sh->slice_type == EVC_SLICE_TYPE_P)))
@@ -573,7 +576,7 @@ static EVCParserSliceHeader *parse_slice_header(const uint8_t *bs, int bs_size, 
         }
     }
 
-    if (ev->nalu_type != EVC_IDR_NUT) {
+    if (ctx->nalu_type != EVC_IDR_NUT) {
         if (sps->sps_pocs_flag)
             sh->slice_pic_order_cnt_lsb = get_bits(&gb, sps->log2_max_pic_order_cnt_lsb_minus4 + 4);
     }
@@ -591,7 +594,7 @@ static int parse_nal_unit(const uint8_t *buf, size_t buf_size, AVBSFContext *s)
     int tid;
     const uint8_t *data = buf;
     int data_size = buf_size;
-    EVCMergeContext *ev = s->priv_data;
+    EVCMergeContext *ctx = s->priv_data;
 
     nalu_size = buf_size;
     if (nalu_size <= 0) {
@@ -606,7 +609,7 @@ static int parse_nal_unit(const uint8_t *buf, size_t buf_size, AVBSFContext *s)
         av_log(s, AV_LOG_ERROR, "Invalid NAL unit type: (%d)\n", nalu_type);
         return AVERROR_INVALIDDATA;
     }
-    ev->nalu_type = nalu_type;
+    ctx->nalu_type = nalu_type;
 
     tid = get_temporal_id(data, data_size);
     if (tid < 0) {
@@ -621,21 +624,21 @@ static int parse_nal_unit(const uint8_t *buf, size_t buf_size, AVBSFContext *s)
     case EVC_SPS_NUT: {
         EVCParserSPS *sps;
 
-        sps = parse_sps(data, nalu_size, ev);
+        sps = parse_sps(data, nalu_size, ctx);
         if (!sps) {
             av_log(s, AV_LOG_ERROR, "SPS parsing error\n");
             return AVERROR_INVALIDDATA;
         }
 
-        if (sps->profile_idc == 1) ev->profile = FF_PROFILE_EVC_MAIN;
-        else ev->profile = FF_PROFILE_EVC_BASELINE;
+        if (sps->profile_idc == 1) ctx->profile = FF_PROFILE_EVC_MAIN;
+        else ctx->profile = FF_PROFILE_EVC_BASELINE;
 
         break;
     }
     case EVC_PPS_NUT: {
         EVCParserPPS *pps;
 
-        pps = parse_pps(data, nalu_size, ev);
+        pps = parse_pps(data, nalu_size, ctx);
         if (!pps) {
             av_log(s, AV_LOG_ERROR, "PPS parsing error\n");
             return AVERROR_INVALIDDATA;
@@ -652,31 +655,31 @@ static int parse_nal_unit(const uint8_t *buf, size_t buf_size, AVBSFContext *s)
         EVCParserSPS *sps;
         int slice_pic_parameter_set_id;
 
-        sh = parse_slice_header(data, nalu_size, ev);
+        sh = parse_slice_header(data, nalu_size, ctx);
         if (!sh) {
             av_log(s, AV_LOG_ERROR, "Slice header parsing error\n");
             return AVERROR_INVALIDDATA;
         }
 
-        ev->key_frame = (nalu_type == EVC_IDR_NUT) ? 1 : 0;
+        ctx->key_frame = (nalu_type == EVC_IDR_NUT) ? 1 : 0;
 
         // POC (picture order count of the current picture) derivation
         // @see ISO/IEC 23094-1:2020(E) 8.3.1 Decoding process for picture order count
         slice_pic_parameter_set_id = sh->slice_pic_parameter_set_id;
-        sps = ev->sps[slice_pic_parameter_set_id];
+        sps = ctx->sps[slice_pic_parameter_set_id];
 
         if (sps && sps->sps_pocs_flag) {
 
             int PicOrderCntMsb = 0;
-            ev->poc.prevPicOrderCntVal = ev->poc.PicOrderCntVal;
+            ctx->poc.prevPicOrderCntVal = ctx->poc.PicOrderCntVal;
 
             if (nalu_type == EVC_IDR_NUT)
                 PicOrderCntMsb = 0;
             else {
                 int MaxPicOrderCntLsb = 1 << (sps->log2_max_pic_order_cnt_lsb_minus4 + 4);
 
-                int prevPicOrderCntLsb = ev->poc.PicOrderCntVal & (MaxPicOrderCntLsb - 1);
-                int prevPicOrderCntMsb = ev->poc.PicOrderCntVal - prevPicOrderCntLsb;
+                int prevPicOrderCntLsb = ctx->poc.PicOrderCntVal & (MaxPicOrderCntLsb - 1);
+                int prevPicOrderCntMsb = ctx->poc.PicOrderCntVal - prevPicOrderCntLsb;
 
 
                 if ((sh->slice_pic_order_cnt_lsb < prevPicOrderCntLsb) &&
@@ -692,38 +695,38 @@ static int parse_nal_unit(const uint8_t *buf, size_t buf_size, AVBSFContext *s)
                 else
                     PicOrderCntMsb = prevPicOrderCntMsb;
             }
-            ev->poc.PicOrderCntVal = PicOrderCntMsb + sh->slice_pic_order_cnt_lsb;
+            ctx->poc.PicOrderCntVal = PicOrderCntMsb + sh->slice_pic_order_cnt_lsb;
 
         } else {
             if (nalu_type == EVC_IDR_NUT) {
-                ev->poc.PicOrderCntVal = 0;
-                ev->poc.DocOffset = -1;
+                ctx->poc.PicOrderCntVal = 0;
+                ctx->poc.DocOffset = -1;
             } else {
                 int SubGopLength = (int)pow(2.0, sps->log2_sub_gop_length);
                 if (tid == 0) {
-                    ev->poc.PicOrderCntVal = ev->poc.prevPicOrderCntVal + SubGopLength;
-                    ev->poc.DocOffset = 0;
-                    ev->poc.prevPicOrderCntVal = ev->poc.PicOrderCntVal;
+                    ctx->poc.PicOrderCntVal = ctx->poc.prevPicOrderCntVal + SubGopLength;
+                    ctx->poc.DocOffset = 0;
+                    ctx->poc.prevPicOrderCntVal = ctx->poc.PicOrderCntVal;
                 } else {
                     int ExpectedTemporalId;
                     int PocOffset;
-                    int prevDocOffset = ev->poc.DocOffset;
+                    int prevDocOffset = ctx->poc.DocOffset;
 
-                    ev->poc.DocOffset = (prevDocOffset + 1) % SubGopLength;
-                    if (ev->poc.DocOffset == 0) {
-                        ev->poc.prevPicOrderCntVal += SubGopLength;
+                    ctx->poc.DocOffset = (prevDocOffset + 1) % SubGopLength;
+                    if (ctx->poc.DocOffset == 0) {
+                        ctx->poc.prevPicOrderCntVal += SubGopLength;
                         ExpectedTemporalId = 0;
                     } else
-                        ExpectedTemporalId = 1 + (int)log2(ev->poc.DocOffset);
+                        ExpectedTemporalId = 1 + (int)log2(ctx->poc.DocOffset);
                     while (tid != ExpectedTemporalId) {
-                        ev->poc.DocOffset = (ev->poc.DocOffset + 1) % SubGopLength;
-                        if (ev->poc.DocOffset == 0)
+                        ctx->poc.DocOffset = (ctx->poc.DocOffset + 1) % SubGopLength;
+                        if (ctx->poc.DocOffset == 0)
                             ExpectedTemporalId = 0;
                         else
-                            ExpectedTemporalId = 1 + (int)log2(ev->poc.DocOffset);
+                            ExpectedTemporalId = 1 + (int)log2(ctx->poc.DocOffset);
                     }
-                    PocOffset = (int)(SubGopLength * ((2.0 * ev->poc.DocOffset + 1) / (int)pow(2.0, tid) - 2));
-                    ev->poc.PicOrderCntVal = ev->poc.prevPicOrderCntVal + PocOffset;
+                    PocOffset = (int)(SubGopLength * ((2.0 * ctx->poc.DocOffset + 1) / (int)pow(2.0, tid) - 2));
+                    ctx->poc.PicOrderCntVal = ctx->poc.prevPicOrderCntVal + PocOffset;
                 }
             }
         }
@@ -747,60 +750,61 @@ static int evc_frame_merge_filter(AVBSFContext *bsf, AVPacket *out)
 {
     EVCMergeContext *ctx = bsf->priv_data;
     AVPacket *in = ctx->in, *buffer_pkt = ctx->pkt;
-    int err;
     int bytes_left = 0;
     size_t  nalu_size = 0;
-    uint8_t* nalu = NULL;
+    uint8_t *nalu = NULL;
+    int au_end_found = 0;
+    int err;
 
     err = ff_bsf_get_packet_ref(bsf, in);
-    if (err < 0) {
-        if (err == AVERROR_EOF)
-            goto eof;
+    if (err < 0)
         return err;
-    }
 
     nalu_size = read_nal_unit_length(in->data, EVC_NALU_LENGTH_PREFIX_SIZE);
     if(nalu_size <= 0) {
-        return -1;
+        av_packet_unref(in);
+        return AVERROR_INVALIDDATA;
     }
 
     nalu = in->data + EVC_NALU_LENGTH_PREFIX_SIZE;
     nalu_size = in->size - EVC_NALU_LENGTH_PREFIX_SIZE;
 
-    // parse NAL unit is neede to determine whether we found end of AU
-    parse_nal_unit(nalu, nalu_size, bsf);
-    int au_end_found = end_of_access_unit_found(bsf);
+    // NAL unit parsing needed to determine if end of AU was found
+    err = parse_nal_unit(nalu, nalu_size, bsf);
+    if (err < 0) {
+        av_log(bsf, AV_LOG_ERROR, "NAL Unit parsing error\n");
+        av_packet_unref(in);
 
-    // buffer_pkt = av_packet_clone(in);
+        return err;
+    }
+
+    au_end_found = end_of_access_unit_found(bsf);
 
     bytes_left = buffer_pkt->size - ctx->au_size;
     while( bytes_left < in->size ) {
-         int grow_by = buffer_pkt->size;
-         buffer_pkt->size = buffer_pkt->size * 2;
-         av_grow_packet(buffer_pkt, grow_by);
-         bytes_left = buffer_pkt->size - ctx->au_size;
+        int grow_by = (buffer_pkt->size < RAW_PACKET_SIZE) ? RAW_PACKET_SIZE : buffer_pkt->size;
+        err = av_grow_packet(buffer_pkt, grow_by);
+        if (err < 0) {
+            av_log(bsf, AV_LOG_ERROR, "Out of memory\n");
+            av_packet_unref(in);
+
+            return err;
+        }
+        bytes_left = buffer_pkt->size - ctx->au_size;
     }
 
     memcpy(buffer_pkt->data + ctx->au_size, in->data, in->size);
+    ctx->au_size += in->size;
 
-    ctx->au_size+=in->size;
-
-eof:
-    if (!buffer_pkt->data ||
-        in->pts != AV_NOPTS_VALUE && buffer_pkt->pts == AV_NOPTS_VALUE) {
-        av_packet_unref(buffer_pkt);
-        av_packet_move_ref(buffer_pkt, in);
-    } else
-        av_packet_unref(in);
+    av_packet_unref(in);
 
     if(au_end_found) {
         av_packet_move_ref(out, buffer_pkt);
         av_shrink_packet(out, ctx->au_size);
-        av_grow_packet(buffer_pkt, RAW_PACKET_SIZE);
+
         ctx->au_size = 0;
-    } else {
-         err = AVERROR(EAGAIN);
-    }
+    } else
+        err = AVERROR(EAGAIN);
 
     if (err < 0 && err != AVERROR(EAGAIN))
         evc_frame_merge_flush(bsf);
@@ -817,14 +821,13 @@ static int evc_frame_merge_init(AVBSFContext *bsf)
     if (!ctx->in || !ctx->pkt)
         return AVERROR(ENOMEM);
 
-    av_new_packet(ctx->pkt, RAW_PACKET_SIZE);
-
     return 0;
 }
 
 static void evc_frame_merge_close(AVBSFContext *bsf)
 {
     EVCMergeContext *ctx = bsf->priv_data;
+
     av_packet_free(&ctx->in);
     av_packet_free(&ctx->pkt);
 }

@@ -172,12 +172,12 @@ include $(SRC_PATH)/tests/fate/cover-art.mak
 include $(SRC_PATH)/tests/fate/dca.mak
 include $(SRC_PATH)/tests/fate/demux.mak
 include $(SRC_PATH)/tests/fate/dfa.mak
-include $(SRC_PATH)/tests/fate/dnn.mak
 include $(SRC_PATH)/tests/fate/dnxhd.mak
 include $(SRC_PATH)/tests/fate/dpcm.mak
 include $(SRC_PATH)/tests/fate/dvvideo.mak
 include $(SRC_PATH)/tests/fate/ea.mak
 include $(SRC_PATH)/tests/fate/exif.mak
+include $(SRC_PATH)/tests/fate/enc_external.mak
 # Must be included after lavf-video.mak
 include $(SRC_PATH)/tests/fate/ffmpeg.mak
 include $(SRC_PATH)/tests/fate/ffprobe.mak

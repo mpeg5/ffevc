@@ -1026,10 +1026,6 @@ static OutputStream *ost_add(Muxer *mux, const OptionsContext *o,
         av_strlcat(ms->log_name, "/copy", sizeof(ms->log_name));
     }
 
-    ost->filtered_frame = av_frame_alloc();
-    if (!ost->filtered_frame)
-        report_and_exit(AVERROR(ENOMEM));
-
     ost->pkt = av_packet_alloc();
     if (!ost->pkt)
         report_and_exit(AVERROR(ENOMEM));
@@ -1229,8 +1225,14 @@ static OutputStream *ost_add(Muxer *mux, const OptionsContext *o,
                        "Error initializing a simple filtergraph\n");
                 exit_program(1);
             }
-        } else
-            ist_output_add(ost->ist, ost);
+        } else {
+            ret = ist_output_add(ost->ist, ost);
+            if (ret < 0) {
+                av_log(ost, AV_LOG_ERROR,
+                       "Error binding an input stream\n");
+                exit_program(1);
+            }
+        }
     }
 
     if (ost->ist && !ost->enc) {

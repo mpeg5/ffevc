@@ -1023,7 +1023,12 @@ If @var{pix_fmt} is a single @code{+}, ffmpeg selects the same pixel format
 as the input (or graph output) and automatic conversions are disabled.
 
 @item -sws_flags @var{flags} (@emph{input/output})
-Set SwScaler flags.
+Set default flags for the libswscale library. These flags are used by
+automatically inserted @code{scale} filters and those within simple
+filtergraphs, if not overridden within the filtergraph definition.
+
+See the @ref{scaler_options,,ffmpeg-scaler manual,ffmpeg-scaler} for a list
+of scaler options.
 
 @item -rc_override[:@var{stream_specifier}] @var{override} (@emph{output,per-stream})
 Rate control override for specific intervals, formatted as "int,int,int"
@@ -1708,6 +1713,9 @@ it may cause packet loss.
 It is useful for when flow speed of output packets is important, such as live streaming.
 @item -re (@emph{input})
 Read input at native frame rate. This is equivalent to setting @code{-readrate 1}.
+@item -readrate_initial_burst @var{seconds}
+Set an initial read burst time, in seconds, after which @option{-re/-readrate}
+will be enforced.
 @item -vsync @var{parameter} (@emph{global})
 @itemx -fps_mode[:@var{stream_specifier}] @var{parameter} (@emph{output,per-stream})
 Set video sync method / framerate mode. vsync is applied to all output video streams
@@ -1748,12 +1756,6 @@ be before they are dropped. In frame rate units, so 1.0 is one frame.
 The default is -1.1. One possible usecase is to avoid framedrops in case
 of noisy timestamps or to increase frame drop precision in case of exact
 timestamps.
-
-@item -adrift_threshold @var{time}
-Set the minimum difference between timestamps and audio data (in seconds) to trigger
-adding/dropping samples to make it match the timestamps. This option effectively is
-a threshold to select between hard (add/drop) and soft (squeeze/stretch) compensation.
-@code{-async} must be set to a positive value.
 
 @item -apad @var{parameters} (@emph{output,per-stream})
 Pad the output audio stream(s). This is the same as applying @code{-af apad}.

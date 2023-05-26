@@ -927,8 +927,18 @@ int ff_hevc_parse_sps(HEVCSPS *sps, GetBitContext *gb, unsigned int *sps_id,
         sps->output_window = sps->pic_conf_win;
     }
 
-    sps->bit_depth   = get_ue_golomb_long(gb) + 8;
-    bit_depth_chroma = get_ue_golomb_long(gb) + 8;
+    sps->bit_depth = get_ue_golomb_31(gb) + 8;
+    if (sps->bit_depth > 16) {
+        av_log(avctx, AV_LOG_ERROR, "Luma bit depth (%d) is out of range\n",
+               sps->bit_depth);
+        return AVERROR_INVALIDDATA;
+    }
+    bit_depth_chroma = get_ue_golomb_31(gb) + 8;
+    if (bit_depth_chroma > 16) {
+        av_log(avctx, AV_LOG_ERROR, "Chroma bit depth (%d) is out of range\n",
+               bit_depth_chroma);
+        return AVERROR_INVALIDDATA;
+    }
     if (sps->chroma_format_idc && bit_depth_chroma != sps->bit_depth) {
         av_log(avctx, AV_LOG_ERROR,
                "Luma bit depth (%d) is different from chroma bit depth (%d), "
@@ -1140,17 +1150,24 @@ int ff_hevc_parse_sps(HEVCSPS *sps, GetBitContext *gb, unsigned int *sps_id,
             sps->sps_curr_pic_ref_enabled_flag = get_bits1(gb);
             sps->palette_mode_enabled_flag     = get_bits1(gb);
             if (sps->palette_mode_enabled_flag) {
-                sps->palette_max_size = get_ue_golomb_long(gb);
-                sps->delta_palette_max_predictor_size = get_ue_golomb_long(gb);
+                sps->palette_max_size = get_ue_golomb(gb);
+                sps->delta_palette_max_predictor_size = get_ue_golomb(gb);
                 sps->sps_palette_predictor_initializers_present_flag = get_bits1(gb);
 
                 if (sps->sps_palette_predictor_initializers_present_flag) {
-                    sps->sps_num_palette_predictor_initializers_minus1 = get_ue_golomb_long(gb);
+                    sps->sps_num_palette_predictor_initializers = get_ue_golomb(gb) + 1;
+                    if (sps->sps_num_palette_predictor_initializers > HEVC_MAX_PALETTE_PREDICTOR_SIZE) {
+                        av_log(avctx, AV_LOG_ERROR,
+                               "sps_num_palette_predictor_initializers out of range: %u\n",
+                               sps->sps_num_palette_predictor_initializers);
+                        return AVERROR_INVALIDDATA;
+                    }
                     num_comps = !sps->chroma_format_idc ? 1 : 3;
-                    for (int comp = 0; comp < num_comps; comp++)
-                        for (i = 0; i <= sps->sps_num_palette_predictor_initializers_minus1; i++)
-                            sps->sps_palette_predictor_initializer[comp][i] =
-                                    get_bits(gb, !comp ? sps->bit_depth : sps->bit_depth_chroma);
+                    for (int comp = 0; comp < num_comps; comp++) {
+                        int bit_depth = !comp ? sps->bit_depth : sps->bit_depth_chroma;
+                        for (i = 0; i < sps->sps_num_palette_predictor_initializers; i++)
+                            sps->sps_palette_predictor_initializer[comp][i] = get_bits(gb, bit_depth);
+                    }
                 }
             }
             sps->motion_vector_resolution_control_idc   = get_bits(gb, 2);
@@ -1357,10 +1374,15 @@ static void colour_mapping_octants(GetBitContext *gb, HEVCPPS *pps, int inp_dept
         }
 }
 
-static void colour_mapping_table(GetBitContext *gb, HEVCPPS *pps)
+static int colour_mapping_table(GetBitContext *gb, AVCodecContext *avctx, HEVCPPS *pps)
 {
-    pps->num_cm_ref_layers_minus1 = get_ue_golomb_long(gb);
-    for (int i = 0; i <= pps->num_cm_ref_layers_minus1; i++)
+    pps->num_cm_ref_layers = get_ue_golomb(gb) + 1;
+    if (pps->num_cm_ref_layers > 62) {
+        av_log(avctx, AV_LOG_ERROR,
+               "num_cm_ref_layers_minus1 shall be in the range [0, 61].\n");
+        return AVERROR_INVALIDDATA;
+    }
+    for (int i = 0; i < pps->num_cm_ref_layers; i++)
         pps->cm_ref_layer_id[i] = get_bits(gb, 6);
 
     pps->cm_octant_depth = get_bits(gb, 2);
@@ -1380,6 +1402,8 @@ static void colour_mapping_table(GetBitContext *gb, HEVCPPS *pps)
     }
 
     colour_mapping_octants(gb, pps, 0, 0, 0, 0, 1 << pps->cm_octant_depth);
+
+    return 0;
 }
 
 static int pps_multilayer_extension(GetBitContext *gb, AVCodecContext *avctx,
@@ -1422,8 +1446,11 @@ static int pps_multilayer_extension(GetBitContext *gb, AVCodecContext *avctx,
     }
 
     pps->colour_mapping_enabled_flag = get_bits1(gb);
-    if (pps->colour_mapping_enabled_flag)
-        colour_mapping_table(gb, pps);
+    if (pps->colour_mapping_enabled_flag) {
+        int ret = colour_mapping_table(gb, avctx, pps);
+        if (ret < 0)
+            return ret;
+    }
 
     return 0;
 }
@@ -1478,33 +1505,33 @@ static int pps_range_extensions(GetBitContext *gb, AVCodecContext *avctx,
                                 HEVCPPS *pps, HEVCSPS *sps)
 {
     if (pps->transform_skip_enabled_flag) {
-        pps->log2_max_transform_skip_block_size = get_ue_golomb_long(gb) + 2;
+        pps->log2_max_transform_skip_block_size = get_ue_golomb_31(gb) + 2;
     }
     pps->cross_component_prediction_enabled_flag = get_bits1(gb);
     pps->chroma_qp_offset_list_enabled_flag = get_bits1(gb);
     if (pps->chroma_qp_offset_list_enabled_flag) {
-        pps->diff_cu_chroma_qp_offset_depth = get_ue_golomb_long(gb);
-        pps->chroma_qp_offset_list_len_minus1 = get_ue_golomb_long(gb);
+        pps->diff_cu_chroma_qp_offset_depth = get_ue_golomb_31(gb);
+        pps->chroma_qp_offset_list_len_minus1 = get_ue_golomb_31(gb);
         if (pps->chroma_qp_offset_list_len_minus1 > 5) {
             av_log(avctx, AV_LOG_ERROR,
                    "chroma_qp_offset_list_len_minus1 shall be in the range [0, 5].\n");
             return AVERROR_INVALIDDATA;
         }
         for (int i = 0; i <= pps->chroma_qp_offset_list_len_minus1; i++) {
-            pps->cb_qp_offset_list[i] = get_se_golomb_long(gb);
+            pps->cb_qp_offset_list[i] = get_se_golomb(gb);
             if (pps->cb_qp_offset_list[i]) {
                 av_log(avctx, AV_LOG_WARNING,
                        "cb_qp_offset_list not tested yet.\n");
             }
-            pps->cr_qp_offset_list[i] = get_se_golomb_long(gb);
+            pps->cr_qp_offset_list[i] = get_se_golomb(gb);
             if (pps->cr_qp_offset_list[i]) {
                 av_log(avctx, AV_LOG_WARNING,
                        "cb_qp_offset_list not tested yet.\n");
             }
         }
     }
-    pps->log2_sao_offset_scale_luma = get_ue_golomb_long(gb);
-    pps->log2_sao_offset_scale_chroma = get_ue_golomb_long(gb);
+    pps->log2_sao_offset_scale_luma = get_ue_golomb_31(gb);
+    pps->log2_sao_offset_scale_chroma = get_ue_golomb_31(gb);
 
     if (   pps->log2_sao_offset_scale_luma   > FFMAX(sps->bit_depth        - 10, 0)
         || pps->log2_sao_offset_scale_chroma > FFMAX(sps->bit_depth_chroma - 10, 0)
@@ -1522,9 +1549,9 @@ static int pps_scc_extension(GetBitContext *gb, AVCodecContext *avctx,
     pps->pps_curr_pic_ref_enabled_flag = get_bits1(gb);
     if (pps->residual_adaptive_colour_transform_enabled_flag = get_bits1(gb)) {
         pps->pps_slice_act_qp_offsets_present_flag = get_bits1(gb);
-        pps->pps_act_y_qp_offset  = get_se_golomb_long(gb) - 5;
-        pps->pps_act_cb_qp_offset = get_se_golomb_long(gb) - 5;
-        pps->pps_act_cr_qp_offset = get_se_golomb_long(gb) - 3;
+        pps->pps_act_y_qp_offset  = get_se_golomb(gb) - 5;
+        pps->pps_act_cb_qp_offset = get_se_golomb(gb) - 5;
+        pps->pps_act_cr_qp_offset = get_se_golomb(gb) - 3;
 
 #define CHECK_QP_OFFSET(name) (pps->pps_act_ ## name ## _qp_offset <= -12 || \
                                pps->pps_act_ ## name ## _qp_offset >= 12)
@@ -1538,17 +1565,28 @@ static int pps_scc_extension(GetBitContext *gb, AVCodecContext *avctx,
     }
 
     if (pps->pps_palette_predictor_initializers_present_flag = get_bits1(gb)) {
-        if ((pps->pps_num_palette_predictor_initializers = get_ue_golomb_long(gb)) > 0) {
+        pps->pps_num_palette_predictor_initializers = get_ue_golomb(gb);
+        if (pps->pps_num_palette_predictor_initializers > 0) {
+            if (pps->pps_num_palette_predictor_initializers > HEVC_MAX_PALETTE_PREDICTOR_SIZE) {
+                av_log(avctx, AV_LOG_ERROR,
+                       "pps_num_palette_predictor_initializers out of range: %u\n",
+                       pps->pps_num_palette_predictor_initializers);
+                return AVERROR_INVALIDDATA;
+            }
             pps->monochrome_palette_flag = get_bits1(gb);
-            pps->luma_bit_depth_entry_minus8 = get_ue_golomb_long(gb);
+            pps->luma_bit_depth_entry = get_ue_golomb_31(gb) + 8;
             if (!pps->monochrome_palette_flag)
-                pps->chroma_bit_depth_entry_minus8 = get_ue_golomb_long(gb);
+                pps->chroma_bit_depth_entry = get_ue_golomb_31(gb) + 8;
+
+            if (pps->chroma_bit_depth_entry > 16 || pps->chroma_bit_depth_entry > 16)
+                return AVERROR_INVALIDDATA;
+
             num_comps = pps->monochrome_palette_flag ? 1 : 3;
-            for (int comp = 0; comp < num_comps; comp++)
+            for (int comp = 0; comp < num_comps; comp++) {
+                int bit_depth = !comp ? pps->luma_bit_depth_entry : pps->chroma_bit_depth_entry;
                 for (int i = 0; i < pps->pps_num_palette_predictor_initializers; i++)
-                    pps->pps_palette_predictor_initializer[comp][i] =
-                        get_bits(gb, 8 + (!comp ? pps->luma_bit_depth_entry_minus8 :
-                                          pps->chroma_bit_depth_entry_minus8));
+                    pps->pps_palette_predictor_initializer[comp][i] = get_bits(gb, bit_depth);
+            }
         }
     }
 

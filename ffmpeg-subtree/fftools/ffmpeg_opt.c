@@ -1347,6 +1347,14 @@ static int opt_qphist(void *optctx, const char *opt, const char *arg)
 }
 #endif
 
+#if FFMPEG_OPT_ADRIFT_THRESHOLD
+static int opt_adrift_threshold(void *optctx, const char *opt, const char *arg)
+{
+    av_log(NULL, AV_LOG_WARNING, "Option -%s is deprecated and has no effect\n", opt);
+    return 0;
+}
+#endif
+
 #define OFFSET(x) offsetof(OptionsContext, x)
 const OptionDef options[] = {
     /* main options */
@@ -1446,6 +1454,9 @@ const OptionDef options[] = {
     { "readrate",       HAS_ARG | OPT_FLOAT | OPT_OFFSET |
                         OPT_EXPERT | OPT_INPUT,                      { .off = OFFSET(readrate) },
         "read input at specified rate", "speed" },
+    { "readrate_initial_burst", HAS_ARG | OPT_DOUBLE | OPT_OFFSET |
+                                OPT_EXPERT | OPT_INPUT,              { .off = OFFSET(readrate_initial_burst) },
+        "The initial amount of input to burst read before imposing any readrate", "seconds" },
     { "target",         HAS_ARG | OPT_PERFILE | OPT_OUTPUT,          { .func_arg = opt_target },
         "specify target file type (\"vcd\", \"svcd\", \"dvd\", \"dv\" or \"dv50\" "
         "with optional prefixes \"pal-\", \"ntsc-\" or \"film-\")", "type" },
@@ -1453,8 +1464,10 @@ const OptionDef options[] = {
         "set video sync method globally; deprecated, use -fps_mode", "" },
     { "frame_drop_threshold", HAS_ARG | OPT_FLOAT | OPT_EXPERT,      { &frame_drop_threshold },
         "frame drop threshold", "" },
-    { "adrift_threshold", HAS_ARG | OPT_FLOAT | OPT_EXPERT,          { &audio_drift_threshold },
-        "audio drift threshold", "threshold" },
+#if FFMPEG_OPT_ADRIFT_THRESHOLD
+    { "adrift_threshold", HAS_ARG | OPT_EXPERT,                      { .func_arg = opt_adrift_threshold },
+        "deprecated, does nothing", "threshold" },
+#endif
     { "copyts",         OPT_BOOL | OPT_EXPERT,                       { &copy_ts },
         "copy timestamps" },
     { "start_at_zero",  OPT_BOOL | OPT_EXPERT,                       { &start_at_zero },

@@ -219,7 +219,7 @@ typedef struct HEVCSPS {
     int palette_max_size;
     int delta_palette_max_predictor_size;
     int sps_palette_predictor_initializers_present_flag;
-    int sps_num_palette_predictor_initializers_minus1;
+    int sps_num_palette_predictor_initializers;
     int sps_palette_predictor_initializer[3][HEVC_MAX_PALETTE_PREDICTOR_SIZE];
     int motion_vector_resolution_control_idc;
     int intra_boundary_filtering_disabled_flag;
@@ -332,8 +332,8 @@ typedef struct HEVCPPS {
     int8_t phase_hor_chroma[64];
     int8_t phase_ver_chroma[64];
     uint8_t colour_mapping_enabled_flag;
-    uint16_t num_cm_ref_layers_minus1;
-    uint8_t cm_ref_layer_id[63];
+    uint8_t num_cm_ref_layers;
+    uint8_t cm_ref_layer_id[62];
     uint8_t cm_octant_depth;
     uint8_t cm_y_part_num_log2;
     uint8_t luma_bit_depth_cm_input;
@@ -358,9 +358,9 @@ typedef struct HEVCPPS {
     uint8_t pps_palette_predictor_initializers_present_flag;
     uint8_t pps_num_palette_predictor_initializers;
     uint8_t monochrome_palette_flag;
-    uint8_t luma_bit_depth_entry_minus8;
-    uint8_t chroma_bit_depth_entry_minus8;
-    uint8_t pps_palette_predictor_initializer[3][HEVC_MAX_PALETTE_PREDICTOR_SIZE];
+    uint8_t luma_bit_depth_entry;
+    uint8_t chroma_bit_depth_entry;
+    uint16_t pps_palette_predictor_initializer[3][HEVC_MAX_PALETTE_PREDICTOR_SIZE];
 
     // Inferred parameters
     unsigned int *column_width;  ///< ColumnWidth

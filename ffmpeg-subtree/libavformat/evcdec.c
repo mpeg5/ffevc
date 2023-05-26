@@ -149,34 +149,6 @@ static int annexb_probe(const AVProbeData *p)
     return 0;
 }
 
-static int annexb_read_header(AVFormatContext *s)
-{
-    AVStream *st;
-    FFStream *sti;
-    EVCDemuxContext *c = s->priv_data;
-    int ret = 0;
-
-    st = avformat_new_stream(s, NULL);
-    if (!st) {
-        ret = AVERROR(ENOMEM);
-        goto fail;
-    }
-    sti = ffstream(st);
-
-    st->codecpar->codec_type = AVMEDIA_TYPE_VIDEO;
-    st->codecpar->codec_id = AV_CODEC_ID_EVC;
-    sti->need_parsing = AVSTREAM_PARSE_FULL_RAW;
-
-    st->avg_frame_rate = c->framerate;
-    sti->avctx->framerate = c->framerate;
-
-    // taken from rawvideo demuxers
-    avpriv_set_pts_info(st, 64, 1, 1200000);
-
-fail:
-    return ret;
-}
-
 static int evc_read_header(AVFormatContext *s)
 {
     AVStream *st;
@@ -218,36 +190,6 @@ static int evc_read_header(AVFormatContext *s)
         return ret;
 
 fail:
-    return ret;
-}
-
-static int annexb_read_packet(AVFormatContext *s, AVPacket *pkt)
-{
-    int ret, pkt_size;
-    int eof;
-
-    pkt_size = RAW_PACKET_SIZE;
-
-    eof = avio_feof (s->pb);
-    if(eof) {
-        av_packet_unref(pkt);
-        return AVERROR_EOF;
-    }
-
-    if ((ret = av_new_packet(pkt, pkt_size)) < 0)
-        return ret;
-
-    pkt->pos = avio_tell(s->pb);
-    pkt->stream_index = 0;
-    ret = avio_read_partial(s->pb, pkt->data, pkt_size);
-    if (ret < 0) {
-        av_packet_unref(pkt);
-        return ret;
-    }
-    av_shrink_packet(pkt, ret);
-
-    av_log(s, AV_LOG_ERROR, "annexb_read_packet: %d\n", pkt_size);
-
     return ret;
 }
 

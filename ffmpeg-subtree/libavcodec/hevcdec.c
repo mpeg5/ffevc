@@ -405,7 +405,8 @@ static enum AVPixelFormat get_format(HEVCContext *s, const HEVCSPS *sps)
                      CONFIG_HEVC_NVDEC_HWACCEL + \
                      CONFIG_HEVC_VAAPI_HWACCEL + \
                      CONFIG_HEVC_VIDEOTOOLBOX_HWACCEL + \
-                     CONFIG_HEVC_VDPAU_HWACCEL)
+                     CONFIG_HEVC_VDPAU_HWACCEL + \
+                     CONFIG_HEVC_VULKAN_HWACCEL)
     enum AVPixelFormat pix_fmts[HWACCEL_MAX + 2], *fmt = pix_fmts;
 
     switch (sps->pix_fmt) {
@@ -430,6 +431,9 @@ static enum AVPixelFormat get_format(HEVCContext *s, const HEVCSPS *sps)
 #if CONFIG_HEVC_VIDEOTOOLBOX_HWACCEL
         *fmt++ = AV_PIX_FMT_VIDEOTOOLBOX;
 #endif
+#if CONFIG_HEVC_VULKAN_HWACCEL
+        *fmt++ = AV_PIX_FMT_VULKAN;
+#endif
         break;
     case AV_PIX_FMT_YUV420P10:
 #if CONFIG_HEVC_DXVA2_HWACCEL
@@ -444,6 +448,9 @@ static enum AVPixelFormat get_format(HEVCContext *s, const HEVCSPS *sps)
 #endif
 #if CONFIG_HEVC_VIDEOTOOLBOX_HWACCEL
         *fmt++ = AV_PIX_FMT_VIDEOTOOLBOX;
+#endif
+#if CONFIG_HEVC_VULKAN_HWACCEL
+        *fmt++ = AV_PIX_FMT_VULKAN;
 #endif
 #if CONFIG_HEVC_VDPAU_HWACCEL
         *fmt++ = AV_PIX_FMT_VDPAU;
@@ -465,6 +472,9 @@ static enum AVPixelFormat get_format(HEVCContext *s, const HEVCSPS *sps)
 #if CONFIG_HEVC_VIDEOTOOLBOX_HWACCEL
         *fmt++ = AV_PIX_FMT_VIDEOTOOLBOX;
 #endif
+#if CONFIG_HEVC_VULKAN_HWACCEL
+        *fmt++ = AV_PIX_FMT_VULKAN;
+#endif
         break;
     case AV_PIX_FMT_YUV422P:
     case AV_PIX_FMT_YUV422P10LE:
@@ -474,11 +484,15 @@ static enum AVPixelFormat get_format(HEVCContext *s, const HEVCSPS *sps)
 #if CONFIG_HEVC_VIDEOTOOLBOX_HWACCEL
         *fmt++ = AV_PIX_FMT_VIDEOTOOLBOX;
 #endif
+#if CONFIG_HEVC_VULKAN_HWACCEL
+        *fmt++ = AV_PIX_FMT_VULKAN;
+#endif
         break;
     case AV_PIX_FMT_YUV444P10:
 #if CONFIG_HEVC_VIDEOTOOLBOX_HWACCEL
         *fmt++ = AV_PIX_FMT_VIDEOTOOLBOX;
 #endif
+    /* NOTE: fallthrough */
     case AV_PIX_FMT_YUV420P12:
     case AV_PIX_FMT_YUV444P12:
 #if CONFIG_HEVC_VAAPI_HWACCEL
@@ -487,6 +501,9 @@ static enum AVPixelFormat get_format(HEVCContext *s, const HEVCSPS *sps)
 #if CONFIG_HEVC_VDPAU_HWACCEL
         *fmt++ = AV_PIX_FMT_VDPAU;
 #endif
+#if CONFIG_HEVC_VULKAN_HWACCEL
+        *fmt++ = AV_PIX_FMT_VULKAN;
+#endif
 #if CONFIG_HEVC_NVDEC_HWACCEL
         *fmt++ = AV_PIX_FMT_CUDA;
 #endif
@@ -494,6 +511,9 @@ static enum AVPixelFormat get_format(HEVCContext *s, const HEVCSPS *sps)
     case AV_PIX_FMT_YUV422P12:
 #if CONFIG_HEVC_VAAPI_HWACCEL
        *fmt++ = AV_PIX_FMT_VAAPI;
+#endif
+#if CONFIG_HEVC_VULKAN_HWACCEL
+        *fmt++ = AV_PIX_FMT_VULKAN;
 #endif
         break;
     }
@@ -703,6 +723,7 @@ static int hls_slice_header(HEVCContext *s)
                 if (ret < 0)
                     return ret;
 
+                sh->bits_used_for_short_term_rps = pos - get_bits_left(gb);
                 sh->short_term_rps = &sh->slice_rps;
             } else {
                 int numbits, rps_idx;
@@ -3707,6 +3728,9 @@ static void hevc_decode_flush(AVCodecContext *avctx)
     av_buffer_unref(&s->rpu_buf);
     s->max_ra = INT_MAX;
     s->eos = 1;
+
+    if (avctx->hwaccel && avctx->hwaccel->flush)
+        avctx->hwaccel->flush(avctx);
 }
 
 #define OFFSET(x) offsetof(HEVCContext, x)
@@ -3765,6 +3789,9 @@ const FFCodec ff_hevc_decoder = {
 #endif
 #if CONFIG_HEVC_VIDEOTOOLBOX_HWACCEL
                                HWACCEL_VIDEOTOOLBOX(hevc),
+#endif
+#if CONFIG_HEVC_VULKAN_HWACCEL
+                               HWACCEL_VULKAN(hevc),
 #endif
                                NULL
                            },

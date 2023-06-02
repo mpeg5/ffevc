@@ -31,6 +31,63 @@
 
 #include "ffmpeg.h"
 
+struct Decoder {
+    AVFrame         *frame;
+    AVPacket        *pkt;
+
+    // pts/estimated duration of the last decoded frame
+    // * in decoder timebase for video,
+    // * in last_frame_tb (may change during decoding) for audio
+    int64_t         last_frame_pts;
+    int64_t         last_frame_duration_est;
+    AVRational      last_frame_tb;
+    int64_t         last_filter_in_rescale_delta;
+    int             last_frame_sample_rate;
+};
+
+void dec_free(Decoder **pdec)
+{
+    Decoder *dec = *pdec;
+
+    if (!dec)
+        return;
+
+    av_frame_free(&dec->frame);
+    av_packet_free(&dec->pkt);
+
+    av_freep(pdec);
+}
+
+static int dec_alloc(Decoder **pdec)
+{
+    Decoder *dec;
+
+    *pdec = NULL;
+
+    dec = av_mallocz(sizeof(*dec));
+    if (!dec)
+        return AVERROR(ENOMEM);
+
+    dec->frame = av_frame_alloc();
+    if (!dec->frame)
+        goto fail;
+
+    dec->pkt = av_packet_alloc();
+    if (!dec->pkt)
+        goto fail;
+
+    dec->last_filter_in_rescale_delta = AV_NOPTS_VALUE;
+    dec->last_frame_pts               = AV_NOPTS_VALUE;
+    dec->last_frame_tb                = (AVRational){ 1, 1 };
+
+    *pdec = dec;
+
+    return 0;
+fail:
+    dec_free(&dec);
+    return AVERROR(ENOMEM);
+}
+
 static int send_frame_to_filters(InputStream *ist, AVFrame *decoded_frame)
 {
     int i, ret;
@@ -49,21 +106,22 @@ static int send_frame_to_filters(InputStream *ist, AVFrame *decoded_frame)
     return ret;
 }
 
-static AVRational audio_samplerate_update(InputStream *ist, const AVFrame *frame)
+static AVRational audio_samplerate_update(void *logctx, Decoder *d,
+                                          const AVFrame *frame)
 {
-    const int prev = ist->last_frame_tb.den;
+    const int prev = d->last_frame_tb.den;
     const int sr   = frame->sample_rate;
 
     AVRational tb_new;
     int64_t gcd;
 
-    if (frame->sample_rate == ist->last_frame_sample_rate)
+    if (frame->sample_rate == d->last_frame_sample_rate)
         goto finish;
 
     gcd  = av_gcd(prev, sr);
 
     if (prev / gcd >= INT_MAX / sr) {
-        av_log(ist, AV_LOG_WARNING,
+        av_log(logctx, AV_LOG_WARNING,
                "Audio timestamps cannot be represented exactly after "
                "sample rate change: %d -> %d\n", prev, sr);
 
@@ -78,20 +136,20 @@ static AVRational audio_samplerate_update(InputStream *ist, const AVFrame *frame
         !(frame->time_base.den % tb_new.den))
         tb_new = frame->time_base;
 
-    if (ist->last_frame_pts != AV_NOPTS_VALUE)
-        ist->last_frame_pts = av_rescale_q(ist->last_frame_pts,
-                                           ist->last_frame_tb, tb_new);
-    ist->last_frame_duration_est = av_rescale_q(ist->last_frame_duration_est,
-                                                ist->last_frame_tb, tb_new);
+    if (d->last_frame_pts != AV_NOPTS_VALUE)
+        d->last_frame_pts = av_rescale_q(d->last_frame_pts,
+                                         d->last_frame_tb, tb_new);
+    d->last_frame_duration_est = av_rescale_q(d->last_frame_duration_est,
+                                              d->last_frame_tb, tb_new);
 
-    ist->last_frame_tb          = tb_new;
-    ist->last_frame_sample_rate = frame->sample_rate;
+    d->last_frame_tb          = tb_new;
+    d->last_frame_sample_rate = frame->sample_rate;
 
 finish:
-    return ist->last_frame_tb;
+    return d->last_frame_tb;
 }
 
-static void audio_ts_process(InputStream *ist, AVFrame *frame)
+static void audio_ts_process(void *logctx, Decoder *d, AVFrame *frame)
 {
     AVRational tb_filter = (AVRational){1, frame->sample_rate};
     AVRational tb;
@@ -100,27 +158,27 @@ static void audio_ts_process(InputStream *ist, AVFrame *frame)
     // on samplerate change, choose a new internal timebase for timestamp
     // generation that can represent timestamps from all the samplerates
     // seen so far
-    tb = audio_samplerate_update(ist, frame);
-    pts_pred = ist->last_frame_pts == AV_NOPTS_VALUE ? 0 :
-               ist->last_frame_pts + ist->last_frame_duration_est;
+    tb = audio_samplerate_update(logctx, d, frame);
+    pts_pred = d->last_frame_pts == AV_NOPTS_VALUE ? 0 :
+               d->last_frame_pts + d->last_frame_duration_est;
 
     if (frame->pts == AV_NOPTS_VALUE) {
         frame->pts = pts_pred;
         frame->time_base = tb;
-    } else if (ist->last_frame_pts != AV_NOPTS_VALUE &&
+    } else if (d->last_frame_pts != AV_NOPTS_VALUE &&
                frame->pts > av_rescale_q_rnd(pts_pred, tb, frame->time_base,
                                              AV_ROUND_UP)) {
         // there was a gap in timestamps, reset conversion state
-        ist->filter_in_rescale_delta_last = AV_NOPTS_VALUE;
+        d->last_filter_in_rescale_delta = AV_NOPTS_VALUE;
     }
 
     frame->pts = av_rescale_delta(frame->time_base, frame->pts,
                                   tb, frame->nb_samples,
-                                  &ist->filter_in_rescale_delta_last, tb);
+                                  &d->last_filter_in_rescale_delta, tb);
 
-    ist->last_frame_pts          = frame->pts;
-    ist->last_frame_duration_est = av_rescale_q(frame->nb_samples,
-                                                tb_filter, tb);
+    d->last_frame_pts          = frame->pts;
+    d->last_frame_duration_est = av_rescale_q(frame->nb_samples,
+                                              tb_filter, tb);
 
     // finally convert to filtering timebase
     frame->pts       = av_rescale_q(frame->pts, tb, tb_filter);
@@ -130,6 +188,7 @@ static void audio_ts_process(InputStream *ist, AVFrame *frame)
 
 static int64_t video_duration_estimate(const InputStream *ist, const AVFrame *frame)
 {
+    const Decoder         *d = ist->decoder;
     const InputFile   *ifile = input_files[ist->file_index];
     int64_t codec_duration = 0;
 
@@ -157,9 +216,9 @@ static int64_t video_duration_estimate(const InputStream *ist, const AVFrame *fr
 
     // when timestamps are available, repeat last frame's actual duration
     // (i.e. pts difference between this and last frame)
-    if (frame->pts != AV_NOPTS_VALUE && ist->last_frame_pts != AV_NOPTS_VALUE &&
-        frame->pts > ist->last_frame_pts)
-        return frame->pts - ist->last_frame_pts;
+    if (frame->pts != AV_NOPTS_VALUE && d->last_frame_pts != AV_NOPTS_VALUE &&
+        frame->pts > d->last_frame_pts)
+        return frame->pts - d->last_frame_pts;
 
     // try frame/codec duration
     if (frame->duration > 0)
@@ -176,11 +235,13 @@ static int64_t video_duration_estimate(const InputStream *ist, const AVFrame *fr
     }
 
     // last resort is last frame's estimated duration, and 1
-    return FFMAX(ist->last_frame_duration_est, 1);
+    return FFMAX(d->last_frame_duration_est, 1);
 }
 
 static int video_frame_process(InputStream *ist, AVFrame *frame)
 {
+    Decoder *d = ist->decoder;
+
     // The following line may be required in some cases where there is no parser
     // or the parser does not has_b_frames correctly
     if (ist->par->video_delay < ist->dec_ctx->has_b_frames) {
@@ -228,13 +289,13 @@ static int video_frame_process(InputStream *ist, AVFrame *frame)
 
     // no timestamp available - extrapolate from previous frame duration
     if (frame->pts == AV_NOPTS_VALUE)
-        frame->pts = ist->last_frame_pts == AV_NOPTS_VALUE ? 0 :
-                     ist->last_frame_pts + ist->last_frame_duration_est;
+        frame->pts = d->last_frame_pts == AV_NOPTS_VALUE ? 0 :
+                     d->last_frame_pts + d->last_frame_duration_est;
 
     // update timestamp history
-    ist->last_frame_duration_est = video_duration_estimate(ist, frame);
-    ist->last_frame_pts          = frame->pts;
-    ist->last_frame_tb           = frame->time_base;
+    d->last_frame_duration_est = video_duration_estimate(ist, frame);
+    d->last_frame_pts          = frame->pts;
+    d->last_frame_tb           = frame->time_base;
 
     if (debug_ts) {
         av_log(ist, AV_LOG_INFO,
@@ -260,13 +321,8 @@ static int video_frame_process(InputStream *ist, AVFrame *frame)
 
 static void sub2video_flush(InputStream *ist)
 {
-    int i;
-    int ret;
-
-    if (ist->sub2video.end_pts < INT64_MAX)
-        sub2video_update(ist, INT64_MAX, NULL);
-    for (i = 0; i < ist->nb_filters; i++) {
-        ret = av_buffersrc_add_frame(ist->filters[i]->filter, NULL);
+    for (int i = 0; i < ist->nb_filters; i++) {
+        int ret = ifilter_sub2video(ist->filters[i], NULL);
         if (ret != AVERROR_EOF && ret < 0)
             av_log(NULL, AV_LOG_WARNING, "Flush the frame error.\n");
     }
@@ -275,7 +331,6 @@ static void sub2video_flush(InputStream *ist)
 int process_subtitle(InputStream *ist, AVSubtitle *subtitle, int *got_output)
 {
     int ret = 0;
-    int free_sub = 1;
 
     if (ist->fix_sub_duration) {
         int end = 1;
@@ -300,18 +355,13 @@ int process_subtitle(InputStream *ist, AVSubtitle *subtitle, int *got_output)
     if (!*got_output)
         return ret;
 
-    if (ist->sub2video.frame) {
-        sub2video_update(ist, INT64_MIN, subtitle);
-    } else if (ist->nb_filters) {
-        if (!ist->sub2video.sub_queue)
-            ist->sub2video.sub_queue = av_fifo_alloc2(8, sizeof(AVSubtitle), AV_FIFO_FLAG_AUTO_GROW);
-        if (!ist->sub2video.sub_queue)
-            report_and_exit(AVERROR(ENOMEM));
-
-        ret = av_fifo_write(ist->sub2video.sub_queue, subtitle, 1);
-        if (ret < 0)
-            exit_program(1);
-        free_sub = 0;
+    for (int i = 0; i < ist->nb_filters; i++) {
+        ret = ifilter_sub2video(ist->filters[i], subtitle);
+        if (ret < 0) {
+            av_log(ist, AV_LOG_ERROR, "Error sending a subtitle for filtering: %s\n",
+                   av_err2str(ret));
+            goto out;
+        }
     }
 
     if (!subtitle->num_rects)
@@ -326,8 +376,7 @@ int process_subtitle(InputStream *ist, AVSubtitle *subtitle, int *got_output)
     }
 
 out:
-    if (free_sub)
-        avsubtitle_free(subtitle);
+    avsubtitle_free(subtitle);
     return ret;
 }
 
@@ -359,12 +408,13 @@ static int transcode_subtitles(InputStream *ist, const AVPacket *pkt)
 
 static int send_filter_eof(InputStream *ist)
 {
+    Decoder *d = ist->decoder;
     int i, ret;
 
     for (i = 0; i < ist->nb_filters; i++) {
-        int64_t end_pts = ist->last_frame_pts == AV_NOPTS_VALUE ? AV_NOPTS_VALUE :
-                          ist->last_frame_pts + ist->last_frame_duration_est;
-        ret = ifilter_send_eof(ist->filters[i], end_pts, ist->last_frame_tb);
+        int64_t end_pts = d->last_frame_pts == AV_NOPTS_VALUE ? AV_NOPTS_VALUE :
+                          d->last_frame_pts + d->last_frame_duration_est;
+        ret = ifilter_send_eof(ist->filters[i], end_pts, d->last_frame_tb);
         if (ret < 0)
             return ret;
     }
@@ -373,12 +423,13 @@ static int send_filter_eof(InputStream *ist)
 
 int dec_packet(InputStream *ist, const AVPacket *pkt, int no_eof)
 {
+    Decoder *d = ist->decoder;
     AVCodecContext *dec = ist->dec_ctx;
     const char *type_desc = av_get_media_type_string(dec->codec_type);
     int ret;
 
     if (dec->codec_type == AVMEDIA_TYPE_SUBTITLE)
-        return transcode_subtitles(ist, pkt ? pkt : ist->pkt);
+        return transcode_subtitles(ist, pkt ? pkt : d->pkt);
 
     // With fate-indeo3-2, we're getting 0-sized packets before EOF for some
     // reason. This seems like a semi-critical bug. Don't trigger EOF, and
@@ -390,6 +441,11 @@ int dec_packet(InputStream *ist, const AVPacket *pkt, int no_eof)
     if (ret < 0 && !(ret == AVERROR_EOF && !pkt)) {
         // In particular, we don't expect AVERROR(EAGAIN), because we read all
         // decoded frames with avcodec_receive_frame() until done.
+        if (ret == AVERROR(EAGAIN)) {
+            av_log(ist, AV_LOG_FATAL, "A decoder returned an unexpected error code. "
+                                      "This is a bug, please report it.\n");
+            exit_program(1);
+        }
         av_log(ist, AV_LOG_ERROR, "Error submitting %s to decoder: %s\n",
                pkt ? "packet" : "EOF", av_err2str(ret));
         if (exit_on_error)
@@ -402,12 +458,12 @@ int dec_packet(InputStream *ist, const AVPacket *pkt, int no_eof)
     }
 
     while (1) {
-        AVFrame *frame = ist->decoded_frame;
+        AVFrame *frame = d->frame;
 
         update_benchmark(NULL);
         ret = avcodec_receive_frame(dec, frame);
         update_benchmark("decode_%s %d.%d", type_desc,
-                         ist->file_index, ist->st->index);
+                         ist->file_index, ist->index);
 
         if (ret == AVERROR(EAGAIN)) {
             av_assert0(pkt); // should never happen during flushing
@@ -460,12 +516,12 @@ int dec_packet(InputStream *ist, const AVPacket *pkt, int no_eof)
             ist->samples_decoded += frame->nb_samples;
             ist->nb_samples       = frame->nb_samples;
 
-            audio_ts_process(ist, frame);
+            audio_ts_process(ist, ist->decoder, frame);
         } else {
             ret = video_frame_process(ist, frame);
             if (ret < 0) {
                 av_log(NULL, AV_LOG_FATAL, "Error while processing the decoded "
-                       "data for stream #%d:%d\n", ist->file_index, ist->st->index);
+                       "data for stream #%d:%d\n", ist->file_index, ist->index);
                 exit_program(1);
             }
         }
@@ -514,7 +570,7 @@ static enum AVPixelFormat get_format(AVCodecContext *s, const enum AVPixelFormat
                            "%s hwaccel requested for input stream #%d:%d, "
                            "but cannot be initialized.\n",
                            av_hwdevice_get_type_name(config->device_type),
-                           ist->file_index, ist->st->index);
+                           ist->file_index, ist->index);
                     return AV_PIX_FMT_NONE;
                 }
                 continue;
@@ -528,6 +584,151 @@ static enum AVPixelFormat get_format(AVCodecContext *s, const enum AVPixelFormat
     return *p;
 }
 
+static HWDevice *hw_device_match_by_codec(const AVCodec *codec)
+{
+    const AVCodecHWConfig *config;
+    HWDevice *dev;
+    int i;
+    for (i = 0;; i++) {
+        config = avcodec_get_hw_config(codec, i);
+        if (!config)
+            return NULL;
+        if (!(config->methods & AV_CODEC_HW_CONFIG_METHOD_HW_DEVICE_CTX))
+            continue;
+        dev = hw_device_get_by_type(config->device_type);
+        if (dev)
+            return dev;
+    }
+}
+
+static int hw_device_setup_for_decode(InputStream *ist)
+{
+    const AVCodecHWConfig *config;
+    enum AVHWDeviceType type;
+    HWDevice *dev = NULL;
+    int err, auto_device = 0;
+
+    if (ist->hwaccel_device) {
+        dev = hw_device_get_by_name(ist->hwaccel_device);
+        if (!dev) {
+            if (ist->hwaccel_id == HWACCEL_AUTO) {
+                auto_device = 1;
+            } else if (ist->hwaccel_id == HWACCEL_GENERIC) {
+                type = ist->hwaccel_device_type;
+                err = hw_device_init_from_type(type, ist->hwaccel_device,
+                                               &dev);
+            } else {
+                // This will be dealt with by API-specific initialisation
+                // (using hwaccel_device), so nothing further needed here.
+                return 0;
+            }
+        } else {
+            if (ist->hwaccel_id == HWACCEL_AUTO) {
+                ist->hwaccel_device_type = dev->type;
+            } else if (ist->hwaccel_device_type != dev->type) {
+                av_log(NULL, AV_LOG_ERROR, "Invalid hwaccel device "
+                       "specified for decoder: device %s of type %s is not "
+                       "usable with hwaccel %s.\n", dev->name,
+                       av_hwdevice_get_type_name(dev->type),
+                       av_hwdevice_get_type_name(ist->hwaccel_device_type));
+                return AVERROR(EINVAL);
+            }
+        }
+    } else {
+        if (ist->hwaccel_id == HWACCEL_AUTO) {
+            auto_device = 1;
+        } else if (ist->hwaccel_id == HWACCEL_GENERIC) {
+            type = ist->hwaccel_device_type;
+            dev = hw_device_get_by_type(type);
+
+            // When "-qsv_device device" is used, an internal QSV device named
+            // as "__qsv_device" is created. Another QSV device is created too
+            // if "-init_hw_device qsv=name:device" is used. There are 2 QSV devices
+            // if both "-qsv_device device" and "-init_hw_device qsv=name:device"
+            // are used, hw_device_get_by_type(AV_HWDEVICE_TYPE_QSV) returns NULL.
+            // To keep back-compatibility with the removed ad-hoc libmfx setup code,
+            // call hw_device_get_by_name("__qsv_device") to select the internal QSV
+            // device.
+            if (!dev && type == AV_HWDEVICE_TYPE_QSV)
+                dev = hw_device_get_by_name("__qsv_device");
+
+            if (!dev)
+                err = hw_device_init_from_type(type, NULL, &dev);
+        } else {
+            dev = hw_device_match_by_codec(ist->dec);
+            if (!dev) {
+                // No device for this codec, but not using generic hwaccel
+                // and therefore may well not need one - ignore.
+                return 0;
+            }
+        }
+    }
+
+    if (auto_device) {
+        int i;
+        if (!avcodec_get_hw_config(ist->dec, 0)) {
+            // Decoder does not support any hardware devices.
+            return 0;
+        }
+        for (i = 0; !dev; i++) {
+            config = avcodec_get_hw_config(ist->dec, i);
+            if (!config)
+                break;
+            type = config->device_type;
+            dev = hw_device_get_by_type(type);
+            if (dev) {
+                av_log(NULL, AV_LOG_INFO, "Using auto "
+                       "hwaccel type %s with existing device %s.\n",
+                       av_hwdevice_get_type_name(type), dev->name);
+            }
+        }
+        for (i = 0; !dev; i++) {
+            config = avcodec_get_hw_config(ist->dec, i);
+            if (!config)
+                break;
+            type = config->device_type;
+            // Try to make a new device of this type.
+            err = hw_device_init_from_type(type, ist->hwaccel_device,
+                                           &dev);
+            if (err < 0) {
+                // Can't make a device of this type.
+                continue;
+            }
+            if (ist->hwaccel_device) {
+                av_log(NULL, AV_LOG_INFO, "Using auto "
+                       "hwaccel type %s with new device created "
+                       "from %s.\n", av_hwdevice_get_type_name(type),
+                       ist->hwaccel_device);
+            } else {
+                av_log(NULL, AV_LOG_INFO, "Using auto "
+                       "hwaccel type %s with new default device.\n",
+                       av_hwdevice_get_type_name(type));
+            }
+        }
+        if (dev) {
+            ist->hwaccel_device_type = type;
+        } else {
+            av_log(NULL, AV_LOG_INFO, "Auto hwaccel "
+                   "disabled: no device found.\n");
+            ist->hwaccel_id = HWACCEL_NONE;
+            return 0;
+        }
+    }
+
+    if (!dev) {
+        av_log(NULL, AV_LOG_ERROR, "No device available "
+               "for decoder: device type %s needed for codec %s.\n",
+               av_hwdevice_get_type_name(type), ist->dec->name);
+        return err;
+    }
+
+    ist->dec_ctx->hw_device_ctx = av_buffer_ref(dev->device_ref);
+    if (!ist->dec_ctx->hw_device_ctx)
+        return AVERROR(ENOMEM);
+
+    return 0;
+}
+
 int dec_open(InputStream *ist)
 {
     const AVCodec *codec = ist->dec;
@@ -539,6 +740,10 @@ int dec_open(InputStream *ist)
                 avcodec_get_name(ist->dec_ctx->codec_id));
         return AVERROR(EINVAL);
     }
+
+    ret = dec_alloc(&ist->decoder);
+    if (ret < 0)
+        return ret;
 
     ist->dec_ctx->opaque                = ist;
     ist->dec_ctx->get_format            = get_format;

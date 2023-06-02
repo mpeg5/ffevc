@@ -6419,19 +6419,20 @@ trimming. Default is 0, which is equal to trimming all samples detected
 as silence.
 
 @item start_mode
-Specify mode of detection of silence end in start of multi-channel audio.
+Specify mode of detection of silence end at start of multi-channel audio.
 Can be @var{any} or @var{all}. Default is @var{any}.
-With @var{any}, any sample that is detected as non-silence will cause
-stopped trimming of silence.
-With @var{all}, only if all channels are detected as non-silence will cause
-stopped trimming of silence.
+With @var{any}, any sample from any channel that is detected as non-silence
+will trigger end of silence trimming at start of audio stream.
+With @var{all}, only if every sample from every channel is detected as non-silence
+will trigger end of silence trimming at start of audio stream, limited usage.
 
 @item stop_periods
-Set the count for trimming silence from the end of audio.
+Set the count for trimming silence from the end of audio. When specifying a
+positive value, it trims audio after it finds specified silence period.
 To remove silence from the middle of a file, specify a @var{stop_periods}
 that is negative. This value is then treated as a positive value and is
 used to indicate the effect should restart processing as specified by
-@var{start_periods}, making it suitable for removing periods of silence
+@var{stop_periods}, making it suitable for removing periods of silence
 in the middle of the audio.
 Default value is @code{0}.
 
@@ -6453,22 +6454,49 @@ trimming. Default is 0, which is equal to trimming all samples detected
 as silence.
 
 @item stop_mode
-Specify mode of detection of silence start in end of multi-channel audio.
-Can be @var{any} or @var{all}. Default is @var{any}.
-With @var{any}, any sample that is detected as non-silence will cause
-stopped trimming of silence.
-With @var{all}, only if all channels are detected as non-silence will cause
-stopped trimming of silence.
+Specify mode of detection of silence start after start of multi-channel audio.
+Can be @var{any} or @var{all}. Default is @var{all}.
+With @var{any}, any sample from any channel that is detected as silence
+will trigger start of silence trimming after start of audio stream, limited usage.
+With @var{all}, only if every sample from every channel is detected as silence
+will trigger start of silence trimming after start of audio stream.
 
 @item detection
-Set how is silence detected. Can be @code{rms} or @code{peak}. Second is faster
-and works better with digital silence which is exactly 0.
+Set how is silence detected.
+@table @option
+@item avg
+Mean of absolute values of samples in moving window.
+@item rms
+Root squared mean of absolute values of samples in moving window.
+@item peak
+Maximum of absolute values of samples in moving window.
+@item median
+Median of absolute values of samples in moving window.
+@item ptp
+Absolute of max peak to min peak difference of samples in moving window.
+@item dev
+Standard deviation of values of samples in moving window.
+@end table
 Default value is @code{rms}.
 
 @item window
 Set duration in number of seconds used to calculate size of window in number
-of samples for detecting silence.
+of samples for detecting silence. Using @code{0} will effectively disable
+any windowing and use only single sample per channel for silence detection.
+In that case it may be needed to also set @option{start_silence} and/or
+@option{stop_silence} to nonzero values with also @option{start_duration} and/or
+@option{stop_duration} to nonzero values.
 Default value is @code{0.02}. Allowed range is from @code{0} to @code{10}.
+
+@item timestamp
+Set processing mode of every audio frame output timestamp.
+@table @option
+@item write
+Full timestamps rewrite, keep only the start time for the first output frame.
+@item copy
+Non-dropped frames are left with same timestamp as input audio frame.
+@end table
+Defaults value is @code{write}.
 @end table
 
 @subsection Examples
@@ -6496,7 +6524,30 @@ silence is detected in all channels at same positions in stream:
 @example
 silenceremove=window=0:detection=peak:stop_mode=all:start_mode=all:stop_periods=-1:stop_threshold=0
 @end example
+
+@item
+Trim every 2nd encountered silence period from beginning to end where there is
+more than 1 second of silence per silence period in audio:
+@example
+silenceremove=stop_periods=-2:stop_duration=1:stop_threshold=-90dB
+@end example
+
+@item
+Similar as above, but keep maximum of 0.5 seconds of silence from each trimmed period:
+@example
+silenceremove=stop_periods=-2:stop_duration=1:stop_threshold=-90dB:stop_silence=0.5
+@end example
+
+@item
+Similar as above, but keep maximum of 1.5 seconds of silence from start of audio:
+@example
+silenceremove=stop_periods=-2:stop_duration=1:stop_threshold=-90dB:stop_silence=0.5:start_periods=1:start_duration=1:start_silence=1.5:stop_threshold=-90dB
+@end example
 @end itemize
+
+@subsection Commands
+
+This filter supports some above options as @ref{commands}.
 
 @section sofalizer
 
@@ -9040,6 +9091,7 @@ boxblur=luma_radius=min(h\,w)/10:luma_power=1:chroma_radius=min(cw\,ch)/10:chrom
 @end example
 @end itemize
 
+@anchor{bwdif}
 @section bwdif
 
 Deinterlace the input video ("bwdif" stands for "Bob Weaver
@@ -16111,6 +16163,12 @@ Set the color used to fill the output area not covered by the output image, for
 example as a result of @option{normalize_sar}. For the general syntax of this
 option, check the @ref{color syntax,,"Color" section in the ffmpeg-utils
 manual,ffmpeg-utils}. Defaults to @code{black}.
+
+@item corner_rounding
+Render frames with rounded corners. The value, given as a float ranging from
+@code{0.0} to @code{1.0}, indicates the relative degree of rounding, from fully
+square to fully circular. In other words, it gives the radius divided by half
+the smaller side length. Defaults to @code{0.0}.
 
 @item colorspace
 @item color_primaries
@@ -26307,6 +26365,7 @@ Apply dilation filter with threshold0 set to 30, threshold1 set 40, threshold2 s
 @end example
 @end itemize
 
+@anchor{nlmeans_opencl}
 @section nlmeans_opencl
 
 Non-local Means denoise filter through OpenCL, this filter accepts same options as @ref{nlmeans}.
@@ -27134,6 +27193,350 @@ See @ref{xstack}.
 @end table
 
 @c man end VAAPI VIDEO FILTERS
+
+@chapter Vulkan Video Filters
+@c man begin VULKAN VIDEO FILTERS
+
+Below is a description of the currently available Vulkan video filters.
+
+To enable compilation of these filters you need to configure FFmpeg with
+@code{--enable-vulkan} and either @code{--enable-libglslang} or @code{--enable-libshaderc}.
+
+Running Vulkan filters requires you to initialize a hardware device and to pass that device to all filters in any filter graph.
+@table @option
+
+@item -init_hw_device vulkan[=@var{name}][:@var{device}[,@var{key=value}...]]
+Initialise a new hardware device of type @var{vulkan} called @var{name}, using the
+given device parameters and options in @var{key=value}. The following options
+are supported:
+
+@table @option
+@item debug
+Switches validation layers on if set to 1.
+
+@item linear_images
+Allocates linear images. Does not apply to decoding.
+
+@item disable_multiplane
+Disables multiplane images. Does not apply to decoding.
+@end table
+
+@item -filter_hw_device @var{name}
+Pass the hardware device called @var{name} to all filters in any filter graph.
+
+@end table
+
+For more detailed information see @url{https://www.ffmpeg.org/ffmpeg.html#Advanced-Video-options}
+
+@itemize
+@item
+Example of choosing the first device and running nlmeans_vulkan filter with default parameters on it.
+@example
+-init_hw_device vulkan=vk:0 -filter_hw_device vk -i INPUT -vf "hwupload,nlmeans_vulkan,hwdownload" OUTPUT
+@end example
+@end itemize
+
+As Vulkan filters are not able to access frame data in normal memory, all frame data needs to be uploaded (@ref{hwupload}) to hardware surfaces connected to the appropriate device before being used and then downloaded (@ref{hwdownload}) back to normal memory. Note that @ref{hwupload} will upload to a frame with the same layout as the software frame, so it may be necessary to add a @ref{format} filter immediately before to get the input into the right format and @ref{hwdownload} does not support all formats on the output - it is usually necessary to insert an additional @ref{format} filter immediately following in the graph to get the output in a supported format.
+
+@section avgblur_vulkan
+
+Apply an average blur filter, implemented on the GPU using Vulkan.
+
+The filter accepts the following options:
+
+@table @option
+@item sizeX
+Set horizontal radius size.
+Range is @code{[1, 32]} and default value is @code{3}.
+
+@item sizeY
+Set vertical radius size. Range is @code{[1, 32]} and default value is @code{3}.
+
+@item planes
+Set which planes to filter. Default value is @code{0xf}, by which all planes are processed.
+@end table
+
+@section blend_vulkan
+
+Blend two Vulkan frames into each other.
+
+The @code{blend} filter takes two input streams and outputs one
+stream, the first input is the "top" layer and second input is
+"bottom" layer.  By default, the output terminates when the longest input terminates.
+
+A description of the accepted options follows.
+
+@table @option
+@item c0_mode
+@item c1_mode
+@item c2_mode
+@item c3_mode
+@item all_mode
+Set blend mode for specific pixel component or all pixel components in case
+of @var{all_mode}. Default value is @code{normal}.
+
+Available values for component modes are:
+@table @samp
+@item normal
+@item multiply
+@end table
+
+@end table
+
+@section bwdif_vulkan
+
+Deinterlacer using @ref{bwdif}, the "Bob Weaver Deinterlacing Filter" algorithm, implemented
+on the GPU using Vulkan.
+
+It accepts the following parameters:
+
+@table @option
+@item mode
+The interlacing mode to adopt. It accepts one of the following values:
+
+@table @option
+@item 0, send_frame
+Output one frame for each frame.
+@item 1, send_field
+Output one frame for each field.
+@end table
+
+The default value is @code{send_field}.
+
+@item parity
+The picture field parity assumed for the input interlaced video. It accepts one
+of the following values:
+
+@table @option
+@item 0, tff
+Assume the top field is first.
+@item 1, bff
+Assume the bottom field is first.
+@item -1, auto
+Enable automatic detection of field parity.
+@end table
+
+The default value is @code{auto}.
+If the interlacing is unknown or the decoder does not export this information,
+top field first will be assumed.
+
+@item deint
+Specify which frames to deinterlace. Accepts one of the following
+values:
+
+@table @option
+@item 0, all
+Deinterlace all frames.
+@item 1, interlaced
+Only deinterlace frames marked as interlaced.
+@end table
+
+The default value is @code{all}.
+@end table
+
+@section chromaber_vulkan
+
+Apply an effect that emulates chromatic aberration. Works best with RGB inputs,
+but provides a similar effect with YCbCr inputs too.
+
+@table @option
+@item dist_x
+Horizontal displacement multiplier. Each chroma pixel's position will be multiplied
+by this amount, starting from the center of the image. Default is @code{0}.
+
+@item dist_y
+Similarly, this sets the vertical displacement multiplier. Default is @code{0}.
+
+@end table
+
+@section color_vulkan
+
+Video source that creates a Vulkan frame of a solid color.
+Useful for benchmarking, or overlaying.
+
+It accepts the following parameters:
+
+@table @option
+@item color
+The color to use. Either a name, or a hexadecimal value.
+The default value is @code{black}.
+
+@item size
+The size of the output frame. Default value is @code{1920x1080}.
+
+@item rate
+The framerate to output at. Default value is @code{60} frames per second.
+
+@item duration
+The video duration. Default value is @code{-0.000001}.
+
+@item sar
+The video signal aspect ratio. Default value is @code{1/1}.
+
+@item format
+The pixel format of the output Vulkan frames. Default value is @code{yuv444p}.
+
+@item out_range
+Set the output YCbCr sample range.
+
+This allows the autodetected value to be overridden as well as allows forcing
+a specific value used for the output and encoder. If not specified, the
+range depends on the pixel format. Possible values:
+
+@table @samp
+@item auto/unknown
+Choose automatically.
+
+@item jpeg/full/pc
+Set full range (0-255 in case of 8-bit luma).
+
+@item mpeg/limited/tv
+Set "MPEG" range (16-235 in case of 8-bit luma).
+@end table
+
+@end table
+
+@section vflip_vulkan
+
+Flips an image vertically.
+
+@section hflip_vulkan
+
+Flips an image horizontally.
+
+@section flip_vulkan
+
+Flips an image along both the vertical and horizontal axis.
+
+@section gblur_vulkan
+
+Apply Gaussian blur filter on Vulkan frames.
+
+The filter accepts the following options:
+
+@table @option
+@item sigma
+Set horizontal sigma, standard deviation of Gaussian blur. Default is @code{0.5}.
+
+@item sigmaV
+Set vertical sigma, if negative it will be same as @code{sigma}.
+Default is @code{-1}.
+
+@item planes
+Set which planes to filter. By default all planes are filtered.
+
+@item size
+Set the kernel size along the horizontal axis. Default is @code{19}.
+
+@item sizeV
+Set the kernel size along the vertical axis. Default is @code{0},
+which sets to use the same value as @var{size}.
+
+@end table
+
+@section nlmeans_vulkan
+
+Denoise frames using Non-Local Means algorithm, implemented on the GPU using
+Vulkan.
+Supports more pixel formats than @ref{nlmeans} or @ref{nlmeans_opencl}, including
+alpha channel support.
+
+The filter accepts the following options.
+
+@table @option
+@item s
+Set denoising strength for all components. Default is 1.0. Must be in range [1.0, 100.0].
+
+@item p
+Set patch size for all planes. Default is 7. Must be odd number in range [0, 99].
+
+@item r
+Set research size. Default is 15. Must be odd number in range [0, 99].
+
+@item t
+Set parallelism. Default is 36. Must be a number in the range [1, 168].
+Larger values may speed up processing, at the cost of more VRAM.
+Lower values will slow it down, reducing VRAM usage.
+Only supported on GPUs with atomic float operations (RDNA3+, Ampere+).
+
+@item s0
+@item s1
+@item s2
+@item s3
+Set denoising strength for a specific component. Default is @var{1}, equal to @option{s}.
+Must be odd number in range [1, 100].
+
+@item p0
+@item p1
+@item p2
+@item p3
+Set patch size for a specific component. Default is @var{7}, equal to @option{p}.
+Must be odd number in range [0, 99].
+
+@end table
+
+@section overlay_vulkan
+
+Overlay one video on top of another.
+
+It takes two inputs and has one output. The first input is the "main" video on which the second input is overlaid.
+This filter requires all inputs to use the same pixel format. So, format conversion may be needed.
+
+The filter accepts the following options:
+
+@table @option
+@item x
+Set the x coordinate of the overlaid video on the main video.
+Default value is @code{0}.
+
+@item y
+Set the y coordinate of the overlaid video on the main video.
+Default value is @code{0}.
+
+@end table
+
+@section transpose_vulkan
+
+Transpose rows with columns in the input video and optionally flip it.
+For more in depth examples see the @ref{transpose} video filter, which shares mostly the same options.
+
+It accepts the following parameters:
+
+@table @option
+
+@item dir
+Specify the transposition direction.
+
+Can assume the following values:
+@table @samp
+@item cclock_flip
+Rotate by 90 degrees counterclockwise and vertically flip. (default)
+
+@item clock
+Rotate by 90 degrees clockwise.
+
+@item cclock
+Rotate by 90 degrees counterclockwise.
+
+@item clock_flip
+Rotate by 90 degrees clockwise and vertically flip.
+@end table
+
+@item passthrough
+Do not apply the transposition if the input geometry matches the one
+specified by the specified value. It accepts the following values:
+@table @samp
+@item none
+Always apply transposition. (default)
+@item portrait
+Preserve portrait geometry (when @var{height} >= @var{width}).
+@item landscape
+Preserve landscape geometry (when @var{width} >= @var{height}).
+@end table
+
+@end table
+
+@c man end VULKAN VIDEO FILTERS
 
 @chapter QSV Video Filters
 @c man begin QSV VIDEO FILTERS

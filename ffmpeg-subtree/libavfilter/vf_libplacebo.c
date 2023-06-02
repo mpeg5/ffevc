@@ -148,6 +148,7 @@ typedef struct LibplaceboContext {
     AVExpr *pos_x_pexpr, *pos_y_pexpr, *pos_w_pexpr, *pos_h_pexpr;
     AVRational target_sar;
     float pad_crop_ratio;
+    float corner_rounding;
     int force_original_aspect_ratio;
     int force_divisible_by;
     int normalize_sar;
@@ -440,6 +441,9 @@ static int update_settings(AVFilterContext *ctx)
             (float) color_rgba[1] / UINT8_MAX,
             (float) color_rgba[2] / UINT8_MAX,
         },
+#if PL_API_VER >= 277
+        .corner_rounding = s->corner_rounding,
+#endif
 
         .deband_params = s->deband ? &s->deband_params : NULL,
         .sigmoid_params = s->sigmoid ? &pl_sigmoid_default_params : NULL,
@@ -544,6 +548,22 @@ fail:
     return err;
 }
 
+#if PL_API_VER >= 278
+static void lock_queue(void *priv, uint32_t qf, uint32_t qidx)
+{
+    AVHWDeviceContext *avhwctx = priv;
+    const AVVulkanDeviceContext *hwctx = avhwctx->hwctx;
+    hwctx->lock_queue(avhwctx, qf, qidx);
+}
+
+static void unlock_queue(void *priv, uint32_t qf, uint32_t qidx)
+{
+    AVHWDeviceContext *avhwctx = priv;
+    const AVVulkanDeviceContext *hwctx = avhwctx->hwctx;
+    hwctx->unlock_queue(avhwctx, qf, qidx);
+}
+#endif
+
 static int init_vulkan(AVFilterContext *avctx, const AVVulkanDeviceContext *hwctx)
 {
     int err = 0;
@@ -552,6 +572,7 @@ static int init_vulkan(AVFilterContext *avctx, const AVVulkanDeviceContext *hwct
     size_t buf_len;
 
     if (hwctx) {
+#if PL_API_VER >= 278
         /* Import libavfilter vulkan context into libplacebo */
         s->vulkan = pl_vulkan_import(s->log, pl_vulkan_import_params(
             .instance       = hwctx->inst,
@@ -561,6 +582,9 @@ static int init_vulkan(AVFilterContext *avctx, const AVVulkanDeviceContext *hwct
             .extensions     = hwctx->enabled_dev_extensions,
             .num_extensions = hwctx->nb_enabled_dev_extensions,
             .features       = &hwctx->device_features,
+            .lock_queue     = lock_queue,
+            .unlock_queue   = unlock_queue,
+            .queue_ctx      = avctx->hw_device_ctx->data,
             .queue_graphics = {
                 .index = hwctx->queue_family_index,
                 .count = hwctx->nb_graphics_queues,
@@ -574,8 +598,15 @@ static int init_vulkan(AVFilterContext *avctx, const AVVulkanDeviceContext *hwct
                 .count = hwctx->nb_tx_queues,
             },
             /* This is the highest version created by hwcontext_vulkan.c */
-            .max_api_version = VK_API_VERSION_1_2,
+            .max_api_version = VK_API_VERSION_1_3,
         ));
+#else
+        av_log(s, AV_LOG_ERROR, "libplacebo version %s too old to import "
+               "Vulkan device, remove it or upgrade libplacebo to >= 5.278\n",
+               PL_VERSION);
+        err = AVERROR_EXTERNAL;
+        goto fail;
+#endif
     } else {
         s->vulkan = pl_vulkan_create(s->log, pl_vulkan_params(
             .queue_count = 0, /* enable all queues for parallelization */
@@ -1127,6 +1158,7 @@ static const AVOption libplacebo_options[] = {
     { "normalize_sar", "force SAR normalization to 1:1 by adjusting pos_x/y/w/h", OFFSET(normalize_sar), AV_OPT_TYPE_BOOL, {.i64 = 0}, 0, 1, STATIC },
     { "pad_crop_ratio", "ratio between padding and cropping when normalizing SAR (0=pad, 1=crop)", OFFSET(pad_crop_ratio), AV_OPT_TYPE_FLOAT, {.dbl=0.0}, 0.0, 1.0, DYNAMIC },
     { "fillcolor", "Background fill color", OFFSET(fillcolor), AV_OPT_TYPE_STRING, {.str = "black"}, .flags = DYNAMIC },
+    { "corner_rounding", "Corner rounding radius", OFFSET(corner_rounding), AV_OPT_TYPE_FLOAT, {.dbl = 0.0}, 0.0, 1.0, .flags = DYNAMIC },
 
     {"colorspace", "select colorspace", OFFSET(colorspace), AV_OPT_TYPE_INT, {.i64=-1}, -1, AVCOL_SPC_NB-1, DYNAMIC, "colorspace"},
     {"auto", "keep the same colorspace",  0, AV_OPT_TYPE_CONST, {.i64=-1},                          INT_MIN, INT_MAX, STATIC, "colorspace"},

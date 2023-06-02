@@ -278,7 +278,6 @@ typedef struct OptionsContext {
 } OptionsContext;
 
 typedef struct InputFilter {
-    AVFilterContext    *filter;
     struct FilterGraph *graph;
     uint8_t            *name;
 } InputFilter;
@@ -289,8 +288,10 @@ typedef struct OutputFilter {
     struct FilterGraph  *graph;
     uint8_t             *name;
 
-    /* temporary storage until stream maps are processed */
-    AVFilterInOut       *out_tmp;
+    /* for filters that are not yet bound to an output stream,
+     * this stores the output linklabel, if any */
+    uint8_t             *linklabel;
+
     enum AVMediaType     type;
 
     /* desired output stream properties */
@@ -324,10 +325,14 @@ typedef struct FilterGraph {
     int         nb_outputs;
 } FilterGraph;
 
+typedef struct Decoder Decoder;
+
 typedef struct InputStream {
     const AVClass *class;
 
     int file_index;
+    int index;
+
     AVStream *st;
     int discard;             /* true if stream data should be discarded */
     int user_set_discard;
@@ -343,23 +348,12 @@ typedef struct InputStream {
      * concurrently by the demuxing thread.
      */
     AVCodecParameters *par;
+    Decoder *decoder;
     AVCodecContext *dec_ctx;
     const AVCodec *dec;
     const AVCodecDescriptor *codec_desc;
-    AVFrame *decoded_frame;
-    AVPacket *pkt;
 
     AVRational framerate_guessed;
-
-    // pts/estimated duration of the last decoded frame
-    // * in decoder timebase for video,
-    // * in last_frame_tb (may change during decoding) for audio
-    int64_t last_frame_pts;
-    int64_t last_frame_duration_est;
-    AVRational    last_frame_tb;
-    int           last_frame_sample_rate;
-
-    int64_t filter_in_rescale_delta_last;
 
     int64_t nb_samples; /* number of samples in the last decoded audio frame before looping */
 
@@ -377,12 +371,7 @@ typedef struct InputStream {
     } prev_sub;
 
     struct sub2video {
-        int64_t last_pts;
-        int64_t end_pts;
-        AVFifo *sub_queue;    ///< queue of AVSubtitle* before filter init
-        AVFrame *frame;
         int w, h;
-        unsigned int initialize; ///< marks if sub2video_update should force an initialization
     } sub2video;
 
     /* decoded data from this stream goes into all those filters
@@ -597,7 +586,6 @@ typedef struct OutputStream {
     FILE *logfile;
 
     OutputFilter *filter;
-    char *avfilter;
 
     AVDictionary *encoder_opts;
     AVDictionary *sws_dict;
@@ -743,14 +731,17 @@ int parse_and_set_vsync(const char *arg, int *vsync_var, int file_idx, int st_id
 
 int configure_filtergraph(FilterGraph *fg);
 void check_filter_outputs(void);
-int filtergraph_is_simple(FilterGraph *fg);
-int init_simple_filtergraph(InputStream *ist, OutputStream *ost);
+int filtergraph_is_simple(const FilterGraph *fg);
+int init_simple_filtergraph(InputStream *ist, OutputStream *ost,
+                            char *graph_desc);
 int init_complex_filtergraph(FilterGraph *fg);
 
-void sub2video_update(InputStream *ist, int64_t heartbeat_pts, AVSubtitle *sub);
+int copy_av_subtitle(AVSubtitle *dst, const AVSubtitle *src);
 
 int ifilter_send_frame(InputFilter *ifilter, AVFrame *frame, int keep_reference);
 int ifilter_send_eof(InputFilter *ifilter, int64_t pts, AVRational tb);
+int ifilter_sub2video(InputFilter *ifilter, const AVSubtitle *sub);
+void ifilter_sub2video_heartbeat(InputFilter *ifilter, int64_t pts, AVRational tb);
 
 /**
  * Set up fallback filtering parameters from a decoder context. They will only
@@ -759,7 +750,7 @@ int ifilter_send_eof(InputFilter *ifilter, int64_t pts, AVRational tb);
  */
 int ifilter_parameters_from_dec(InputFilter *ifilter, const AVCodecContext *dec);
 
-int ifilter_has_all_input_formats(FilterGraph *fg);
+void ofilter_bind_ost(OutputFilter *ofilter, OutputStream *ost);
 
 /**
  * Create a new filtergraph in the global filtergraph list.
@@ -795,11 +786,13 @@ void enc_stats_write(OutputStream *ost, EncStats *es,
                      uint64_t frame_num);
 
 HWDevice *hw_device_get_by_name(const char *name);
+HWDevice *hw_device_get_by_type(enum AVHWDeviceType type);
 int hw_device_init_from_string(const char *arg, HWDevice **dev);
+int hw_device_init_from_type(enum AVHWDeviceType type,
+                             const char *device,
+                             HWDevice **dev_out);
 void hw_device_free_all(void);
 
-int hw_device_setup_for_decode(InputStream *ist);
-int hw_device_setup_for_encode(OutputStream *ost);
 /**
  * Get a hardware device to be used with this filtergraph.
  * The returned reference is owned by the callee, the caller
@@ -810,6 +803,7 @@ AVBufferRef *hw_device_for_filter(void);
 int hwaccel_decode_init(AVCodecContext *avctx);
 
 int dec_open(InputStream *ist);
+void dec_free(Decoder **pdec);
 
 /**
  * Submit a packet for decoding

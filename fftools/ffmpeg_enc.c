@@ -103,6 +103,57 @@ fail:
     return AVERROR(ENOMEM);
 }
 
+static int hw_device_setup_for_encode(OutputStream *ost, AVBufferRef *frames_ref)
+{
+    const AVCodecHWConfig *config;
+    HWDevice *dev = NULL;
+    int i;
+
+    if (frames_ref &&
+        ((AVHWFramesContext*)frames_ref->data)->format ==
+        ost->enc_ctx->pix_fmt) {
+        // Matching format, will try to use hw_frames_ctx.
+    } else {
+        frames_ref = NULL;
+    }
+
+    for (i = 0;; i++) {
+        config = avcodec_get_hw_config(ost->enc_ctx->codec, i);
+        if (!config)
+            break;
+
+        if (frames_ref &&
+            config->methods & AV_CODEC_HW_CONFIG_METHOD_HW_FRAMES_CTX &&
+            (config->pix_fmt == AV_PIX_FMT_NONE ||
+             config->pix_fmt == ost->enc_ctx->pix_fmt)) {
+            av_log(ost->enc_ctx, AV_LOG_VERBOSE, "Using input "
+                   "frames context (format %s) with %s encoder.\n",
+                   av_get_pix_fmt_name(ost->enc_ctx->pix_fmt),
+                   ost->enc_ctx->codec->name);
+            ost->enc_ctx->hw_frames_ctx = av_buffer_ref(frames_ref);
+            if (!ost->enc_ctx->hw_frames_ctx)
+                return AVERROR(ENOMEM);
+            return 0;
+        }
+
+        if (!dev &&
+            config->methods & AV_CODEC_HW_CONFIG_METHOD_HW_DEVICE_CTX)
+            dev = hw_device_get_by_type(config->device_type);
+    }
+
+    if (dev) {
+        av_log(ost->enc_ctx, AV_LOG_VERBOSE, "Using device %s "
+               "(type %s) with %s encoder.\n", dev->name,
+               av_hwdevice_get_type_name(dev->type), ost->enc_ctx->codec->name);
+        ost->enc_ctx->hw_device_ctx = av_buffer_ref(dev->device_ref);
+        if (!ost->enc_ctx->hw_device_ctx)
+            return AVERROR(ENOMEM);
+    } else {
+        // No device required, or no device available.
+    }
+    return 0;
+}
+
 static void set_encoder_id(OutputFile *of, OutputStream *ost)
 {
     const char *cname = ost->enc_ctx->codec->name;
@@ -294,24 +345,6 @@ int enc_open(OutputStream *ost, AVFrame *frame)
                    dec_ctx->subtitle_header_size);
             enc_ctx->subtitle_header_size = dec_ctx->subtitle_header_size;
         }
-        if (ist && ist->dec->type == AVMEDIA_TYPE_SUBTITLE &&
-            enc_ctx->codec_type == AVMEDIA_TYPE_SUBTITLE) {
-            int input_props = 0, output_props = 0;
-            AVCodecDescriptor const *input_descriptor =
-                avcodec_descriptor_get(ist->dec->id);
-            AVCodecDescriptor const *output_descriptor =
-                avcodec_descriptor_get(enc_ctx->codec_id);
-            if (input_descriptor)
-                input_props = input_descriptor->props & (AV_CODEC_PROP_TEXT_SUB | AV_CODEC_PROP_BITMAP_SUB);
-            if (output_descriptor)
-                output_props = output_descriptor->props & (AV_CODEC_PROP_TEXT_SUB | AV_CODEC_PROP_BITMAP_SUB);
-            if (input_props && output_props && input_props != output_props) {
-                av_log(ost, AV_LOG_ERROR,
-                       "Subtitle encoding currently only possible from text to text "
-                       "or bitmap to bitmap");
-                return AVERROR_INVALIDDATA;
-            }
-        }
 
         break;
     default:
@@ -333,7 +366,7 @@ int enc_open(OutputStream *ost, AVFrame *frame)
 
     av_dict_set(&ost->encoder_opts, "flags", "+frame_duration", AV_DICT_MULTIKEY);
 
-    ret = hw_device_setup_for_encode(ost);
+    ret = hw_device_setup_for_encode(ost, frame ? frame->hw_frames_ctx : NULL);
     if (ret < 0) {
         av_log(ost, AV_LOG_ERROR,
                "Encoding hardware device setup failed: %s\n", av_err2str(ret));
@@ -1139,18 +1172,8 @@ void enc_flush(void)
             av_log(ost, AV_LOG_WARNING,
                    "Finishing stream without any data written to it.\n");
 
-            if (ost->filter && !fg->graph) {
-                if (!ifilter_has_all_input_formats(fg))
-                    continue;
-
-                ret = configure_filtergraph(fg);
-                if (ret < 0) {
-                    av_log(ost, AV_LOG_ERROR, "Error configuring filter graph\n");
-                    exit_program(1);
-                }
-
-                of_output_packet(of, ost->pkt, ost, 1);
-            }
+            if (!fg->graph)
+                continue;
 
             ret = enc_open(ost, NULL);
             if (ret < 0)

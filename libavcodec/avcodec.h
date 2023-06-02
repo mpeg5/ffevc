@@ -1715,6 +1715,9 @@ typedef struct AVCodecContext {
 #define FF_PROFILE_KLVA_SYNC 0
 #define FF_PROFILE_KLVA_ASYNC 1
 
+#define FF_PROFILE_EVC_BASELINE             0
+#define FF_PROFILE_EVC_MAIN                 1
+
     /**
      * level
      * - encoding: Set by user.
@@ -2253,6 +2256,25 @@ typedef struct AVHWAccel {
      * that avctx->hwaccel_priv_data is invalid.
      */
     int (*frame_params)(AVCodecContext *avctx, AVBufferRef *hw_frames_ctx);
+
+    /**
+     * Copy necessary context variables from a previous thread context to the current one.
+     * For thread-safe hwaccels only.
+     */
+    int (*update_thread_context)(AVCodecContext *dst, const AVCodecContext *src);
+
+    /**
+     * Callback to free the hwaccel-specific frame data.
+     *
+     * @param hwctx a pointer to an AVHWDeviceContext.
+     * @param data the per-frame hardware accelerator private data to be freed.
+     */
+    void (*free_frame_priv)(void *hwctx, uint8_t *data);
+
+    /**
+     * Callback to flush the hwaccel state.
+     */
+    void (*flush)(AVCodecContext *avctx);
 } AVHWAccel;
 
 /**

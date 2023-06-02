@@ -295,18 +295,8 @@ typedef struct EVCParserContext {
     EVCParserPPS *pps[EVC_MAX_PPS_COUNT];
     EVCParserSliceHeader *slice_header[EVC_MAX_PPS_COUNT];
 
-    int to_read;    // number of bytes of NAL Unit that do not fit into the current input data chunk and must be read from the new chunk(s)
-    int bytes_read; // number of bytes of the current Access Unit that already has been read
-
-    int incomplete_nalu_prefix_read; // the flag is set to 1 when the current input data chunk contains an incomplete NAL unit prefix
-    int incomplete_nalu_read;        // the flag is set to 1 when the current input data chunk contains an incomplete NAL unit (more input data is needed to read complete NAL unit)
-
     int nuh_temporal_id;            // the value of TemporalId (shall be the same for all VCL NAL units of an Access Unit)
-
-    int nalu_prefix_assembled;      // the flag is set to when NALU prefix has been assembled from last chunk and current chunk of incoming data
     int nalu_type;                  // the current NALU type
-    int nalu_size;                  // the current NALU size
-    int time_base;
 
     EVCParserPoc poc;
 
@@ -840,33 +830,6 @@ static EVCParserSliceHeader *parse_slice_header(const uint8_t *bs, int bs_size, 
     return sh;
 }
 
-static int parse_nal_unit_type(AVCodecParserContext *s, const uint8_t *buf,
-                               int buf_size, AVCodecContext *avctx)
-{
-    EVCParserContext *ev = s->priv_data;
-    int nalu_type, nalu_size;
-
-    const uint8_t *data = buf;
-    int data_size = buf_size;
-
-    nalu_size = buf_size;
-    if (nalu_size <= 0) {
-        av_log(avctx, AV_LOG_ERROR, "Invalid NAL unit size: (%d)\n", nalu_size);
-        return AVERROR_INVALIDDATA;
-    }
-
-    // @see ISO_IEC_23094-1_2020, 7.4.2.2 NAL unit header semantic (Table 4 - NAL unit type codes and NAL unit type classes)
-    // @see enum EVCNALUnitType in evc.h
-    nalu_type = get_nalu_type(data, data_size, avctx);
-    if (nalu_type < EVC_NOIDR_NUT || nalu_type > EVC_UNSPEC_NUT62) {
-        av_log(avctx, AV_LOG_ERROR, "Invalid NAL unit type: (%d)\n", nalu_type);
-        return AVERROR_INVALIDDATA;
-    }
-    ev->nalu_type = nalu_type;
-
-    return 0;
-}
-
 static int parse_nal_unit(AVCodecParserContext *s, const uint8_t *buf,
                           int buf_size, AVCodecContext *avctx)
 {
@@ -1134,230 +1097,6 @@ static int parse_nal_units(AVCodecParserContext *s, const uint8_t *buf,
     return 0;
 }
 
-// Reconstruct NAL Unit from incomplete data
-//
-// Assemble the NALU prefix storing NALU length if it has been split between 2 subsequent buffers (input chunks) incoming to the parser.
-// This is the case when the buffer size is not enough for the buffer to store the whole NAL unit prefix.
-// In this case, we have to get part of the prefix from the previous buffer and assemble it with the rest from the current buffer.
-// Then we'll be able to read NAL unit size.
-static int evc_assemble_nalu_prefix(AVCodecParserContext *s, const uint8_t *data, int data_size,
-                                    uint8_t *nalu_prefix, AVCodecContext *avctx)
-{
-    EVCParserContext *ctx = s->priv_data;
-    ParseContext     *pc = &ctx->pc;
-
-    // 1. pc->buffer contains previously read bytes of NALU prefix
-    // 2. buf contains the rest of NAL unit prefix bytes
-
-    for (int i = 0; i < EVC_NALU_LENGTH_PREFIX_SIZE; i++) {
-        if (i < pc->index)
-            nalu_prefix[i] = pc->buffer[i];
-        else
-            nalu_prefix[i] = data[i - pc->index];
-    }
-
-    return 0;
-}
-
-// Reconstruct NALU from incomplete data
-// Assemble NALU if it is split between multiple buffers
-//
-// This is the case when the buffer size is not enough to store the entire NAL unit.
-// In this scenario, we must retrieve parts of the NALU from the previous buffers stored in pc->buffer and assemble them with the remainder from the current buffer.
-static int evc_assemble_nalu(AVCodecParserContext *s, const uint8_t *data, int data_size,
-                             uint8_t *nalu, int nalu_size,
-                             AVCodecContext *avctx)
-{
-    EVCParserContext *ctx = s->priv_data;
-    ParseContext     *pc = &ctx->pc;
-
-    // 1. pc->buffer contains previously read bytes of the current NALU and previous NALUs that belong to the current Access Unit.
-    //
-    //    - previously read bytes are data that came with the previous incoming data chunks.
-    //
-    //    - pc->buffer contains bytes of the current NALU that have already been read while processing previous chunks of incoming data,
-    //      as well as already read bytes of previous NALUs belonging to the same Access Unit.
-    //
-    //    - ctx->bytes_read is the index of the the first element of the current NALU int the pc->buffer.
-    //    - The pc->index is the index of the element located right next to the last element of the current NALU in the pc->buffer.
-    //    - The elements of pc->buffer located before ctx->bytes_read index contain previously read NALUs of the current Access Unit.
-    //
-    // 2. buf contains the rest of the NAL unit bytestime_base
-    //
-    //    - ctx->to_read number of bytes to read from buf (the index of the element right next to the last element to read)
-
-    uint8_t *prev_data = pc->buffer + ctx->bytes_read;
-    int prev_data_size = pc->index - ctx->bytes_read;
-
-    memcpy(nalu, prev_data, prev_data_size);
-    memcpy(nalu + prev_data_size, data, data_size);
-
-    return 0;
-}
-
-static int end_of_access_unit_found(AVCodecParserContext *s, AVCodecContext *avctx)
-{
-    EVCParserContext *ctx = s->priv_data;
-
-    if (avctx->profile == 0) { // BASELINE profile
-        if (ctx->nalu_type == EVC_NOIDR_NUT || ctx->nalu_type == EVC_IDR_NUT)
-            return 1;
-    } else { // MAIN profile
-        EVCParserContext *ev = s->priv_data;
-        if (ctx->nalu_type == EVC_NOIDR_NUT) {
-            if (ev->poc.PicOrderCntVal != ev->poc.prevPicOrderCntVal)
-                return 1;
-        } else if (ctx->nalu_type == EVC_IDR_NUT)
-            return 1;
-    }
-    return 0;
-}
-
-// Find the end of the current frame in the bitstream.
-// The end of frame is the end of Access Unit.
-// Function returns the position of the first byte of the next frame, or END_NOT_FOUND
-static int evc_find_frame_end(AVCodecParserContext *s, const uint8_t *buf,
-                              int buf_size, AVCodecContext *avctx)
-{
-    EVCParserContext *ctx = s->priv_data;
-
-    const uint8_t *data = buf;
-    int data_size = buf_size;
-
-    while (data_size > 0) {
-
-        if (ctx->to_read == 0) {
-            // Nothing must be read and appended to the data from previous chunks.
-            // The previous chunk of data provided the complete NALU prefix or provided the complete NALU.
-
-            if (ctx->nalu_prefix_assembled)   // NALU prefix has been assembled from previous and current chunks of incoming data
-                ctx->nalu_prefix_assembled = 0;
-            else {
-                // Buffer size is not enough for buffer to store NAL unit 4-bytes prefix (length)
-                if (data_size < EVC_NALU_LENGTH_PREFIX_SIZE) {
-                    ctx->to_read = EVC_NALU_LENGTH_PREFIX_SIZE - data_size;
-                    ctx->incomplete_nalu_prefix_read = 1;
-                    return END_NOT_FOUND;
-                }
-
-                ctx->nalu_size = read_nal_unit_length(data, data_size, avctx);
-                ctx->bytes_read += EVC_NALU_LENGTH_PREFIX_SIZE;
-
-                data += EVC_NALU_LENGTH_PREFIX_SIZE;
-                data_size -= EVC_NALU_LENGTH_PREFIX_SIZE;
-            }
-
-            if (data_size < ctx->nalu_size) {
-
-                ctx->to_read = ctx->nalu_size - data_size;
-                ctx->incomplete_nalu_read = 1;
-                return END_NOT_FOUND;
-            }
-
-            // the entire NALU can be read
-            if (parse_nal_unit_type(s, data, ctx->nalu_size, avctx) != 0) {
-                av_log(avctx, AV_LOG_ERROR, "Parsing of NAL unit type failed\n");
-                return AVERROR_INVALIDDATA;
-            }
-
-            data += ctx->nalu_size;
-            data_size -= ctx->nalu_size;
-
-            ctx->bytes_read += ctx->nalu_size;
-
-            if (end_of_access_unit_found(s, avctx)) {
-
-                // parser should return buffer that contains complete AU
-                int read_bytes = ctx->bytes_read;
-                ctx->bytes_read = 0;
-                return read_bytes;
-            }
-
-            // go to the next iteration
-            continue;
-
-        } else {
-            // The previous chunk of input data did not contain the complete valid NALU prefix or did not contain the complete NALU.
-            //
-            // Missing data must be read from the current data chunk and merged with the data from the previous data chunk
-            // to assemble a complete  NALU or complete NALU prefix.
-            //
-            // The data from the previous data chunk are stored in pc->buf
-
-            if (ctx->to_read < data_size) {
-
-                if (ctx->incomplete_nalu_prefix_read == 1) {
-
-                    uint8_t nalu_prefix[EVC_NALU_LENGTH_PREFIX_SIZE];
-                    evc_assemble_nalu_prefix(s, data, data_size, nalu_prefix, avctx);
-
-                    ctx->nalu_size = read_nal_unit_length(nalu_prefix, EVC_NALU_LENGTH_PREFIX_SIZE, avctx);
-
-                    // update variable storing amout of read bytes for teh current AU
-                    ctx->bytes_read += ctx->to_read;
-
-                    // update data pointer and data size
-                    data += ctx->to_read;
-                    data_size -= ctx->to_read;
-
-                    // reset variable storing amount of bytes to read from the new data chunk
-                    ctx->to_read = 0;
-
-                    ctx->incomplete_nalu_prefix_read = 0;
-                    ctx->nalu_prefix_assembled = 1;
-
-                    continue;
-                }
-                if (ctx->incomplete_nalu_read == 1) {
-
-                    uint8_t *nalu = (uint8_t *)av_malloc(ctx->nalu_size);
-
-                    // assemble NAL unit using data from previous data chunks (pc->buffer) and the current one (data)
-                    evc_assemble_nalu(s, data, ctx->to_read, nalu, ctx->nalu_size, avctx);
-
-                    if (parse_nal_unit_type(s, nalu, ctx->nalu_size, avctx) != 0) {
-                        av_log(avctx, AV_LOG_ERROR, "Parsing of NAL unit type failed\n");
-                        return AVERROR_INVALIDDATA;
-                    }
-
-                    av_free(nalu);
-
-                    // update variable storing amout of read bytes for teh current AU
-                    ctx->bytes_read += ctx->nalu_size;
-
-                    // update data pointer and data size
-                    data += ctx->to_read;
-                    data_size -= ctx->to_read;
-
-                    ctx->incomplete_nalu_read = 0;
-
-                    if (end_of_access_unit_found(s, avctx)) {
-
-                        // parser should return buffer that contains complete AU
-                        int read_bytes = ctx->to_read;
-
-                        ctx->to_read = 0;
-                        ctx->bytes_read = 0;
-
-                        return read_bytes;
-                    }
-
-                    // reset variable storing amount of bytes to read from the new data chunk
-                    ctx->to_read = 0;
-
-                    continue;
-                }
-            } else {
-                // needed more input data to assemble complete valid NAL Unit
-                ctx->to_read = ctx->to_read - data_size;
-                return END_NOT_FOUND;
-            }
-        }
-    }
-
-    return END_NOT_FOUND;
-}
-
 // Decoding nal units from evcC (EVCDecoderConfigurationRecord)
 // @see @see ISO/IEC 14496-15:2021 Coding of audio-visual objects - Part 15: section 12.3.3.2
 static int decode_extradata(AVCodecParserContext *s, AVCodecContext *avctx, const uint8_t *data, int size)
@@ -1441,23 +1180,13 @@ static int evc_parse(AVCodecParserContext *s, AVCodecContext *avctx,
 {
     int next;
     EVCParserContext *ev = s->priv_data;
-    ParseContext *pc = &ev->pc;
 
     if (avctx->extradata && !ev->parsed_extradata) {
         decode_extradata(s, avctx, avctx->extradata, avctx->extradata_size);
         ev->parsed_extradata = 1;
     }
 
-    if (s->flags & PARSER_FLAG_COMPLETE_FRAMES)
-        next = buf_size;
-    else {
-        next = evc_find_frame_end(s, buf, buf_size, avctx);
-        if (ff_combine_frame(pc, next, &buf, &buf_size) < 0) {
-            *poutbuf      = NULL;
-            *poutbuf_size = 0;
-            return buf_size;
-        }
-    }
+    next = buf_size;
 
     parse_nal_units(s, buf, buf_size, avctx);
 
@@ -1471,7 +1200,6 @@ static int evc_parse(AVCodecParserContext *s, AVCodecContext *avctx,
 static int evc_parser_init(AVCodecParserContext *s)
 {
     EVCParserContext *ev = s->priv_data;
-    ev->incomplete_nalu_prefix_read = 0;
 
     memset(ev->sps, 0, sizeof(EVCParserSPS *)*EVC_MAX_SPS_COUNT);
     memset(ev->pps, 0, sizeof(EVCParserPPS *)*EVC_MAX_PPS_COUNT);
@@ -1483,7 +1211,6 @@ static int evc_parser_init(AVCodecParserContext *s)
 static void evc_parser_close(AVCodecParserContext *s)
 {
     EVCParserContext *ev = s->priv_data;
-    ev->incomplete_nalu_prefix_read = 0;
 
     for(int i = 0; i < EVC_MAX_SPS_COUNT; i++) {
         EVCParserSPS *sps = ev->sps[i];

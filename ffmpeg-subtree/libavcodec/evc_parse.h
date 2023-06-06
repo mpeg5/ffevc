@@ -24,22 +24,8 @@
 #ifndef AVCODEC_EVC_PARSE_H
 #define AVCODEC_EVC_PARSE_H
 
-#include "config.h"
-
-#include <stdint.h>
-
-#include "libavutil/common.h"
-#include "parser.h"
-#include "golomb.h"
-#include "bytestream.h"
-#include "evc.h"
-
 #define EVC_MAX_QP_TABLE_SIZE   58
-
-// #define EXTENDED_SAR            255
 #define NUM_CPB                 32
-
-// #define NUM_CHROMA_FORMATS      4   // @see ISO_IEC_23094-1 section 6.2 table 2
 
 // rpl structure
 typedef struct RefPicListStruct {
@@ -282,6 +268,41 @@ typedef struct EVCParserContext {
     int nuh_temporal_id;            // the value of TemporalId (shall be the same for all VCL NAL units of an Access Unit)
     int nalu_type;                  // the current NALU type
 
+    // Dimensions of the decoded video intended for presentation.
+    int width;
+    int height;
+
+    // Dimensions of the coded video.
+    int coded_width;
+    int coded_height;
+
+    // The format of the coded data, corresponds to enum AVPixelFormat
+    int format;
+
+    // AV_PICTURE_TYPE_I, EVC_SLICE_TYPE_P, AV_PICTURE_TYPE_B
+    int pict_type;
+
+    // Set by parser to 1 for key frames and 0 for non-key frames
+    int key_frame;
+
+    // Picture number incremented in presentation or output order.
+    // This corresponds to EVCEVCParserPoc::PicOrderCntVal
+    int output_picture_number;
+
+    // profile
+    // 0: FF_PROFILE_EVC_BASELINE
+    // 1: FF_PROFILE_EVC_MAIN
+    int profile;
+
+    // Framerate value in the compressed bitstream
+    AVRational framerate;
+
+    // Number of pictures in a group of pictures
+    int gop_size;
+
+    // Number of frames the decoded output will be delayed relative to the encoded input
+    int delay;
+
     int parsed_extradata;
 
 } EVCParserContext;
@@ -294,12 +315,16 @@ uint32_t ff_evc_read_nal_unit_length(const uint8_t *bits, int bits_size, void *l
 int ff_evc_get_temporal_id(const uint8_t *bits, int bits_size, void *logctx);
 
 // @see ISO_IEC_23094-1 (7.3.2.1 SPS RBSP syntax)
-EVCParserSPS *ff_evc_parse_sps(const uint8_t *bs, int bs_size, EVCParserContext *ev);
+EVCParserSPS *ff_evc_parse_sps(EVCParserContext *ctx, const uint8_t *bs, int bs_size);
 
 // @see ISO_IEC_23094-1 (7.3.2.2 SPS RBSP syntax)
-EVCParserPPS *ff_evc_parse_pps(const uint8_t *bs, int bs_size, EVCParserContext *ev);
+EVCParserPPS *ff_evc_parse_pps(EVCParserContext *ctx, const uint8_t *bs, int bs_size);
 
 // @see ISO_IEC_23094-1 (7.3.2.6 Slice layer RBSP syntax)
-EVCParserSliceHeader *ff_evc_parse_slice_header(const uint8_t *bs, int bs_size, EVCParserContext *ev);
+EVCParserSliceHeader *ff_evc_parse_slice_header(EVCParserContext *ctx, const uint8_t *bs, int bs_size);
+
+int ff_evc_parse_nal_unit(EVCParserContext *ctx, const uint8_t *buf, int buf_size, void *logctx);
+
+int ff_evc_parse_nal_units(EVCParserContext *ctx, const uint8_t *buf, int buf_size, void *logctx);
 
 #endif /* AVCODEC_EVC_PARSE_H */

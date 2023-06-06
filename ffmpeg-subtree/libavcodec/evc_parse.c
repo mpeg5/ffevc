@@ -72,20 +72,12 @@ uint32_t ff_evc_read_nal_unit_length(const uint8_t *bits, int bits_size, void *l
 {
     uint32_t nalu_len = 0;
 
-    if (bits_size >= EVC_NALU_LENGTH_PREFIX_SIZE) {
-
-        int t = 0;
-        unsigned char *p = (unsigned char *)bits;
-
-        for (int i = 0; i < EVC_NALU_LENGTH_PREFIX_SIZE; i++)
-            t = (t << 8) | p[i];
-
-        nalu_len = t;
-        if (nalu_len == 0) {
-            av_log(logctx, AV_LOG_ERROR, "Invalid NAL unit length: %d\n", nalu_len);
-            return 0;
-        }
+    if (bits_size < EVC_NALU_LENGTH_PREFIX_SIZE) {
+        av_log(logctx, AV_LOG_ERROR, "Can't read NAL unit length\n");
+        return 0;
     }
+
+    nalu_len = AV_RB32(bits);
 
     return nalu_len;
 }
@@ -94,19 +86,20 @@ uint32_t ff_evc_read_nal_unit_length(const uint8_t *bits, int bits_size, void *l
 int ff_evc_get_temporal_id(const uint8_t *bits, int bits_size, void *logctx)
 {
     int temporal_id = 0;
-    short t = 0;
+    uint16_t t = 0;
 
-    if (bits_size >= EVC_NALU_HEADER_SIZE) {
-        unsigned char *p = (unsigned char *)bits;
-        // forbidden_zero_bit
-        if ((p[0] & 0x80) != 0)
-            return -1;
-
-        for (int i = 0; i < EVC_NALU_HEADER_SIZE; i++)
-            t = (t << 8) | p[i];
-
-        temporal_id = (t >> 6) & 0x0007;
+    if (bits_size < EVC_NALU_HEADER_SIZE) {
+        av_log(logctx, AV_LOG_ERROR, "Can't read NAL unit header\n");
+        return 0;
     }
+
+    // forbidden_zero_bit
+    if ((bits[0] & 0x80) != 0)
+        return -1;
+
+    t = AV_RB16(bits);
+
+    temporal_id = (t >> 6) & 0x0007;
 
     return temporal_id;
 }
@@ -819,6 +812,7 @@ int ff_evc_parse_nal_units(EVCParserContext *ctx, const uint8_t *buf, int buf_si
             return END_NOT_FOUND;
 
         nalu_size = ff_evc_read_nal_unit_length(data, data_size, logctx);
+
         bytes_read += EVC_NALU_LENGTH_PREFIX_SIZE;
 
         data += EVC_NALU_LENGTH_PREFIX_SIZE;

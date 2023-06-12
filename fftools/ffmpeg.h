@@ -296,7 +296,6 @@ typedef struct OutputFilter {
 
     /* desired output stream properties */
     int width, height;
-    AVRational frame_rate;
     int format;
     int sample_rate;
     AVChannelLayout ch_layout;
@@ -552,7 +551,9 @@ typedef struct OutputStream {
 
     Encoder *enc;
     AVCodecContext *enc_ctx;
-    AVPacket *pkt;
+
+    uint64_t nb_frames_dup;
+    uint64_t nb_frames_drop;
     int64_t last_dropped;
 
     /* video only */
@@ -653,6 +654,8 @@ typedef struct FrameData {
     uint64_t   idx;
     int64_t    pts;
     AVRational tb;
+
+    AVRational frame_rate_filter;
 } FrameData;
 
 extern InputFile   **input_files;
@@ -707,9 +710,6 @@ extern int recast_media;
 
 extern FILE *vstats_file;
 
-extern int64_t nb_frames_dup;
-extern int64_t nb_frames_drop;
-
 #if FFMPEG_OPT_PSNR
 extern int do_psnr;
 #endif
@@ -737,6 +737,12 @@ int init_simple_filtergraph(InputStream *ist, OutputStream *ost,
 int init_complex_filtergraph(FilterGraph *fg);
 
 int copy_av_subtitle(AVSubtitle *dst, const AVSubtitle *src);
+
+/**
+ * Get our axiliary frame data attached to the frame, allocating it
+ * if needed.
+ */
+FrameData *frame_data(AVFrame *frame);
 
 int ifilter_send_frame(InputFilter *ifilter, AVFrame *frame, int keep_reference);
 int ifilter_send_eof(InputFilter *ifilter, int64_t pts, AVRational tb);
@@ -837,18 +843,7 @@ void of_close(OutputFile **pof);
 
 void of_enc_stats_close(void);
 
-/*
- * Send a single packet to the output, applying any bitstream filters
- * associated with the output stream.  This may result in any number
- * of packets actually being written, depending on what bitstream
- * filters are applied.  The supplied packet is consumed and will be
- * blank (as if newly-allocated) when this function returns.
- *
- * If eof is set, instead indicate EOF to all bitstream filters and
- * therefore flush any delayed packets to the output.  A blank packet
- * must be supplied in this case.
- */
-void of_output_packet(OutputFile *of, AVPacket *pkt, OutputStream *ost, int eof);
+void of_output_packet(OutputFile *of, OutputStream *ost, AVPacket *pkt);
 
 /**
  * @param dts predicted packet dts in AV_TIME_BASE_Q

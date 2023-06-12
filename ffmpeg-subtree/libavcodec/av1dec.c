@@ -850,7 +850,7 @@ static av_cold int av1_decode_init(AVCodecContext *avctx)
                                                avctx);
         if (ret < 0) {
             av_log(avctx, AV_LOG_WARNING, "Failed to read extradata.\n");
-            return ret;
+            goto end;
         }
 
         seq = ((CodedBitstreamAV1Context *)(s->cbc->priv_data))->sequence_header;
@@ -1460,6 +1460,7 @@ static int av1_receive_frame(AVCodecContext *avctx, AVFrame *frame)
 
             ret = ff_cbs_read_packet(s->cbc, &s->current_obu, s->pkt);
             if (ret < 0) {
+                ff_cbs_fragment_reset(&s->current_obu);
                 av_packet_unref(s->pkt);
                 av_log(avctx, AV_LOG_ERROR, "Failed to read packet.\n");
                 return ret;

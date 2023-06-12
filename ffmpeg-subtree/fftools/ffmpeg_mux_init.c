@@ -861,6 +861,9 @@ static int streamcopy_init(const Muxer *mux, OutputStream *ost)
 
     AVCodecContext      *codec_ctx  = NULL;
     AVDictionary        *codec_opts = NULL;
+
+    AVRational           fr         = ost->frame_rate;
+
     int ret = 0;
 
     codec_ctx = avcodec_alloc_context3(NULL);
@@ -893,11 +896,11 @@ static int streamcopy_init(const Muxer *mux, OutputStream *ost)
 
     par->codec_tag = codec_tag;
 
-    if (!ost->frame_rate.num)
-        ost->frame_rate = ist->framerate;
+    if (!fr.num)
+        fr = ist->framerate;
 
-    if (ost->frame_rate.num)
-        ost->st->avg_frame_rate = ost->frame_rate;
+    if (fr.num)
+        ost->st->avg_frame_rate = fr;
     else
         ost->st->avg_frame_rate = ist->st->avg_frame_rate;
 
@@ -908,15 +911,11 @@ static int streamcopy_init(const Muxer *mux, OutputStream *ost)
 
     // copy timebase while removing common factors
     if (ost->st->time_base.num <= 0 || ost->st->time_base.den <= 0) {
-        if (ost->frame_rate.num)
-            ost->st->time_base = av_inv_q(ost->frame_rate);
+        if (fr.num)
+            ost->st->time_base = av_inv_q(fr);
         else
             ost->st->time_base = av_add_q(av_stream_get_codec_timebase(ost->st), (AVRational){0, 1});
     }
-
-    // copy estimated duration as a hint to the muxer
-    if (ost->st->duration <= 0 && ist->st->duration > 0)
-        ost->st->duration = av_rescale_q(ist->st->duration, ist->st->time_base, ost->st->time_base);
 
     if (!ms->copy_prior_start) {
         ms->ts_copy_start = (mux->of.start_time == AV_NOPTS_VALUE) ?
@@ -1065,8 +1064,8 @@ static OutputStream *ost_add(Muxer *mux, const OptionsContext *o,
     else av_assert0(0);
     av_log(ost, AV_LOG_VERBOSE, "\n");
 
-    ost->pkt = av_packet_alloc();
-    if (!ost->pkt)
+    ms->pkt = av_packet_alloc();
+    if (!ms->pkt)
         report_and_exit(AVERROR(ENOMEM));
 
     if (ost->enc_ctx) {
@@ -1074,6 +1073,7 @@ static OutputStream *ost_add(Muxer *mux, const OptionsContext *o,
         AVIOContext *s = NULL;
         char *buf = NULL, *arg = NULL, *preset = NULL;
         const char *enc_stats_pre = NULL, *enc_stats_post = NULL, *mux_stats = NULL;
+        const char *enc_time_base = NULL;
 
         ost->encoder_opts = filter_codec_opts(o->g->codec_opts, enc->codec_id,
                                               oc, st, enc->codec);
@@ -1140,6 +1140,26 @@ static OutputStream *ost_add(Muxer *mux, const OptionsContext *o,
             if (ret < 0)
                 exit_program(1);
         }
+
+        MATCH_PER_STREAM_OPT(enc_time_bases, str, enc_time_base, oc, st);
+        if (enc_time_base) {
+            AVRational q;
+            if (av_parse_ratio(&q, enc_time_base, INT_MAX, 0, NULL) < 0 ||
+                q.den <= 0) {
+                av_log(ost, AV_LOG_FATAL, "Invalid time base: %s\n", enc_time_base);
+                exit_program(1);
+            }
+            if (q.num < 0) {
+                if (!ost->ist) {
+                    av_log(ost, AV_LOG_FATAL,
+                           "Cannot use input stream timebase for encoding - "
+                           "no input stream available\n");
+                    exit_program(1);
+                }
+                q = ost->ist->st->time_base;
+            }
+            ost->enc_timebase = q;
+        }
     } else {
         ost->encoder_opts = filter_codec_opts(o->g->codec_opts, AV_CODEC_ID_NONE, oc, st, NULL);
     }
@@ -1161,17 +1181,6 @@ static OutputStream *ost_add(Muxer *mux, const OptionsContext *o,
             exit_program(1);
         }
         st->time_base = q;
-    }
-
-    MATCH_PER_STREAM_OPT(enc_time_bases, str, time_base, oc, st);
-    if (time_base) {
-        AVRational q;
-        if (av_parse_ratio(&q, time_base, INT_MAX, 0, NULL) < 0 ||
-            q.den <= 0) {
-            av_log(ost, AV_LOG_FATAL, "Invalid time base: %s\n", time_base);
-            exit_program(1);
-        }
-        ost->enc_timebase = q;
     }
 
     ms->max_frames = INT64_MAX;
@@ -1281,6 +1290,12 @@ static OutputStream *ost_add(Muxer *mux, const OptionsContext *o,
         ret = streamcopy_init(mux, ost);
         if (ret < 0)
             exit_program(1);
+    }
+
+    // copy estimated duration as a hint to the muxer
+    if (ost->ist && ost->ist->st->duration > 0) {
+        ms->stream_duration    = ist->st->duration;
+        ms->stream_duration_tb = ist->st->time_base;
     }
 
     return ost;

@@ -798,36 +798,3 @@ int ff_evc_parse_nal_unit(EVCParserContext *ctx, const uint8_t *buf, int buf_siz
     return 0;
 }
 
-int ff_evc_parse_nal_units(EVCParserContext *ctx, const uint8_t *buf, int buf_size, void *logctx)
-{
-    const uint8_t *data = buf;
-    int data_size = buf_size;
-    int bytes_read = 0;
-    int nalu_size = 0;
-
-    while (data_size > 0) {
-
-        // Buffer size is not enough for buffer to store NAL unit 4-bytes prefix (length)
-        if (data_size < EVC_NALU_LENGTH_PREFIX_SIZE)
-            return END_NOT_FOUND;
-
-        nalu_size = ff_evc_read_nal_unit_length(data, data_size, logctx);
-
-        bytes_read += EVC_NALU_LENGTH_PREFIX_SIZE;
-
-        data += EVC_NALU_LENGTH_PREFIX_SIZE;
-        data_size -= EVC_NALU_LENGTH_PREFIX_SIZE;
-
-        if (data_size < nalu_size)
-            return END_NOT_FOUND;
-
-        if (ff_evc_parse_nal_unit(ctx, data, nalu_size, logctx) != 0) {
-            av_log(logctx, AV_LOG_ERROR, "Parsing of NAL unit failed\n");
-            return AVERROR_INVALIDDATA;
-        }
-
-        data += nalu_size;
-        data_size -= nalu_size;
-    }
-    return 0;
-}

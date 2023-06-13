@@ -325,6 +325,4 @@ EVCParserSliceHeader *ff_evc_parse_slice_header(EVCParserContext *ctx, const uin
 
 int ff_evc_parse_nal_unit(EVCParserContext *ctx, const uint8_t *buf, int buf_size, void *logctx);
 
-int ff_evc_parse_nal_units(EVCParserContext *ctx, const uint8_t *buf, int buf_size, void *logctx);
-
 #endif /* AVCODEC_EVC_PARSE_H */

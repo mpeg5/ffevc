@@ -28,10 +28,10 @@
 /**
  * Parse NAL units of found picture and decode some basic information.
  *
- * @param ctx parser context.
- * @param buf buffer with field/frame data.
- * @param buf_size size of the buffer.
- * @param avctx log context.
+ * @param s codec parser context
+ * @param avctx codec context
+ * @param buf buffer with field/frame data
+ * @param buf_size size of the buffer
  */
 static int parse_nal_units(AVCodecParserContext *s, AVCodecContext *avctx, const uint8_t *buf, int buf_size)
 {

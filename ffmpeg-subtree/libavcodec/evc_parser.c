@@ -28,50 +28,67 @@
 /**
  * Parse NAL units of found picture and decode some basic information.
  *
- * @param s parser context.
- * @param avctx codec context.
- * @param buf buffer with field/frame data.
- * @param buf_size size of the buffer.
+ * @param s codec parser context
+ * @param avctx codec context
+ * @param buf buffer with field/frame data
+ * @param buf_size size of the buffer
  */
 static int parse_nal_units(AVCodecParserContext *s, AVCodecContext *avctx, const uint8_t *buf, int buf_size)
 {
-    EVCParserContext *p = s->priv_data;
+    EVCParserContext *ctx = s->priv_data;
+    const uint8_t *data = buf;
+    int data_size = buf_size;
+    int bytes_read = 0;
+    int nalu_size = 0;
 
-    int res = ff_evc_parse_nal_units(p, buf, buf_size, avctx);
-    if(!res)
-        return res;
+    while (data_size > 0) {
 
-    s->picture_structure = AV_PICTURE_STRUCTURE_FRAME;
+        // Buffer size is not enough for buffer to store NAL unit 4-bytes prefix (length)
+        if (data_size < EVC_NALU_LENGTH_PREFIX_SIZE)
+            return AVERROR_INVALIDDATA;
 
-    if(p->nalu_type == EVC_SPS_NUT) {
+        nalu_size = ff_evc_read_nal_unit_length(data, data_size, avctx);
 
-        s->coded_width         = p->coded_width;
-        s->coded_height        = p->coded_height;
-        s->width               = p->width;
-        s->height              = p->height;
+        bytes_read += EVC_NALU_LENGTH_PREFIX_SIZE;
 
-        s->format              = p->format;
+        data += EVC_NALU_LENGTH_PREFIX_SIZE;
+        data_size -= EVC_NALU_LENGTH_PREFIX_SIZE;
 
-        avctx->coded_width     = s->coded_width;
-        avctx->coded_height    = s->coded_height;
-        avctx->width           = s->width;
-        avctx->height          = s->height;
+        if (data_size < nalu_size)
+            return AVERROR_INVALIDDATA;
 
-        avctx->gop_size        = p->gop_size;
-        avctx->delay           = p->delay;
-        avctx->profile         = p->profile;
+        if (ff_evc_parse_nal_unit(ctx, data, nalu_size, avctx) != 0) {
+            av_log(avctx, AV_LOG_ERROR, "Parsing of NAL unit failed\n");
+            return AVERROR_INVALIDDATA;
+        }
 
-        avctx->framerate.den   = p->framerate.den;
-        avctx->framerate.num   = p->framerate.num;
+        if(ctx->nalu_type == EVC_SPS_NUT) {
 
-    } else if(p->nalu_type == EVC_NOIDR_NUT) {
-        s->pict_type = p->pict_type;
-        s->key_frame = p->key_frame;
-        s->output_picture_number = p->output_picture_number;
+            s->coded_width         = ctx->coded_width;
+            s->coded_height        = ctx->coded_height;
+            s->width               = ctx->width;
+            s->height              = ctx->height;
+
+            s->format              = ctx->format;
+
+            avctx->gop_size        = ctx->gop_size;
+            avctx->delay           = ctx->delay;
+            avctx->profile         = ctx->profile;
+
+        } else if(ctx->nalu_type == EVC_NOIDR_NUT || ctx->nalu_type == EVC_IDR_NUT) {
+
+            s->pict_type = ctx->pict_type;
+            s->key_frame = ctx->key_frame;
+            s->output_picture_number = ctx->output_picture_number;
+
+        }
+
+        data += nalu_size;
+        data_size -= nalu_size;
     }
-
     return 0;
 }
+
 // Decoding nal units from evcC (EVCDecoderConfigurationRecord)
 // @see @see ISO/IEC 14496-15:2021 Coding of audio-visual objects - Part 15: section 12.3.3.2
 static int decode_extradata(EVCParserContext *ctx, const uint8_t *data, int size, void *logctx)
@@ -154,6 +171,7 @@ static int evc_parse(AVCodecParserContext *s, AVCodecContext *avctx,
                      const uint8_t *buf, int buf_size)
 {
     int next;
+    int ret;
     EVCParserContext *ctx = s->priv_data;
 
     if (avctx->extradata && !ctx->parsed_extradata) {
@@ -163,7 +181,14 @@ static int evc_parse(AVCodecParserContext *s, AVCodecContext *avctx,
 
     next = buf_size;
 
-    parse_nal_units(s, avctx, buf, buf_size);
+    ret = parse_nal_units(s, avctx, buf, buf_size);
+    if(ret < 0) {
+        *poutbuf      = NULL;
+        *poutbuf_size = 0;
+        return buf_size;
+    }
+
+    s->picture_structure = AV_PICTURE_STRUCTURE_FRAME;
 
     // poutbuf contains just one Access Unit
     *poutbuf      = buf;

@@ -81,7 +81,7 @@ static int evc_frame_merge_filter(AVBSFContext *bsf, AVPacket *out)
         return err;
 
     nalu_size = ff_evc_read_nal_unit_length(in->data, EVC_NALU_LENGTH_PREFIX_SIZE, bsf);
-    if(nalu_size <= 0) {
+    if (nalu_size <= 0) {
         av_packet_unref(in);
         return AVERROR_INVALIDDATA;
     }
@@ -101,11 +101,11 @@ static int evc_frame_merge_filter(AVBSFContext *bsf, AVPacket *out)
     au_end_found = end_of_access_unit_found(parser_ctx);
 
     free_space = ctx->au_buffer.capacity - ctx->au_buffer.data_size;
-    while( free_space < in->size ) {
+    while (free_space < in->size) {
         ctx->au_buffer.capacity *= 2;
         free_space = ctx->au_buffer.capacity - ctx->au_buffer.data_size;
 
-        if(free_space >= in->size)
+        if (free_space >= in->size)
             ctx->au_buffer.data = av_realloc(ctx->au_buffer.data, ctx->au_buffer.capacity);
     }
 
@@ -115,7 +115,7 @@ static int evc_frame_merge_filter(AVBSFContext *bsf, AVPacket *out)
 
     av_packet_unref(in);
 
-    if(au_end_found) {
+    if (au_end_found) {
         uint8_t *data = av_memdup(ctx->au_buffer.data, ctx->au_buffer.data_size);
         err = av_packet_from_data(out, data, ctx->au_buffer.data_size);
 

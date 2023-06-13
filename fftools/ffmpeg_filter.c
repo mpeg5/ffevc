@@ -654,7 +654,6 @@ void ofilter_bind_ost(OutputFilter *ofilter, OutputStream *ost)
 
     switch (ost->enc_ctx->codec_type) {
     case AVMEDIA_TYPE_VIDEO:
-        ofilter->frame_rate = ost->frame_rate;
         ofilter->width      = ost->enc_ctx->width;
         ofilter->height     = ost->enc_ctx->height;
         if (ost->enc_ctx->pix_fmt != AV_PIX_FMT_NONE) {
@@ -1074,26 +1073,6 @@ static int configure_output_video_filter(FilterGraph *fg, OutputFilter *ofilter,
 
         last_filter = filter;
         pad_idx     = 0;
-    }
-
-    if (ost->frame_rate.num && 0) {
-        AVFilterContext *fps;
-        char args[255];
-
-        snprintf(args, sizeof(args), "fps=%d/%d", ost->frame_rate.num,
-                 ost->frame_rate.den);
-        snprintf(name, sizeof(name), "fps_out_%d_%d",
-                 ost->file_index, ost->index);
-        ret = avfilter_graph_create_filter(&fps, avfilter_get_by_name("fps"),
-                                           name, args, NULL, fg->graph);
-        if (ret < 0)
-            return ret;
-
-        ret = avfilter_link(last_filter, pad_idx, fps, 0);
-        if (ret < 0)
-            return ret;
-        last_filter = fps;
-        pad_idx = 0;
     }
 
     snprintf(name, sizeof(name), "trim_out_%d_%d",
@@ -1730,6 +1709,16 @@ int reap_filters(int flush)
                            av_ts2str(filtered_frame->pts),
                            av_ts2timestr(filtered_frame->pts, &tb),
                            tb.num, tb.den);
+            }
+
+            if (ost->type == AVMEDIA_TYPE_VIDEO) {
+                FrameData *fd = frame_data(filtered_frame);
+                if (!fd) {
+                    av_frame_unref(filtered_frame);
+                    report_and_exit(AVERROR(ENOMEM));
+                }
+
+                fd->frame_rate_filter = av_buffersink_get_frame_rate(filter);
             }
 
             enc_frame(ost, filtered_frame);

@@ -17,6 +17,8 @@ version <next>:
 - RivaTuner video decoder
 - xfade_vulkan filter
 - vMix video decoder
+- eXtra-fast Essential Video Encoder (XEVE)
+- eXtra-fast Essential Video Decoder (XEVD)
 
 version 6.0:
 - Radiance HDR image support
@@ -62,8 +64,6 @@ version 6.0:
 - filtergraph syntax in ffmpeg CLI now supports passing file contents
   as option values, by prefixing option name with '/'
 - hstack_qsv, vstack_qsv and xstack_qsv filters
-- eXtra-fast Essential Video Encoder (XEVE)
-- eXtra-fast Essential Video Decoder (XEVD)
 
 version 5.1:
 - add ipfs/ipns gateway support

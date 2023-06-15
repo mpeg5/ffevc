@@ -47,7 +47,7 @@ static int parse_nal_units(AVCodecParserContext *s, AVCodecContext *avctx, const
         if (data_size < EVC_NALU_LENGTH_PREFIX_SIZE)
             return AVERROR_INVALIDDATA;
 
-        nalu_size = ff_evc_read_nal_unit_length(data, data_size, avctx);
+        nalu_size = av_evc_read_nal_unit_length(data, data_size, avctx);
 
         bytes_read += EVC_NALU_LENGTH_PREFIX_SIZE;
 

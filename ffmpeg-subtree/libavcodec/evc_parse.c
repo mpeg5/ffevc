@@ -49,39 +49,6 @@ static const enum AVPixelFormat pix_fmts_16bit[NUM_CHROMA_FORMATS] = {
     AV_PIX_FMT_GRAY16, AV_PIX_FMT_YUV420P16, AV_PIX_FMT_YUV422P16, AV_PIX_FMT_YUV444P16
 };
 
-int ff_evc_get_nalu_type(const uint8_t *bits, int bits_size, void *logctx)
-{
-    int unit_type_plus1 = 0;
-
-    if (bits_size >= EVC_NALU_HEADER_SIZE) {
-        unsigned char *p = (unsigned char *)bits;
-        // forbidden_zero_bit
-        if ((p[0] & 0x80) != 0) {
-            av_log(logctx, AV_LOG_ERROR, "Invalid NAL unit header\n");
-            return -1;
-        }
-
-        // nal_unit_type
-        unit_type_plus1 = (p[0] >> 1) & 0x3F;
-    }
-
-    return unit_type_plus1 - 1;
-}
-
-uint32_t ff_evc_read_nal_unit_length(const uint8_t *bits, int bits_size, void *logctx)
-{
-    uint32_t nalu_len = 0;
-
-    if (bits_size < EVC_NALU_LENGTH_PREFIX_SIZE) {
-        av_log(logctx, AV_LOG_ERROR, "Can't read NAL unit length\n");
-        return 0;
-    }
-
-    nalu_len = AV_RB32(bits);
-
-    return nalu_len;
-}
-
 // nuh_temporal_id specifies a temporal identifier for the NAL unit
 int ff_evc_get_temporal_id(const uint8_t *bits, int bits_size, void *logctx)
 {
@@ -590,7 +557,7 @@ int ff_evc_parse_nal_unit(EVCParserContext *ctx, const uint8_t *buf, int buf_siz
 
     // @see ISO_IEC_23094-1_2020, 7.4.2.2 NAL unit header semantic (Table 4 - NAL unit type codes and NAL unit type classes)
     // @see enum EVCNALUnitType in evc.h
-    nalu_type = ff_evc_get_nalu_type(data, data_size, logctx);
+    nalu_type = av_evc_get_nalu_type(data, data_size, logctx);
     if (nalu_type < EVC_NOIDR_NUT || nalu_type > EVC_UNSPEC_NUT62) {
         av_log(logctx, AV_LOG_ERROR, "Invalid NAL unit type: (%d)\n", nalu_type);
         return AVERROR_INVALIDDATA;

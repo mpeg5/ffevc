@@ -80,7 +80,7 @@ static int evc_frame_merge_filter(AVBSFContext *bsf, AVPacket *out)
     if (err < 0)
         return err;
 
-    nalu_size = ff_evc_read_nal_unit_length(in->data, EVC_NALU_LENGTH_PREFIX_SIZE, bsf);
+    nalu_size = av_evc_read_nal_unit_length(in->data, EVC_NALU_LENGTH_PREFIX_SIZE, bsf);
     if (nalu_size <= 0) {
         av_packet_unref(in);
         return AVERROR_INVALIDDATA;

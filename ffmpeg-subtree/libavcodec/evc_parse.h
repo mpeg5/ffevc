@@ -340,10 +340,6 @@ static inline uint32_t av_evc_read_nal_unit_length(const uint8_t *bits, int bits
     return nalu_len;
 }
 
-// int av_evc_get_nalu_type(const uint8_t *bits, int bits_size, void *logctx);
-
-// uint32_t av_evc_read_nal_unit_length(const uint8_t *bits, int bits_size, void *logctx);
-
 // nuh_temporal_id specifies a temporal identifier for the NAL unit
 int ff_evc_get_temporal_id(const uint8_t *bits, int bits_size, void *logctx);
 

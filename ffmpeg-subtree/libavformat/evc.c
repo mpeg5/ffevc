@@ -359,7 +359,7 @@ int ff_isom_write_evcc(AVIOContext *pb, const uint8_t *data,
     evcc_init(&evcc);
 
     while (bytes_to_read > EVC_NALU_LENGTH_PREFIX_SIZE) {
-        nalu_size = ff_evc_read_nal_unit_length(data, EVC_NALU_LENGTH_PREFIX_SIZE, pb);
+        nalu_size = av_evc_read_nal_unit_length(data, EVC_NALU_LENGTH_PREFIX_SIZE, pb);
         if (nalu_size == 0) break;
 
         data += EVC_NALU_LENGTH_PREFIX_SIZE;
@@ -367,7 +367,7 @@ int ff_isom_write_evcc(AVIOContext *pb, const uint8_t *data,
 
         if (bytes_to_read < nalu_size) break;
 
-        nalu_type = ff_evc_get_nalu_type(data, bytes_to_read, pb);
+        nalu_type = av_evc_get_nalu_type(data, bytes_to_read, pb);
 
         // @see ISO/IEC 14496-15:2021 Coding of audio-visual objects - Part 15: section 12.3.3.3
         // NAL_unit_type indicates the type of the NAL units in the following array (which shall be all of that type);

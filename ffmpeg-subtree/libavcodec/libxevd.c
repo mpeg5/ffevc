@@ -409,8 +409,6 @@ static int libxevd_receive_frame(AVCodecContext *avctx, AVFrame *frame)
                         frame->pkt_dts = imgb->ts[XEVD_TS_DTS];
                         frame->pts = imgb->ts[XEVD_TS_PTS];
 
-                        av_log(avctx, AV_LOG_DEBUG, "imgb->ts[XEVD_TS_PTS] %lld | imgb->ts[XEVD_TS_DTS] %lld\n", imgb->ts[XEVD_TS_PTS], imgb->ts[XEVD_TS_DTS]);
-
                         // xevd_pull uses pool of objects of type XEVD_IMGB.
                         // The pool size is equal MAX_PB_SIZE (26), so release object when it is no more needed
                         imgb->release(imgb);
@@ -487,8 +485,6 @@ static int libxevd_receive_frame(AVCodecContext *avctx, AVFrame *frame)
 
             frame->pkt_dts = imgb->ts[XEVD_TS_DTS];
             frame->pts = imgb->ts[XEVD_TS_PTS];
-
-            av_log(avctx, AV_LOG_DEBUG, "imgb->ts[XEVD_TS_PTS] %lld | imgb->ts[XEVD_TS_DTS] %lld\n", imgb->ts[XEVD_TS_PTS], imgb->ts[XEVD_TS_DTS]);
 
             av_packet_free(&pkt_au_imgb);
 

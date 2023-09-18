@@ -322,7 +322,6 @@ static int libxevd_receive_frame(AVCodecContext *avctx, AVFrame *frame)
             if (XEVD_FAILED(xevd_ret)) {
                 av_log(avctx, AV_LOG_ERROR, "Failed to decode bitstream\n");
 
-                // @todo Remove all AVPacket objects whose pointers are in the user_data of XEVD_IMGB objects still held by the decoder
                 av_packet_free(&pkt_au);
 
                 return AVERROR_EXTERNAL;
@@ -334,7 +333,6 @@ static int libxevd_receive_frame(AVCodecContext *avctx, AVFrame *frame)
                 if ((ret = export_stream_params(xectx, avctx)) != 0) {
                     av_log(avctx, AV_LOG_ERROR, "Failed to export stream params\n");
 
-                    // @todo Remove all AVPacket objects whose pointers are in the user_data of XEVD_IMGB objects still held by the decoder
                     av_packet_free(&pkt_au);
 
                     return ret;
@@ -352,7 +350,6 @@ static int libxevd_receive_frame(AVCodecContext *avctx, AVFrame *frame)
                 if (XEVD_FAILED(xevd_ret)) {
                     av_log(avctx, AV_LOG_ERROR, "Failed to pull the decoded image (xevd error code: %d, frame#=%d)\n", xevd_ret, stat.fnum);
 
-                    // @todo Remove all AVPacket objects whose pointers are in the user_data of XEVD_IMGB objects still held by the decoder
                     av_packet_free(&pkt_au);
 
                     return AVERROR_EXTERNAL;
@@ -365,7 +362,6 @@ static int libxevd_receive_frame(AVCodecContext *avctx, AVFrame *frame)
                         if(bs_read_pos == pkt_au->size) {
                             av_log(avctx, AV_LOG_ERROR, "Invalid decoded image data\n");
 
-                            // @todo Remove all AVPacket objects whose pointers are in the user_data of XEVD_IMGB objects still held by the decoder
                             av_packet_free(&pkt_au);
 
                             return  AVERROR(EAGAIN);
@@ -377,7 +373,6 @@ static int libxevd_receive_frame(AVCodecContext *avctx, AVFrame *frame)
                         if(!pkt_au_imgb) {
                             av_log(avctx, AV_LOG_ERROR, "Invalid data needed to fill frame properties\n");
 
-                            // @todo Remove all AVPacket objects whose pointers are in the user_data of XEVD_IMGB objects still held by the decoder
                             av_packet_free(&pkt_au);
                             av_frame_unref(frame);
 
@@ -391,7 +386,6 @@ static int libxevd_receive_frame(AVCodecContext *avctx, AVFrame *frame)
                         if(ret < 0) {
                             av_log(avctx, AV_LOG_ERROR, "Image copying error\n");
 
-                            // @todo Remove all AVPacket objects whose pointers are in the user_data of XEVD_IMGB objects still held by the decoder
                             av_packet_free(&pkt_au_imgb);
                             av_frame_unref(frame);
 
@@ -406,7 +400,6 @@ static int libxevd_receive_frame(AVCodecContext *avctx, AVFrame *frame)
                         if (ret < 0) {
                             av_log(avctx, AV_LOG_ERROR, "ff_decode_frame_props_from_pkt error\n");
 
-                            // @todo Remove all AVPacket objects whose pointers are in the user_data of XEVD_IMGB objects still held by the decoder
                             av_packet_free(&pkt_au_imgb);
                             av_frame_unref(frame);
 
@@ -419,7 +412,6 @@ static int libxevd_receive_frame(AVCodecContext *avctx, AVFrame *frame)
                         frame->pkt_dts = imgb->ts[XEVD_TS_DTS];
                         frame->pts = imgb->ts[XEVD_TS_PTS];
 
-                        // No more needed, relese
                         av_packet_free(&pkt_au_imgb);
 
                         // xevd_pull uses pool of objects of type XEVD_IMGB.

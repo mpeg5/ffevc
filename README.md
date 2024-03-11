@@ -1,3 +1,8 @@
+# Functionality from this repository is merged to official FFmpeg repository at https://git.ffmpeg.org/ffmpeg.git
+# Use main FFmpeg for latest fixes and features.
+# This repository is Archived and for reference only, it won't be maintained anymore!
+
+
 # ffevc
 ffmpeg supporting EVC codec and file formats. 
 

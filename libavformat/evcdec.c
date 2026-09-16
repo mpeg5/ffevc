@@ -39,6 +39,7 @@ typedef struct EVCDemuxContext {
     AVRational framerate;
 
     AVBSFContext *bsf;
+    int64_t au_count;
 
 } EVCDemuxContext;
 
@@ -194,6 +195,17 @@ end:
             au_end_found = 1;
     }
 
+    if (ret >= 0) {
+        // raw input carries no timing; stamp access units at the configured
+        // frame rate (decode order, so presentation reordering is left to the
+        // decoder)
+        AVStream *st = s->streams[0];
+        AVRational dur = av_inv_q(c->framerate);
+
+        pkt->pts = pkt->dts = av_rescale_q(c->au_count++, dur, st->time_base);
+        pkt->duration = av_rescale_q(1, dur, st->time_base);
+    }
+
     return ret;
 }
 
@@ -209,7 +221,7 @@ const FFInputFormat ff_evc_demuxer = {
     .p.name         = "evc",
     .p.long_name    = NULL_IF_CONFIG_SMALL("EVC Annex B"),
     .p.extensions   = "evc",
-    .p.flags        = AVFMT_GENERIC_INDEX | AVFMT_NOTIMESTAMPS,
+    .p.flags        = AVFMT_GENERIC_INDEX,
     .p.priv_class   = &evc_demuxer_class,
     .read_probe     = annexb_probe,
     .read_header    = evc_read_header, // annexb_read_header

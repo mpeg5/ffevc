@@ -27,6 +27,9 @@
 
 #include "libavutil/internal.h"
 #include "libavutil/common.h"
+#include "libavutil/hdr_dynamic_metadata.h"
+#include "libavutil/intreadwrite.h"
+#include "libavutil/mastering_display_metadata.h"
 #include "libavutil/mem.h"
 #include "libavutil/opt.h"
 #include "libavutil/pixdesc.h"
@@ -35,6 +38,7 @@
 
 #include "avcodec.h"
 #include "codec_internal.h"
+#include "itut35.h"
 #include "profiles.h"
 #include "encode.h"
 
@@ -84,6 +88,15 @@ typedef struct XeveContext {
     int sei_info;       // embed Supplemental enhancement information while encoding
 
     int color_format;   // input data color format: currently only XEVE_CF_YCBCR420 is supported
+
+    // xeve emits decoding timestamps that can exceed the pts or go
+    // non-monotonic for the first frame_delay pictures, so the dts is derived
+    // here instead: dts[i] = input pts[i] - reorder delay
+    int64_t in_ts[64];  // input frame pts, in input order
+    unsigned n_in;      // frames pushed to the encoder
+    unsigned n_out;     // packets received from the encoder
+    int delay;          // reorder delay in frames, -1 until the first packet
+    int64_t ts_dur;     // frame duration estimated from the first two pts
 
     AVDictionary *xeve_params;
 } XeveContext;
@@ -402,6 +415,7 @@ static av_cold int libxeve_init(AVCodecContext *avctx)
     imgb->h[1] = imgb->h[2] = imgb->ah[1] = imgb->ah[2] = height_chroma;
 
     xectx->state = STATE_ENCODING;
+    xectx->delay = -1;
 
     return 0;
 }
@@ -417,6 +431,100 @@ static av_cold int libxeve_init(AVCodecContext *avctx)
   *
   * @return 0 on success, negative error code on failure
   */
+typedef struct XeveSeiBufs {
+    uint8_t mdcv[24];
+    uint8_t cll[4];
+    uint8_t *t35;
+    XEVE_SEI_PAYLOAD pls[3];
+    XEVE_SEI sei;
+} XeveSeiBufs;
+
+/**
+ * Turn the HDR side data of a frame into SEI payloads attached to the picture.
+ * The buffers only need to live until xeve_push() returns (payloads are copied).
+ */
+static int libxeve_attach_sei(AVCodecContext *avctx, const AVFrame *frame,
+                              XEVE_IMGB *imgb, XeveSeiBufs *b)
+{
+    const AVFrameSideData *sd;
+    int n = 0;
+
+    b->t35 = NULL;
+
+    sd = av_frame_get_side_data(frame, AV_FRAME_DATA_MASTERING_DISPLAY_METADATA);
+    if (sd) {
+        const AVMasteringDisplayMetadata *m = (const AVMasteringDisplayMetadata *)sd->data;
+
+        if (m->has_primaries && m->has_luminance) {
+            // H.265-style mastering display SEI: primaries in G, B, R order,
+            // chromaticities in 1/50000, luminance in 1/10000 cd/m^2
+            static const int map[3] = { 1, 2, 0 };
+
+            for (int j = 0; j < 3; j++) {
+                const int i = map[j];
+                AV_WB16(b->mdcv + j * 4,
+                        av_rescale(m->display_primaries[i][0].num, 50000, m->display_primaries[i][0].den));
+                AV_WB16(b->mdcv + j * 4 + 2,
+                        av_rescale(m->display_primaries[i][1].num, 50000, m->display_primaries[i][1].den));
+            }
+            AV_WB16(b->mdcv + 12, av_rescale(m->white_point[0].num, 50000, m->white_point[0].den));
+            AV_WB16(b->mdcv + 14, av_rescale(m->white_point[1].num, 50000, m->white_point[1].den));
+            AV_WB32(b->mdcv + 16, av_rescale(m->max_luminance.num, 10000, m->max_luminance.den));
+            AV_WB32(b->mdcv + 20, av_rescale(m->min_luminance.num, 10000, m->min_luminance.den));
+
+            b->pls[n++] = (XEVE_SEI_PAYLOAD){ sizeof(b->mdcv), XEVE_SEI_MASTERING_DISPLAY_INFO, b->mdcv };
+        }
+    }
+
+    sd = av_frame_get_side_data(frame, AV_FRAME_DATA_CONTENT_LIGHT_LEVEL);
+    if (sd) {
+        const AVContentLightMetadata *c = (const AVContentLightMetadata *)sd->data;
+
+        AV_WB16(b->cll,     c->MaxCLL);
+        AV_WB16(b->cll + 2, c->MaxFALL);
+
+        b->pls[n++] = (XEVE_SEI_PAYLOAD){ sizeof(b->cll), XEVE_SEI_CONTENT_LIGHT_LEVEL_INFO, b->cll };
+    }
+
+    sd = av_frame_get_side_data(frame, AV_FRAME_DATA_DYNAMIC_HDR_PLUS);
+    if (sd) {
+        size_t payload_size;
+        uint8_t *payload;
+        int ret;
+
+        ret = av_dynamic_hdr_plus_to_t35((const AVDynamicHDRPlus *)sd->data,
+                                         NULL, &payload_size);
+        if (ret < 0)
+            return ret;
+
+        b->t35 = av_malloc(payload_size + 6);
+        if (!b->t35)
+            return AVERROR(ENOMEM);
+
+        b->t35[0] = ITU_T_T35_COUNTRY_CODE_US;
+        AV_WB16(b->t35 + 1, ITU_T_T35_PROVIDER_CODE_SAMSUNG);
+        AV_WB16(b->t35 + 3, 1); // provider_oriented_code
+        b->t35[5] = 4;          // application_identifier
+        payload = b->t35 + 6;
+
+        ret = av_dynamic_hdr_plus_to_t35((const AVDynamicHDRPlus *)sd->data,
+                                         &payload, &payload_size);
+        if (ret < 0)
+            return ret;
+
+        b->pls[n++] = (XEVE_SEI_PAYLOAD){ payload_size + 6, XEVE_SEI_USER_DATA_REGISTERED_ITU_T_T35, b->t35 };
+    }
+
+    if (n) {
+        b->sei.num_payloads = n;
+        b->sei.payloads = b->pls;
+        imgb->pdata[XEVE_IMGB_SEI_SLOT] = &b->sei;
+        imgb->ndata[XEVE_IMGB_SEI_SLOT] = XEVE_SEI_MAGIC;
+    }
+
+    return 0;
+}
+
 static int libxeve_encode(AVCodecContext *avctx, AVPacket *avpkt,
                           const AVFrame *frame, int *got_packet)
 {
@@ -437,6 +545,7 @@ static int libxeve_encode(AVCodecContext *avctx, AVPacket *avpkt,
     if (xectx->state == STATE_ENCODING) {
         int i;
         XEVE_IMGB *imgb = NULL;
+        XeveSeiBufs seibufs;
 
         imgb = &xectx->imgb;
 
@@ -447,20 +556,36 @@ static int libxeve_encode(AVCodecContext *avctx, AVPacket *avpkt,
 
         imgb->ts[XEVE_TS_PTS] = frame->pts;
 
-        /* push image to encoder */
+        if (xectx->n_in == 1)
+            xectx->ts_dur = frame->pts - xectx->in_ts[0];
+        xectx->in_ts[xectx->n_in++ % FF_ARRAY_ELEMS(xectx->in_ts)] = frame->pts;
+
+        ret = libxeve_attach_sei(avctx, frame, imgb, &seibufs);
+        if (ret < 0) {
+            av_freep(&seibufs.t35);
+            return ret;
+        }
+
+        /* push image to encoder (SEI payloads are copied inside the call) */
         ret = xeve_push(xectx->id, imgb);
+        av_freep(&seibufs.t35);
+        imgb->pdata[XEVE_IMGB_SEI_SLOT] = NULL;
+        imgb->ndata[XEVE_IMGB_SEI_SLOT] = 0;
         if (XEVE_FAILED(ret)) {
             av_log(avctx, AV_LOG_ERROR, "xeve_push() failed\n");
             return AVERROR_EXTERNAL;
         }
     }
     if (xectx->state == STATE_ENCODING || xectx->state == STATE_BUMPING) {
-        /* encoding */
-        ret = xeve_encode(xectx->id, &(xectx->bitb), &(xectx->stat));
-        if (XEVE_FAILED(ret)) {
-            av_log(avctx, AV_LOG_ERROR, "xeve_encode() failed\n");
-            return AVERROR_EXTERNAL;
-        }
+        /* encoding; while bumping, XEVE_OK_OUT_NOT_AVAILABLE means "call again",
+         * not end of stream, so keep going until a packet or NO_MORE_FRM */
+        do {
+            ret = xeve_encode(xectx->id, &(xectx->bitb), &(xectx->stat));
+            if (XEVE_FAILED(ret)) {
+                av_log(avctx, AV_LOG_ERROR, "xeve_encode() failed\n");
+                return AVERROR_EXTERNAL;
+            }
+        } while (xectx->state == STATE_BUMPING && ret == XEVE_OK_OUT_NOT_AVAILABLE);
 
         /* store bitstream */
         if (ret == XEVE_OK_OUT_NOT_AVAILABLE) { // Return OK but picture is not available yet
@@ -478,8 +603,12 @@ static int libxeve_encode(AVCodecContext *avctx, AVPacket *avpkt,
                 avpkt->time_base.num = xectx->cdsc.param.fps.den;
                 avpkt->time_base.den = xectx->cdsc.param.fps.num;
 
+                if (xectx->delay < 0)
+                    xectx->delay = FFMAX((int)xectx->n_in - 1, 0);
+
                 avpkt->pts = xectx->bitb.ts[XEVE_TS_PTS];
-                avpkt->dts = xectx->bitb.ts[XEVE_TS_DTS];
+                avpkt->dts = xectx->in_ts[xectx->n_out++ % FF_ARRAY_ELEMS(xectx->in_ts)] -
+                             xectx->delay * xectx->ts_dur;
 
                 enum AVPictureType av_pic_type;
                 switch(xectx->stat.stype) {

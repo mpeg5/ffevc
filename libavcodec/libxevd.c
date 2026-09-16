@@ -27,6 +27,8 @@
 
 #include "libavutil/internal.h"
 #include "libavutil/common.h"
+#include "libavutil/intreadwrite.h"
+#include "libavutil/mastering_display_metadata.h"
 #include "libavutil/pixdesc.h"
 #include "libavutil/pixfmt.h"
 #include "libavutil/imgutils.h"
@@ -34,6 +36,8 @@
 
 #include "avcodec.h"
 #include "codec_internal.h"
+#include "evc.h"
+#include "itut35.h"
 #include "profiles.h"
 #include "decode.h"
 
@@ -54,7 +58,37 @@ typedef struct XevdContext {
     int draining_mode; // The flag is set if codec enters draining mode.
 
     AVPacket *pkt;     // access unit (a set of NAL units that are consecutive in decoding order and containing exactly one encoded image)
+
+    // xevd overwrites the presentation timestamp with one synthesized from the
+    // decoding timestamp, so input pts are reordered here instead: frames come
+    // out in presentation order, which is ascending input pts order
+    int64_t pts_queue[EVC_MAX_NUM_REF_PICS + 8];
+    int nb_pts;
 } XevdContext;
+
+static void xevd_pts_push(XevdContext *xectx, int64_t pts)
+{
+    if (xectx->nb_pts < FF_ARRAY_ELEMS(xectx->pts_queue))
+        xectx->pts_queue[xectx->nb_pts++] = pts;
+}
+
+static int64_t xevd_pts_pop_min(XevdContext *xectx)
+{
+    int min = 0;
+    int64_t pts;
+
+    if (!xectx->nb_pts)
+        return AV_NOPTS_VALUE;
+
+    // AV_NOPTS_VALUE is INT64_MIN, so entries without a pts pop first
+    for (int i = 1; i < xectx->nb_pts; i++)
+        if (xectx->pts_queue[i] < xectx->pts_queue[min])
+            min = i;
+
+    pts = xectx->pts_queue[min];
+    xectx->pts_queue[min] = xectx->pts_queue[--xectx->nb_pts];
+    return pts;
+}
 
 /**
  * The function populates the XEVD_CDSC structure.
@@ -245,6 +279,85 @@ static av_cold int libxevd_init(AVCodecContext *avctx)
     return 0;
 }
 
+/**
+ * Restore the SEI payloads exposed on a decoded picture as frame side data.
+ */
+static int libxevd_export_sei(AVCodecContext *avctx, AVFrame *frame,
+                              const XEVD_SEI *sei)
+{
+    int ret;
+
+    for (int i = 0; i < sei->num_payloads; i++) {
+        const XEVD_SEI_PAYLOAD *pl = &sei->payloads[i];
+        const uint8_t *p = pl->payload;
+
+        switch (pl->payload_type) {
+        case XEVD_SEI_MASTERING_DISPLAY_INFO:
+            {
+                AVMasteringDisplayMetadata *m;
+                // H.265-style payload: primaries in G, B, R order,
+                // chromaticities in 1/50000, luminance in 1/10000 cd/m^2
+                static const int mapping[3] = { 2, 0, 1 };
+
+                if (pl->payload_size < 24)
+                    break;
+
+                ret = ff_decode_mastering_display_new(avctx, frame, &m);
+                if (ret < 0)
+                    return ret;
+
+                if (m) {
+                    for (int c = 0; c < 3; c++) {
+                        const int j = mapping[c];
+                        m->display_primaries[c][0] = av_make_q(AV_RB16(p + j * 4),     50000);
+                        m->display_primaries[c][1] = av_make_q(AV_RB16(p + j * 4 + 2), 50000);
+                    }
+                    m->white_point[0] = av_make_q(AV_RB16(p + 12), 50000);
+                    m->white_point[1] = av_make_q(AV_RB16(p + 14), 50000);
+                    m->max_luminance  = av_make_q(AV_RB32(p + 16), 10000);
+                    m->min_luminance  = av_make_q(AV_RB32(p + 20), 10000);
+                    m->has_primaries = 1;
+                    m->has_luminance = 1;
+                }
+            }
+            break;
+        case XEVD_SEI_CONTENT_LIGHT_LEVEL_INFO:
+            {
+                AVContentLightMetadata *c;
+
+                if (pl->payload_size < 4)
+                    break;
+
+                ret = ff_decode_content_light_new(avctx, frame, &c);
+                if (ret < 0)
+                    return ret;
+
+                if (c) {
+                    c->MaxCLL  = AV_RB16(p);
+                    c->MaxFALL = AV_RB16(p + 2);
+                }
+            }
+            break;
+        case XEVD_SEI_USER_DATA_REGISTERED_ITU_T_T35:
+            {
+                FFITUTT35 t35 = { 0 };
+
+                ret = ff_itut_t35_parse_buffer(&t35, p, pl->payload_size, 0);
+                if (ret == 1) {
+                    ret = ff_itut_t35_parse_payload_to_frame(&t35, NULL, avctx, frame);
+                    if (ret < 0)
+                        return ret;
+                }
+            }
+            break;
+        default:
+            break;
+        }
+    }
+
+    return 0;
+}
+
 static int libxevd_return_frame(AVCodecContext *avctx, AVFrame *frame,
                                 XEVD_IMGB *imgb, AVPacket **pkt_au)
 {
@@ -293,7 +406,24 @@ static int libxevd_return_frame(AVCodecContext *avctx, AVFrame *frame,
     }
 
     frame->pkt_dts = imgb->ts[XEVD_TS_DTS];
-    frame->pts = imgb->ts[XEVD_TS_PTS];
+    frame->pts = xevd_pts_pop_min(avctx->priv_data);
+    if (frame->pts == AV_NOPTS_VALUE) // no usable input pts; keep xevd's estimate
+        frame->pts = imgb->ts[XEVD_TS_PTS];
+
+    if (imgb->ndata[XEVD_IMGB_SEI_SLOT] == XEVD_SEI_MAGIC &&
+        imgb->pdata[XEVD_IMGB_SEI_SLOT]) {
+        ret = libxevd_export_sei(avctx, frame,
+                                 (const XEVD_SEI *)imgb->pdata[XEVD_IMGB_SEI_SLOT]);
+        if (ret < 0) {
+            av_packet_free(&pkt_au_imgb);
+            av_frame_unref(frame);
+
+            imgb->release(imgb);
+            imgb = NULL;
+
+            return ret;
+        }
+    }
 
     av_packet_free(&pkt_au_imgb);
 
@@ -391,6 +521,7 @@ static int libxevd_receive_frame(AVCodecContext *avctx, AVFrame *frame)
 
             // stat.fnum - has negative value if the decoded data is not frame
             if (stat.fnum >= 0) {
+                xevd_pts_push(xectx, pkt_au->pts);
 
                 xevd_ret = xevd_pull(xectx->id, &imgb); // The function returns a valid image only if the return code is XEVD_OK
 

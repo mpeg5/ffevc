@@ -1,0 +1,123 @@
+name: Build FFmpeg
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+  workflow_dispatch:
+
+jobs:
+  build-linux:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            autoconf \
+            automake \
+            build-essential \
+            cmake \
+            git-core \
+            libass-dev \
+            libfreetype6-dev \
+            libgnutls28-dev \
+            libmp3lame-dev \
+            libsdl2-dev \
+            libtool \
+            libva-dev \
+            libvdpau-dev \
+            libvorbis-dev \
+            libxcb1-dev \
+            libxcb-shm0-dev \
+            libxcb-xfixes0-dev \
+            meson \
+            ninja-build \
+            pkg-config \
+            texinfo \
+            wget \
+            nasm \
+            zlib1g-dev
+
+      - name: Build and install xeve and xevd dependencies
+        run: |
+          git clone --depth 1 https://github.com/mpeg5/xeve.git
+          cmake -S xeve -B xeve/build -DCMAKE_BUILD_TYPE=Release -DSET_PROF=MAIN
+          cmake --build xeve/build -j$(nproc)
+          sudo cmake --install xeve/build
+
+          git clone --depth 1 https://github.com/mpeg5/xevd.git
+          cmake -S xevd -B xevd/build -DCMAKE_BUILD_TYPE=Release
+          cmake --build xevd/build -j$(nproc)
+          sudo cmake --install xevd/build
+          sudo ldconfig
+
+      - name: Build FFmpeg
+        run: |
+          ./configure --extra-libs="-lpthread -lm" --enable-ffplay --enable-libxeve --enable-libxevd
+          make -j$(nproc)
+          sudo make install
+
+      - name: Verify run
+        run: |
+          ffmpeg -version
+          ffmpeg -hide_banner -h encoder=libxeve
+          ffmpeg -hide_banner -h decoder=libxevd
+
+  build-windows:
+    runs-on: windows-latest
+
+    defaults:
+      run:
+        shell: msys2 {0}
+
+    steps:
+      - name: Set up MSYS2 (MinGW-w64)
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: MINGW64
+          update: true
+          install: >-
+            base-devel
+            git
+            mingw-w64-x86_64-toolchain
+            mingw-w64-x86_64-cmake
+            mingw-w64-x86_64-ninja
+            mingw-w64-x86_64-nasm
+            mingw-w64-x86_64-pkgconf
+
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Build and install xeve and xevd dependencies
+        run: |
+          git clone --depth 1 https://github.com/mpeg5/xeve.git
+          cmake -S xeve -B xeve/build -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/mingw64 -DSET_PROF=MAIN
+          cmake --build xeve/build
+          cmake --install xeve/build
+
+          git clone --depth 1 https://github.com/mpeg5/xevd.git
+          cmake -S xevd -B xevd/build -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/mingw64
+          cmake --build xevd/build
+          cmake --install xevd/build
+
+      - name: Build FFmpeg
+        run: |
+          ./configure --enable-libxeve --enable-libxevd
+          make -j$(nproc)
+
+      - name: Verify run
+        run: |
+          ./ffmpeg.exe -version
+          ./ffmpeg.exe -hide_banner -h encoder=libxeve
+          ./ffmpeg.exe -hide_banner -h decoder=libxevd

@@ -190,7 +190,10 @@ static int parse_nal_unit(AVCodecParserContext *s, AVCodecContext *avctx,
             break;
         }
 
-        s->key_frame = (nalu_type == EVC_IDR_NUT) ? 1 : 0;
+        // An IDR picture or a CRA picture (a non-IDR picture with an I slice)
+        // is a random access point
+        s->key_frame = (nalu_type == EVC_IDR_NUT ||
+                        (nalu_type == EVC_NOIDR_NUT && sh.slice_type == EVC_SLICE_TYPE_I)) ? 1 : 0;
 
         // POC (picture order count of the current picture) derivation
         // @see ISO/IEC 23094-1:2020(E) 8.3.1 Decoding process for picture order count

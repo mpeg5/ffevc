@@ -23,6 +23,7 @@
 #include "libavcodec/evc.h"
 #include "libavcodec/bsf.h"
 
+#include "libavutil/mem.h"
 #include "libavutil/opt.h"
 
 #include "avformat.h"
@@ -40,6 +41,14 @@ typedef struct EVCDemuxContext {
 
     AVBSFContext *bsf;
     int64_t au_count;
+
+    // Cached parameter set NAL units (with length prefixes, as found in the
+    // stream). They are re-injected after a seek because a raw EVC stream
+    // carries SPS/PPS only once, before the first picture.
+    uint8_t *sps_buf;
+    size_t   sps_size;
+    uint8_t *pps_buf;
+    size_t   pps_size;
 
 } EVCDemuxContext;
 
@@ -150,6 +159,57 @@ static int evc_read_packet(AVFormatContext *s, AVPacket *pkt)
     int au_end_found = 0;
     EVCDemuxContext *const c = s->priv_data;
 
+    if (s->io_repositioned) {
+        AVStream *st = s->streams[0];
+
+        s->io_repositioned = 0;
+        av_bsf_flush(c->bsf);
+        // The stream carries no timing information, so access units are
+        // stamped by counting them. After a seek, restart the count at the
+        // seek point (cur_dts, set by the generic seek code) to keep packets
+        // consistent with the index. A pending linear scan starts reading at
+        // the beginning of the stream, so restart the count from zero then.
+        if (avio_tell(s->pb) > ffformatcontext(s)->data_offset &&
+            ffstream(st)->cur_dts != AV_NOPTS_VALUE)
+            c->au_count = av_rescale_q(ffstream(st)->cur_dts, st->time_base, c->framerate);
+        else
+            c->au_count = 0;
+        if (c->sps_size || c->pps_size) {
+            // Re-send the cached parameter sets so that the parser and the
+            // decoder can resume at the seek point.
+            size_t size = c->sps_size + c->pps_size;
+            if (size) {
+                AVPacket *ps_pkt = av_packet_alloc();
+                if (!ps_pkt)
+                    return AVERROR(ENOMEM);
+                ret = av_new_packet(ps_pkt, size);
+                if (ret < 0) {
+                    av_packet_free(&ps_pkt);
+                    return ret;
+                }
+                // Carry the current position so the access unit eventually
+                // assembled from this data is indexable/seekable.
+                ps_pkt->pos = avio_tell(s->pb);
+                if (c->sps_size)
+                    memcpy(ps_pkt->data, c->sps_buf, c->sps_size);
+                if (c->pps_size)
+                    memcpy(ps_pkt->data + c->sps_size, c->pps_buf, c->pps_size);
+                ret = av_bsf_send_packet(c->bsf, ps_pkt);
+                av_packet_free(&ps_pkt);
+                if (ret < 0) {
+                    av_log(s, AV_LOG_ERROR, "Failed to re-send parameter sets to "
+                           "evc_frame_merge filter\n");
+                    return ret;
+                }
+                // Parameter sets alone do not complete an access unit; drain
+                // the filter so the next send does not hit a pending packet.
+                ret = av_bsf_receive_packet(c->bsf, pkt);
+                if (ret < 0 && ret != AVERROR(EAGAIN) && ret != AVERROR_EOF)
+                    return ret;
+            }
+        }
+    }
+
     while(!au_end_found) {
         uint8_t buf[EVC_NALU_LENGTH_PREFIX_SIZE];
 
@@ -178,6 +238,31 @@ static int evc_read_packet(AVFormatContext *s, AVPacket *pkt)
         if (ret != (nalu_size + EVC_NALU_LENGTH_PREFIX_SIZE))
             return AVERROR_INVALIDDATA;
 
+        // Keep a copy of parameter set NAL units for post-seek re-injection
+        {
+            int nalu_type = evc_get_nalu_type(pkt->data + EVC_NALU_LENGTH_PREFIX_SIZE,
+                                              nalu_size);
+            uint8_t **buf = NULL;
+            size_t *size = NULL;
+            void *tmp;
+
+            if (nalu_type == EVC_SPS_NUT) {
+                buf = &c->sps_buf;
+                size = &c->sps_size;
+            } else if (nalu_type == EVC_PPS_NUT) {
+                buf = &c->pps_buf;
+                size = &c->pps_size;
+            }
+            if (buf) {
+                tmp = av_realloc(*buf, nalu_size + EVC_NALU_LENGTH_PREFIX_SIZE);
+                if (!tmp)
+                    return AVERROR(ENOMEM);
+                *buf = tmp;
+                memcpy(*buf, pkt->data, nalu_size + EVC_NALU_LENGTH_PREFIX_SIZE);
+                *size = nalu_size + EVC_NALU_LENGTH_PREFIX_SIZE;
+            }
+        }
+
 end:
         ret = av_bsf_send_packet(c->bsf, pkt);
         if (ret < 0) {
@@ -196,14 +281,19 @@ end:
     }
 
     if (ret >= 0) {
-        // raw input carries no timing; stamp access units at the configured
-        // frame rate (decode order, so presentation reordering is left to the
-        // decoder)
+        // raw input carries no timing; stamp access units in decode order at
+        // the configured frame rate. Shift pts by the reorder delay of B
+        // pictures so that pts != dts; a packet with pts == dts would make
+        // the core discard the dts of reordered streams, breaking indexing
+        // and seeking.
         AVStream *st = s->streams[0];
         AVRational dur = av_inv_q(c->framerate);
 
-        pkt->pts = pkt->dts = av_rescale_q(c->au_count++, dur, st->time_base);
+        pkt->dts = av_rescale_q(c->au_count, dur, st->time_base);
+        pkt->pts = pkt->dts -
+                   av_rescale_q(st->codecpar->video_delay, dur, st->time_base);
         pkt->duration = av_rescale_q(1, dur, st->time_base);
+        c->au_count++;
     }
 
     return ret;
@@ -214,6 +304,9 @@ static int evc_read_close(AVFormatContext *s)
     EVCDemuxContext *const c = s->priv_data;
 
     av_bsf_free(&c->bsf);
+    av_freep(&c->sps_buf);
+    av_freep(&c->pps_buf);
+    c->sps_size = c->pps_size = 0;
     return 0;
 }
 

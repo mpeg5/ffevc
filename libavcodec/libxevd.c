@@ -576,7 +576,10 @@ static int libxevd_receive_frame(AVCodecContext *avctx, AVFrame *frame)
         }
     }
 
-    return ret;
+    // The access unit was consumed without producing a frame yet (e.g. all
+    // of its NAL units were skipped leading pictures after CRA random
+    // access) - ask for more input instead of returning an empty frame.
+    return AVERROR(EAGAIN);
 }
 
 /**
@@ -585,6 +588,23 @@ static int libxevd_receive_frame(AVCodecContext *avctx, AVFrame *frame)
  * @param avctx codec context
  * @return 0 on success
  */
+static void libxevd_flush(AVCodecContext *avctx)
+{
+    XevdContext *xectx = avctx->priv_data;
+
+    /* Recreate the decoder to drop all decoder state (reference pictures,
+     * parsed parameter sets). Raw EVC streams carry SPS/PPS only once before
+     * the first picture, so after a seek the demuxer re-injects them. */
+    if (xectx->id) {
+        xevd_delete(xectx->id);
+        xectx->id = xevd_create(&(xectx->cdsc), NULL);
+        if (xectx->id == NULL)
+            av_log(avctx, AV_LOG_ERROR, "Cannot re-create XEVD decoder\n");
+    }
+
+    xectx->draining_mode = 0;
+}
+
 static av_cold int libxevd_close(AVCodecContext *avctx)
 {
     XevdContext *xectx = avctx->priv_data;
@@ -606,6 +626,7 @@ const FFCodec ff_libxevd_decoder = {
     .p.id               = AV_CODEC_ID_EVC,
     .init               = libxevd_init,
     FF_CODEC_RECEIVE_FRAME_CB(libxevd_receive_frame),
+    .flush              = libxevd_flush,
     .close              = libxevd_close,
     .priv_data_size     = sizeof(XevdContext),
     .p.capabilities     = AV_CODEC_CAP_DR1 | AV_CODEC_CAP_DELAY |

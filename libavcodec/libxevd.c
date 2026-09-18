@@ -90,6 +90,104 @@ static int64_t xevd_pts_pop_min(XevdContext *xectx)
     return pts;
 }
 
+static uint32_t read_nal_unit_length(const uint8_t *bs, int bs_size, AVCodecContext *avctx);
+
+/**
+ * Send the parameter sets carried in extradata to the decoder, so that
+ * decoding can start at a random access point in streams where SPS/PPS are
+ * only carried in-band before the first picture (e.g. MP4).
+ *
+ * @param avctx codec context
+ * @param id    decoder instance
+ * @return 0 on success, negative error code on failure
+ */
+static int libxevd_send_parameter_sets(AVCodecContext *avctx, XEVD id)
+{
+    const uint8_t *data = avctx->extradata;
+    int size = avctx->extradata_size;
+    int pos = 0;
+
+    if (!data || !size)
+        return 0;
+
+    if (data[0] == 1 && size >= 18) {
+        /* EVCDecoderConfigurationRecord: skip the fixed header and read the
+         * NAL unit arrays, keeping only parameter sets and SEI messages. */
+        static const int keep[] = { 24, 25, 26, 28 }; /* SPS, PPS, APS, SEI */
+        int num_arrays, i, j, k;
+
+        num_arrays = data[17];
+        pos = 18;
+        for (i = 0; i < num_arrays; i++) {
+            int nalu_type, num_nalus;
+            int keep_it = 0;
+
+            if (pos + 3 > size)
+                return AVERROR_INVALIDDATA;
+            nalu_type = data[pos] & 0x3F;
+            for (k = 0; k < FF_ARRAY_ELEMS(keep); k++)
+                if (nalu_type == keep[k])
+                    keep_it = 1;
+            pos++;
+            num_nalus = AV_RB16(data + pos);
+            pos += 2;
+            for (j = 0; j < num_nalus; j++) {
+                int nalu_size;
+
+                if (pos + 2 > size)
+                    return AVERROR_INVALIDDATA;
+                nalu_size = AV_RB16(data + pos);
+                pos += 2;
+                if (pos + nalu_size > size)
+                    return AVERROR_INVALIDDATA;
+                if (keep_it) {
+                    XEVD_BITB bitb;
+                    XEVD_STAT stat;
+                    int ret;
+
+                    memset(&stat, 0, sizeof(stat));
+                    bitb.addr = (uint8_t *)data + pos;
+                    bitb.ssize = nalu_size;
+                    bitb.pdata[0] = NULL;
+                    bitb.ts[XEVD_TS_DTS] = 0;
+                    ret = xevd_decode(id, &bitb, &stat);
+                    if (XEVD_FAILED(ret)) {
+                        av_log(avctx, AV_LOG_ERROR,
+                               "Failed to decode parameter set from extradata\n");
+                        return AVERROR_EXTERNAL;
+                    }
+                }
+                pos += nalu_size;
+            }
+        }
+        return 0;
+    }
+
+    /* Fall back to a sequence of length-prefixed NAL units. */
+    while (pos + XEVD_NAL_UNIT_LENGTH_BYTE <= size) {
+        uint32_t nalu_size = read_nal_unit_length(data + pos, size - pos, avctx);
+        XEVD_BITB bitb;
+        XEVD_STAT stat;
+        int ret;
+
+        if (!nalu_size || pos + XEVD_NAL_UNIT_LENGTH_BYTE + nalu_size > size)
+            break;
+        memset(&stat, 0, sizeof(stat));
+        bitb.addr = (uint8_t *)data + pos + XEVD_NAL_UNIT_LENGTH_BYTE;
+        bitb.ssize = nalu_size;
+        bitb.pdata[0] = NULL;
+        bitb.ts[XEVD_TS_DTS] = 0;
+        ret = xevd_decode(id, &bitb, &stat);
+        if (XEVD_FAILED(ret)) {
+            av_log(avctx, AV_LOG_ERROR,
+                   "Failed to decode parameter set from extradata\n");
+            return AVERROR_EXTERNAL;
+        }
+        pos += XEVD_NAL_UNIT_LENGTH_BYTE + nalu_size;
+    }
+    return 0;
+}
+
 /**
  * The function populates the XEVD_CDSC structure.
  * XEVD_CDSC contains all decoder parameters that should be initialized before its use.
@@ -258,6 +356,7 @@ static av_cold int libxevd_init(AVCodecContext *avctx)
 {
     XevdContext *xectx = avctx->priv_data;
     XEVD_CDSC *cdsc = &(xectx->cdsc);
+    int ret;
 
     /* read configurations and set values for created descriptor (XEVD_CDSC) */
     get_conf(avctx, cdsc);
@@ -275,6 +374,10 @@ static av_cold int libxevd_init(AVCodecContext *avctx)
         av_log(avctx, AV_LOG_ERROR, "Cannot allocate memory for AVPacket\n");
         return AVERROR(ENOMEM);
     }
+
+    ret = libxevd_send_parameter_sets(avctx, xectx->id);
+    if (ret < 0)
+        return ret;
 
     return 0;
 }
@@ -593,13 +696,16 @@ static void libxevd_flush(AVCodecContext *avctx)
     XevdContext *xectx = avctx->priv_data;
 
     /* Recreate the decoder to drop all decoder state (reference pictures,
-     * parsed parameter sets). Raw EVC streams carry SPS/PPS only once before
-     * the first picture, so after a seek the demuxer re-injects them. */
+     * parsed parameter sets), then feed the parameter sets from extradata
+     * again so decoding can resume at a random access point. */
     if (xectx->id) {
         xevd_delete(xectx->id);
         xectx->id = xevd_create(&(xectx->cdsc), NULL);
-        if (xectx->id == NULL)
+        if (xectx->id == NULL) {
             av_log(avctx, AV_LOG_ERROR, "Cannot re-create XEVD decoder\n");
+            return;
+        }
+        libxevd_send_parameter_sets(avctx, xectx->id);
     }
 
     xectx->draining_mode = 0;
